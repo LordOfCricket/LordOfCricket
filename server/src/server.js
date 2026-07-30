@@ -1,0 +1,39 @@
+import 'dotenv/config'
+import http from 'http'
+import { Server } from 'socket.io'
+import app from './app.js'
+import { connectPostgres, connectMongo } from './config/db.js'
+
+const PORT = process.env.PORT || 5000
+
+const server = http.createServer(app)
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_ORIGIN || true,
+    methods: ['GET', 'POST', 'PATCH'],
+  },
+})
+
+// Make io available to every request as req.io (see app.js middleware)
+app.locals.io = io
+
+io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id)
+
+  socket.on('join-staff-room', () => socket.join('staff'))
+  socket.on('join-mobile-room', (mobile) => {
+    if (mobile) socket.join(`mobile:${mobile}`)
+  })
+  socket.on('join-order-room', (orderId) => {
+    if (orderId) socket.join(`order:${orderId}`)
+  })
+  socket.on('disconnect', () => console.log('Socket disconnected:', socket.id))
+})
+
+async function start() {
+  await connectPostgres()
+  await connectMongo()
+  server.listen(PORT, () => console.log(`Server listening on port ${PORT}`))
+}
+
+start()

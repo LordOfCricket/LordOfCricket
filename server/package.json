@@ -1,0 +1,24 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "node src/config/migrate.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.1",
+    "lord-of-cricket": "file:..",
+    "mongoose": "^8.24.2",
+    "multer": "^2.2.0",
+    "pg": "^8.22.0",
+    "socket.io": "^4.7.2",
+    "twilio": "^6.0.2"
+  }
+}
