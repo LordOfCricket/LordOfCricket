@@ -15,6 +15,7 @@ import {
   emptyNewFood,
   emptyEditFood,
 } from '../models/canteenDashboard.model.js'
+import { fetchPendingUmpireRequests, decideUmpireRequest } from '../services/umpireApi.js'
 
 export function useStaffDashboard() {
   const [tab, setTab] = useState('manage')
@@ -30,6 +31,7 @@ export function useStaffDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [umpireRequests, setUmpireRequests] = useState([])
 
   const loadOrders = useCallback(async (targetPage = 1) => {
     try {
@@ -63,14 +65,33 @@ export function useStaffDashboard() {
     }
   }, [])
 
+  const loadUmpireRequests = useCallback(async () => {
+    try {
+      const requests = await fetchPendingUmpireRequests()
+      setUmpireRequests(requests)
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to load umpire requests.')
+    }
+  }, [])
+
   const refreshDashboard = useCallback(async () => {
     setIsRefreshing(true)
     try {
-      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster()])
+      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster(), loadUmpireRequests()])
     } finally {
       setIsRefreshing(false)
     }
-  }, [page, loadOrders, loadMenuConfig, loadMaster])
+  }, [page, loadOrders, loadMenuConfig, loadMaster, loadUmpireRequests])
+
+  const handleDecideUmpireRequest = async (id, status) => {
+    setError('')
+    try {
+      await decideUmpireRequest(id, status)
+      await loadUmpireRequests()
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to update umpire request.')
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -219,7 +240,7 @@ export function useStaffDashboard() {
 
     return orders.filter((order) => {
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter
-      const matchesSearch = !term || [order.id, order.mobile, order.seatId].some((value) => String(value || '').toLowerCase().includes(term))
+      const matchesSearch = !term || [order.id, order.customerName, order.seatId].some((value) => String(value || '').toLowerCase().includes(term))
       return matchesStatus && matchesSearch
     })
   }, [orders, searchTerm, statusFilter])
@@ -244,6 +265,8 @@ export function useStaffDashboard() {
     setStatusFilter,
     isRefreshing,
     refreshDashboard,
+    umpireRequests,
+    handleDecideUmpireRequest,
     statusIndex,
     handleStatusUpdate,
     handleToggleAvailability,

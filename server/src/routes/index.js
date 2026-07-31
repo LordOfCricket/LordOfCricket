@@ -6,9 +6,10 @@ import advertisementRoutes from './advertisement.routes.js'
 import matchRoutes from './match.routes.js'
 import indiaMatchRoutes from './indiaMatch.routes.js'
 import partnerRoutes from './partner.routes.js'
-import canteenAuthRoutes from './canteenAuth.routes.js'
 import canteenMenuRoutes from './canteenMenu.routes.js'
 import canteenOrderRoutes from './canteenOrder.routes.js'
+import authRoutes from './auth.routes.js'
+import umpireRequestRoutes from './umpireRequest.routes.js'
 
 const router = Router()
 
@@ -20,8 +21,11 @@ router.use('/matches', matchRoutes)
 router.use('/india-match', indiaMatchRoutes)
 router.use('/partners', partnerRoutes)
 
+// Site-wide auth (single login for players, staff, umpires)
+router.use('/auth', authRoutes)
+router.use('/umpire-requests', umpireRequestRoutes)
+
 // Canteen (merged into the main LOC API, namespaced under /canteen)
-router.use('/canteen/auth', canteenAuthRoutes)
 router.use('/canteen/menu', canteenMenuRoutes)
 router.use('/canteen/orders', canteenOrderRoutes)
 router.get('/canteen/health', (req, res) => {

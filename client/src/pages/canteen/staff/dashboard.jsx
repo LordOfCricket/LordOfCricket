@@ -21,6 +21,8 @@ export default function StaffDashboardPage() {
     setStatusFilter,
     isRefreshing,
     refreshDashboard,
+    umpireRequests,
+    handleDecideUmpireRequest,
     statusIndex,
     handleStatusUpdate,
     handleToggleAvailability,
@@ -90,6 +92,9 @@ export default function StaffDashboardPage() {
               <Button className={`h-12 px-4 ${tab === 'all' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('all')}>All Food</Button>
               <Button className={`h-12 px-4 ${tab === 'orders' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('orders')}>Orders</Button>
               <Button className={`h-12 px-4 ${tab === 'add' ? 'bg-emerald-600' : 'bg-emerald-200 text-slate-900'}`} onClick={() => setTab('add')}>Add Food</Button>
+              <Button className={`h-12 px-4 ${tab === 'umpires' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('umpires')}>
+                Umpire Requests{umpireRequests.length > 0 ? ` (${umpireRequests.length})` : ''}
+              </Button>
               <Button className="h-12 bg-white/10 px-4 text-sm text-white" onClick={() => void refreshDashboard()}>
                 {isRefreshing ? 'Refreshing…' : 'Refresh Live'}
               </Button>
@@ -139,7 +144,7 @@ export default function StaffDashboardPage() {
                   <input
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by order ID, seat or mobile"
+                    placeholder="Search by order ID, seat or customer name"
                     className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm text-white placeholder:text-slate-400"
                   />
                   <div className="flex flex-wrap gap-2">
@@ -182,7 +187,7 @@ export default function StaffDashboardPage() {
                         className={`cursor-pointer transition hover:bg-white/10 ${selectedOrder?.id === order.id ? 'bg-green-500/10' : ''}`}
                       >
                         <td className="px-4 py-4 font-medium text-white">{order.id}</td>
-                        <td className="px-4 py-4 text-slate-200">{order.seatId} / {order.mobile}</td>
+                        <td className="px-4 py-4 text-slate-200">{order.seatId} / {order.customerName}</td>
                         <td className="px-4 py-4 text-slate-200">
                           {order.items.map((item) => `${item.name}×${item.qty}`).join(', ')}
                         </td>
@@ -218,7 +223,7 @@ export default function StaffDashboardPage() {
                     <div>
                       <p className="text-sm text-slate-300">Selected Order</p>
                       <h3 className="text-2xl font-bold text-white">{selectedOrder.id}</h3>
-                      <p className="mt-2 text-slate-200">{selectedOrder.seatId} / {selectedOrder.mobile}</p>
+                      <p className="mt-2 text-slate-200">{selectedOrder.seatId} / {selectedOrder.customerName}</p>
                     </div>
                     <span className={`w-fit rounded-full px-4 py-2 text-sm font-bold ${statusBadgeClass(selectedOrder.status)}`}>{selectedOrder.status}</span>
                   </div>
@@ -327,6 +332,33 @@ export default function StaffDashboardPage() {
               </div>
             </div>
           )}
+
+          {tab === 'umpires' && (
+            <div className="mt-6 space-y-4">
+              {umpireRequests.length === 0 ? (
+                <p className="rounded-2xl bg-white/10 p-5 text-slate-300">No pending umpire requests.</p>
+              ) : (
+                umpireRequests.map((request) => (
+                  <article
+                    key={request.id}
+                    className="flex flex-col gap-4 rounded-[24px] border border-white/10 bg-white/10 p-5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{request.name}</h3>
+                      <p className="text-sm text-slate-300">{request.email}</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button onClick={() => handleDecideUmpireRequest(request.id, 'approved')}>Approve</Button>
+                      <Button className="bg-red-600" onClick={() => handleDecideUmpireRequest(request.id, 'rejected')}>
+                        Reject
+                      </Button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+
           {editingItem && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-slate-900/90 p-6 text-white shadow-2xl backdrop-blur-xl">

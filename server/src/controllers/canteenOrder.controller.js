@@ -40,8 +40,8 @@ function normalizeItems(items) {
   }))
 }
 
-function findActiveFallback(mobile) {
-  return orders.find((order) => order.mobile === mobile && ACTIVE_STATUSES.includes(order.status))
+function findActiveFallback(userId) {
+  return orders.find((order) => order.userId === userId && ACTIVE_STATUSES.includes(order.status))
 }
 
 function emitToOrderRooms(io, eventName, order) {
@@ -58,8 +58,8 @@ function emitToOrderRooms(io, eventName, order) {
     rooms.push(`order:${order.id}`)
   }
 
-  if (order.mobile) {
-    rooms.push(`mobile:${order.mobile}`)
+  if (order.userId) {
+    rooms.push(`user:${order.userId}`)
   }
 
   io.to(rooms).emit(eventName, order)
@@ -69,14 +69,17 @@ function emitToOrderRooms(io, eventName, order) {
 }
 
 export async function createOrder(req, res) {
-  const { mobile, seatId, items, total } = req.body
-  if (!mobile || !Array.isArray(items) || items.length === 0) {
+  const { seatId, items, total } = req.body
+  const userId = req.user.id
+  const customerName = req.user.name
+
+  if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order payload is invalid.' })
   }
 
   try {
     if (isMongoReady()) {
-      const activeOrder = await Order.findOne({ mobile, status: { $in: ACTIVE_STATUSES } }).sort({ orderedAt: -1, createdAt: -1 })
+      const activeOrder = await Order.findOne({ userId, status: { $in: ACTIVE_STATUSES } }).sort({ orderedAt: -1, createdAt: -1 })
       if (activeOrder) {
         return res.status(409).json({
           error: 'You already have an active order.',
@@ -84,7 +87,7 @@ export async function createOrder(req, res) {
         })
       }
     } else {
-      const activeOrder = findActiveFallback(mobile)
+      const activeOrder = findActiveFallback(userId)
       if (activeOrder) {
         return res.status(409).json({
           error: 'You already have an active order.',
@@ -98,7 +101,8 @@ export async function createOrder(req, res) {
     const normalizedItems = normalizeItems(items)
     const orderPayload = {
       id: orderId,
-      mobile,
+      userId,
+      customerName,
       seatId: seatId || 'unknown',
       items: normalizedItems,
       total: Number(total) || normalizedItems.reduce((sum, item) => sum + item.price * item.qty, 0),
@@ -110,7 +114,8 @@ export async function createOrder(req, res) {
 
     if (isMongoReady()) {
       const order = await Order.create({
-        mobile,
+        userId,
+        customerName,
         seatId: seatId || 'unknown',
         items: normalizedItems,
         total: orderPayload.total,
@@ -186,19 +191,19 @@ export async function getOrder(req, res) {
   }
 }
 
-export async function lookupOrderByMobile(req, res) {
+export async function lookupOrderByUser(req, res) {
   try {
-    const mobile = req.query.mobile
-    if (!mobile) {
-      return res.status(400).json({ error: 'Mobile number is required.' })
+    const userId = Number(req.query.userId)
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required.' })
     }
 
     if (isMongoReady()) {
-      const order = await Order.findOne({ mobile }).sort({ createdAt: -1 }).lean()
+      const order = await Order.findOne({ userId }).sort({ createdAt: -1 }).lean()
       return res.json({ order: normalizeOrder(order) })
     }
 
-    const order = orders.slice().reverse().find((orderItem) => orderItem.mobile === mobile)
+    const order = orders.slice().reverse().find((orderItem) => orderItem.userId === userId)
     return res.json({ order: normalizeOrder(order) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
@@ -207,17 +212,20 @@ export async function lookupOrderByMobile(req, res) {
 
 export async function getActiveOrder(req, res) {
   try {
-    const { mobile } = req.params
-    if (!mobile) {
-      return res.status(400).json({ error: 'Mobile number is required.' })
+    const userId = Number(req.params.userId)
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required.' })
+    }
+    if (req.user.id !== userId && req.user.role !== 'staff') {
+      return res.status(403).json({ error: 'You can only view your own orders.' })
     }
 
     if (isMongoReady()) {
-      const order = await Order.findOne({ mobile, status: { $in: ACTIVE_STATUSES } }).sort({ orderedAt: -1, createdAt: -1 }).lean()
+      const order = await Order.findOne({ userId, status: { $in: ACTIVE_STATUSES } }).sort({ orderedAt: -1, createdAt: -1 }).lean()
       return res.json({ order: normalizeOrder(order) })
     }
 
-    return res.json({ order: normalizeOrder(findActiveFallback(mobile)) })
+    return res.json({ order: normalizeOrder(findActiveFallback(userId)) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
   }
@@ -225,18 +233,21 @@ export async function getActiveOrder(req, res) {
 
 export async function getOrderHistory(req, res) {
   try {
-    const { mobile } = req.params
-    if (!mobile) {
-      return res.status(400).json({ error: 'Mobile number is required.' })
+    const userId = Number(req.params.userId)
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required.' })
+    }
+    if (req.user.id !== userId && req.user.role !== 'staff') {
+      return res.status(403).json({ error: 'You can only view your own orders.' })
     }
 
     if (isMongoReady()) {
-      const history = await Order.find({ mobile }).sort({ orderedAt: -1, createdAt: -1 }).lean()
+      const history = await Order.find({ userId }).sort({ orderedAt: -1, createdAt: -1 }).lean()
       return res.json({ orders: history.map(normalizeOrder) })
     }
 
     const history = orders
-      .filter((order) => order.mobile === mobile)
+      .filter((order) => order.userId === userId)
       .sort((a, b) => new Date(b.orderedAt || b.createdAt) - new Date(a.orderedAt || a.createdAt))
 
     return res.json({ orders: history.map(normalizeOrder) })

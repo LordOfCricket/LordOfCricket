@@ -2,7 +2,8 @@ import mongoose from 'mongoose'
 
 const orderSchema = new mongoose.Schema(
   {
-    mobile: { type: String, required: true },
+    userId: { type: Number, required: true },
+    customerName: { type: String, default: '' },
     seatId: { type: String, default: 'unknown' },
     items: [{ id: String, foodId: String, name: String, price: Number, qty: Number }],
     total: { type: Number, required: true },

@@ -7,6 +7,19 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- role: 'user' (not chosen yet) | 'player' | 'staff'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS player_type VARCHAR(20);
+-- player_type: NULL | 'team_player' | 'umpire' (only meaningful when role = 'player')
+
+CREATE TABLE IF NOT EXISTS umpire_requests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  decided_at TIMESTAMP,
+  decided_by INTEGER REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS teams (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,

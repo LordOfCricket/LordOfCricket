@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { io } from 'socket.io-client'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from './useAuth.js'
 import {
   fetchActiveOrder,
   fetchMenu,
@@ -10,7 +11,6 @@ import {
   defaultCart,
   socketUrl,
   activeStatuses,
-  CANTEEN_MOBILE_STORAGE_KEY,
   CANTEEN_LATEST_ORDER_STORAGE_KEY,
   formatOrderDate,
   computeCartTotal,
@@ -18,11 +18,9 @@ import {
 
 export function useMenu() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const storedMobile = localStorage.getItem(CANTEEN_MOBILE_STORAGE_KEY) || ''
-  const { mobile: stateMobile = '' } = location.state || {}
+  const { user } = useAuth()
+  const userId = user?.id
 
-  const [mobile] = useState(stateMobile || storedMobile)
   const [menu, setMenu] = useState([])
   const [cart, setCart] = useState(defaultCart)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -34,11 +32,11 @@ export function useMenu() {
   const [error, setError] = useState('')
 
   const loadPlayerOrders = async () => {
-    if (!mobile) return
+    if (!userId) return
     try {
       const [currentOrder, history] = await Promise.all([
-        fetchActiveOrder(mobile),
-        fetchOrderHistory(mobile),
+        fetchActiveOrder(userId),
+        fetchOrderHistory(userId),
       ])
       setActiveOrder(currentOrder)
       setOrderHistory(history)
@@ -50,12 +48,10 @@ export function useMenu() {
   }
 
   useEffect(() => {
-    if (!mobile) {
-      navigate('/canteen/login')
+    if (!userId) {
+      navigate('/login')
       return
     }
-
-    localStorage.setItem(CANTEEN_MOBILE_STORAGE_KEY, mobile)
 
     async function loadPage() {
       try {
@@ -69,11 +65,13 @@ export function useMenu() {
     }
 
     loadPage()
-  }, [mobile, navigate])
+  }, [userId, navigate])
 
   useEffect(() => {
+    if (!userId) return
+
     const socket = io(socketUrl)
-    socket.emit('join-mobile-room', mobile)
+    socket.emit('join-user-room', userId)
 
     const refreshMenu = async () => {
       const items = await fetchMenu()
@@ -81,13 +79,13 @@ export function useMenu() {
     }
 
     const refreshPlayerOrders = (order) => {
-      if (order.mobile === mobile) {
+      if (order.userId === userId) {
         loadPlayerOrders().catch(() => {})
       }
     }
 
     const updatePlayerOrder = (order) => {
-      if (order.mobile === mobile) {
+      if (order.userId === userId) {
         loadPlayerOrders().catch(() => {})
         setDetailsOrder((current) => (current?.id === order.id ? order : current))
       }
@@ -99,7 +97,7 @@ export function useMenu() {
     socket.on('order-completed', updatePlayerOrder)
 
     return () => socket.disconnect()
-  }, [mobile])
+  }, [userId])
 
   const addItem = (item) => {
     if (activeOrder) {
@@ -163,7 +161,6 @@ export function useMenu() {
 
     try {
       const order = await placeOrder({
-        mobile,
         items: cart.items,
         total: cart.total,
       })
@@ -172,7 +169,7 @@ export function useMenu() {
         CANTEEN_LATEST_ORDER_STORAGE_KEY,
         JSON.stringify({
           orderId: order.id,
-          mobile,
+          userId,
         }),
       )
 

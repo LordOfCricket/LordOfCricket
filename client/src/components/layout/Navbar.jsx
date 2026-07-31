@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { Menu, X, LogIn, UtensilsCrossed } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed } from 'lucide-react'
 import logo from '../../assets/logo.png'
+import { useAuth } from '../../hooks/useAuth.js'
 
 const NAV_LINKS = [
   { label: 'Home', href: '#home' },
@@ -16,6 +17,14 @@ const NAV_LINKS = [
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    setIsOpen(false)
+    navigate('/')
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -64,13 +73,24 @@ export default function Navbar() {
             <UtensilsCrossed className="h-5 w-5" />
             Canteen
           </Link>
-          <a
-            href="#login"
-            className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-base font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all duration-200 hover:shadow-emerald-400/50 hover:-translate-y-0.5"
-          >
-            <LogIn className="h-5 w-5" />
-            Login
-          </a>
+          {user ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-base font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all duration-200 hover:shadow-emerald-400/50 hover:-translate-y-0.5"
+            >
+              <LogOut className="h-5 w-5" />
+              Logout ({user.name})
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-base font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all duration-200 hover:shadow-emerald-400/50 hover:-translate-y-0.5"
+            >
+              <LogIn className="h-5 w-5" />
+              Login
+            </Link>
+          )}
         </div>
 
         {/* Mobile toggle */}
@@ -109,14 +129,25 @@ export default function Navbar() {
             <UtensilsCrossed className="h-4 w-4" />
             Canteen
           </Link>
-          <a
-            href="#login"
-            onClick={() => setIsOpen(false)}
-            className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:shadow-emerald-400/50"
-          >
-            <LogIn className="h-4 w-4" />
-            Login
-          </a>
+          {user ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:shadow-emerald-400/50"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout ({user.name})
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              onClick={() => setIsOpen(false)}
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:shadow-emerald-400/50"
+            >
+              <LogIn className="h-4 w-4" />
+              Login
+            </Link>
+          )}
         </div>
       </div>
     </header>

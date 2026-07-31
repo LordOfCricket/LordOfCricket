@@ -21,8 +21,8 @@ io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id)
 
   socket.on('join-staff-room', () => socket.join('staff'))
-  socket.on('join-mobile-room', (mobile) => {
-    if (mobile) socket.join(`mobile:${mobile}`)
+  socket.on('join-user-room', (userId) => {
+    if (userId) socket.join(`user:${userId}`)
   })
   socket.on('join-order-room', (orderId) => {
     if (orderId) socket.join(`order:${orderId}`)
