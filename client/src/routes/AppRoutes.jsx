@@ -10,6 +10,8 @@ import AuthPage from '../pages/auth/AuthPage.jsx'
 import RoleSelectPage from '../pages/role-select/RoleSelectPage.jsx'
 import PlayerTypeSelectPage from '../pages/player-type/PlayerTypeSelectPage.jsx'
 import PlayerDashboardPage from '../pages/player-dashboard/PlayerDashboardPage.jsx'
+import ProfilePage from '../pages/profile/ProfilePage.jsx'
+import ProfileEditPage from '../pages/profile/ProfileEditPage.jsx'
 import UmpireStatusPage from '../pages/umpire/UmpireStatusPage.jsx'
 import RequireAuth from './RequireAuth.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
@@ -36,6 +38,8 @@ const router = createBrowserRouter([
       { path: '/role-select', element: <RequireAuth><RoleSelectPage /></RequireAuth> },
       { path: '/player-type', element: <RequireAuth><PlayerTypeSelectPage /></RequireAuth> },
       { path: '/player/dashboard', element: <RequireAuth><PlayerDashboardPage /></RequireAuth> },
+      { path: '/profile', element: <RequireAuth><ProfilePage /></RequireAuth> },
+      { path: '/profile/edit', element: <RequireAuth><ProfileEditPage /></RequireAuth> },
       { path: '/umpire', element: <RequireAuth><UmpireStatusPage /></RequireAuth> },
 
       // Temporary testing feature
