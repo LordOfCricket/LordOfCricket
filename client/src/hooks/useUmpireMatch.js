@@ -1,6 +1,6 @@
 import { useMemo, useReducer, useState } from 'react'
 import { createInitialMatch } from '../models/umpireMatch.model.js'
-import { createDeliveryEntry, createEventEntry, deriveMatchState } from '../models/matchEngine.model.js'
+import { createDeliveryEntry, createEventEntry, correctEntry, previewCorrection, deriveMatchState } from '../models/matchEngine.model.js'
 
 // Dumb reducer: only manipulates the log array. All cricket knowledge lives in
 // matchEngine.model.js, applied via `deriveMatchState` (see the useMemo below).
@@ -20,22 +20,50 @@ function matchReducer(match, action) {
           idx === match.currentInningsIndex ? { ...inn, log: inn.log.slice(0, -1) } : inn
         ),
       }
-    case 'EDIT_LAST':
+    // Single primitive for every historical correction (runs, extra, wicket, striker, bowler,
+    // shot, voiding an event) — patches the entry AND appends the audit record in one dispatch
+    // so they can never desync.
+    case 'CORRECT_ENTRY':
       return {
         ...match,
         innings: match.innings.map((inn, idx) => {
-          if (idx !== match.currentInningsIndex || inn.log.length === 0) return inn
+          if (idx !== match.currentInningsIndex) return inn
+          const index = inn.log.findIndex((e) => e.id === action.entryId)
+          if (index === -1) return inn
+
+          const original = inn.log[index]
+          const beforeSource = original.type === 'delivery' ? original.outcome : original.payload
+          const before = Object.fromEntries(Object.keys(action.patch).map((k) => [k, beforeSource[k]]))
           const log = inn.log.slice()
-          const last = log[log.length - 1]
-          log[log.length - 1] = { ...last, outcome: { ...last.outcome, ...action.patch } }
-          return { ...inn, log }
+          log[index] = correctEntry(original, action.patch)
+
+          const correction = { id: crypto.randomUUID(), entryId: action.entryId, before, after: action.patch, reason: action.reason || null, correctedAt: new Date() }
+          return { ...inn, log, corrections: [...inn.corrections, correction] }
+        }),
+      }
+    // Appends an inverse correction rather than popping — the audit trail stays intact even
+    // for reverted edits. Only ever targets the single most recent correction globally, since
+    // that's the only one guaranteed not-stale relative to any later edit of the same entry.
+    case 'UNDO_CORRECTION':
+      return {
+        ...match,
+        innings: match.innings.map((inn, idx) => {
+          if (idx !== match.currentInningsIndex || inn.corrections.length === 0) return inn
+          const last = inn.corrections[inn.corrections.length - 1]
+          const index = inn.log.findIndex((e) => e.id === last.entryId)
+          if (index === -1) return inn // dangling — Undo Last Ball already walked back past it
+
+          const log = inn.log.slice()
+          log[index] = correctEntry(log[index], last.before)
+          const revert = { id: crypto.randomUUID(), entryId: last.entryId, before: last.after, after: last.before, reason: 'Reverted correction', correctedAt: new Date() }
+          return { ...inn, log, corrections: [...inn.corrections, revert] }
         }),
       }
     case 'END_INNINGS': {
       const prev = match.innings[match.currentInningsIndex]
       return {
         ...match,
-        innings: [...match.innings, { battingTeamId: prev.bowlingTeamId, bowlingTeamId: prev.battingTeamId, log: [] }],
+        innings: [...match.innings, { battingTeamId: prev.bowlingTeamId, bowlingTeamId: prev.battingTeamId, log: [], corrections: [] }],
         currentInningsIndex: match.innings.length,
       }
     }
@@ -93,6 +121,10 @@ export function useUmpireMatch() {
     push(createDeliveryEntry({ runsBat: 0, illegal: null, extra: null, wicket: null, shot: null, isDeadBall: true }))
   }
 
+  // Generic escape hatch for non-scoring events (catch dropped, appeal, review, fielding
+  // events) that only need to land in the timeline — no dedicated engine rule to enforce.
+  const recordEvent = (eventName, payload) => push(createEventEntry(eventName, payload))
+
   const swapStrike = () => push(createEventEntry('strike-swap'))
   const selectNewBatsman = (end, playerId) => push(createEventEntry('batsman-in', { end, playerId }))
   const selectNewBowler = (bowlerId) => push(createEventEntry('bowler-change', { bowlerId }))
@@ -100,13 +132,26 @@ export function useUmpireMatch() {
   const recordPenalty = (runs, awardedTo) => push(createEventEntry('penalty-runs', { runs, awardedTo }))
 
   const undo = () => dispatch({ type: 'UNDO' })
-  const editLastDelivery = (patch) => dispatch({ type: 'EDIT_LAST', patch })
   const endInnings = () => dispatch({ type: 'END_INNINGS' })
   const resetMatch = () => dispatch({ type: 'RESET', match: createInitialMatch() })
 
-  const currentLog = match.innings[match.currentInningsIndex].log
+  // Historical correction: patches ANY past entry (delivery or event) by id and replays. This
+  // is deliberately the same primitive whether the scorer is fixing runs, a wicket, the
+  // striker, or a bowler-change event — see matchEngine.model.js's `correctEntry`.
+  const correctHistoricalEntry = (entryId, patch, reason) => dispatch({ type: 'CORRECT_ENTRY', entryId, patch, reason })
+  const undoLastCorrection = () => dispatch({ type: 'UNDO_CORRECTION' })
+
+  const currentRawInnings = match.innings[match.currentInningsIndex]
+  const currentLog = currentRawInnings.log
   const lastEntry = currentLog.length ? currentLog[currentLog.length - 1] : null
   const lastDelivery = lastEntry?.type === 'delivery' ? matchState.currentInnings.deliveries[matchState.currentInnings.deliveries.length - 1] : null
+
+  const corrections = currentRawInnings.corrections
+  const canUndoCorrection = corrections.length > 0 && currentLog.some((e) => e.id === corrections[corrections.length - 1].entryId)
+
+  // Folds the log twice (current vs. hypothetically-patched) so the correction UI can show an
+  // impact preview before committing — cheap at this scale, see matchEngine.model.js.
+  const getCorrectionPreview = (entryId, patch) => previewCorrection(currentLog, currentRawInnings, match.format.oversPerInnings, entryId, patch)
 
   return {
     match,
@@ -121,16 +166,21 @@ export function useUmpireMatch() {
     recordByes,
     recordWicket,
     recordDeadBall,
+    recordEvent,
     swapStrike,
     selectNewBatsman,
     selectNewBowler,
     recordRetirement,
     recordPenalty,
     undo,
-    editLastDelivery,
     endInnings,
     resetMatch,
     canUndo: currentLog.length > 0,
     lastDelivery,
+    correctHistoricalEntry,
+    undoLastCorrection,
+    canUndoCorrection,
+    corrections,
+    getCorrectionPreview,
   }
 }

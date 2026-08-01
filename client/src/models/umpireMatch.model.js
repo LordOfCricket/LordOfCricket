@@ -17,6 +17,42 @@ export const DISMISSAL_TYPES = [
 // Dismissal types credited to the bowler's figures.
 export const BOWLER_CREDITED_DISMISSALS = ['bowled', 'caught', 'lbw', 'stumped', 'hit-wicket']
 
+// Non-scoring match events (section 10) — logged alongside deliveries, never touch the score.
+export const FIELDING_EVENT_TYPES = [
+  { id: 'misfield', label: 'Misfield' },
+  { id: 'direct-hit', label: 'Direct Hit' },
+  { id: 'run-out-attempt', label: 'Run Out Attempt' },
+  { id: 'stumping-attempt', label: 'Stumping Attempt' },
+  { id: 'overthrow', label: 'Overthrow' },
+  { id: 'boundary-save', label: 'Boundary Save' },
+  { id: 'diving-stop', label: 'Diving Stop' },
+  { id: 'fielding-error', label: 'Fielding Error' },
+  { id: 'exceptional-fielding', label: 'Exceptional Fielding' },
+]
+
+export const APPEAL_TYPES = [
+  { id: 'lbw', label: 'LBW' },
+  { id: 'caught-behind', label: 'Caught Behind' },
+  { id: 'run-out', label: 'Run Out' },
+  { id: 'stumping', label: 'Stumping' },
+  { id: 'other', label: 'Other' },
+]
+
+export const REVIEW_TYPES = [
+  { id: 'player-review', label: 'Player Review' },
+  { id: 'umpire-review', label: 'Umpire Review' },
+  { id: 'run-out-check', label: 'Run Out Check' },
+  { id: 'stumping-check', label: 'Stumping Check' },
+  { id: 'boundary-check', label: 'Boundary Check' },
+  { id: 'catch-check', label: 'Catch Check' },
+]
+
+export const CATCH_CHANCE_LEVELS = [
+  { id: 'easy', label: 'Easy Chance' },
+  { id: 'moderate', label: 'Moderate Chance' },
+  { id: 'difficult', label: 'Difficult Chance' },
+]
+
 export const MATCH_FORMAT = {
   label: 'T20',
   oversPerInnings: 20,
@@ -70,7 +106,7 @@ export function createInitialMatch() {
     battingFirstId: TEAM_A.id,
     currentInningsIndex: 0,
     innings: [
-      { battingTeamId: TEAM_A.id, bowlingTeamId: TEAM_B.id, log: [] },
+      { battingTeamId: TEAM_A.id, bowlingTeamId: TEAM_B.id, log: [], corrections: [] },
     ],
   }
 }

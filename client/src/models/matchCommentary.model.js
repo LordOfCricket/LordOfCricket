@@ -1,7 +1,7 @@
 // Template-based commentary today; `generateBasicCommentary` is the seam that gets
 // swapped for `generateAICommentary` later. Nothing here calls an external service.
 import { getPlayer } from './umpireMatch.model.js'
-import { dismissalLabel, formatOvers, getBallsRemaining } from './matchStats.model.js'
+import { dismissalLabel, formatOvers, getBallsRemaining, fieldingEventLabel, appealLabel, reviewTypeLabel } from './matchStats.model.js'
 
 export function resultLabel(delivery) {
   if (delivery.isDeadBall) return 'Dead Ball'
@@ -43,6 +43,39 @@ export function generateBasicCommentary(delivery, match) {
   if (delivery.runsBat === 4) return `FOUR! ${striker?.name || 'Batsman'} finds the gap${region ? ` through ${region}` : ''}.`
   if (delivery.totalRuns === 0) return `Dot ball. ${bowler?.name || 'Bowler'} keeps it tight.`
   return `${delivery.totalRuns} run${delivery.totalRuns === 1 ? '' : 's'}${region ? `, worked to ${region}` : ''}.`
+}
+
+const REVIEW_DECISION_LABELS = { out: 'OUT', 'not-out': 'NOT OUT', 'umpires-call': "UMPIRE'S CALL", inconclusive: 'INCONCLUSIVE' }
+
+/** Human-readable line for a non-scoring match event, used by the unified timeline. */
+export function describeMatchEvent(entry, match) {
+  const p = entry.payload || {}
+  const batsman = getPlayer(match, p.batsmanId)
+  const bowler = getPlayer(match, p.bowlerId)
+  const fielder = getPlayer(match, p.fielderId)
+
+  switch (entry.event) {
+    case 'catch-dropped':
+      return `Catch Dropped! ${fielder?.name || 'A fielder'} spills a chance off ${batsman?.name || 'the batsman'}${bowler ? `, bowled by ${bowler.name}` : ''}.`
+    case 'fielding-event':
+      return `${fieldingEventLabel(p.fieldingType)}${fielder ? ` — ${fielder.name}` : ''}.`
+    case 'appeal':
+      return `Appeal for ${appealLabel(p.appealType)} — ${p.decision === 'out' ? 'OUT' : 'NOT OUT'}.`
+    case 'review':
+      return `${reviewTypeLabel(p.reviewType)} — ${REVIEW_DECISION_LABELS[p.decision] || p.decision}.`
+    case 'penalty-runs':
+      return `Penalty! +${p.runs} runs to the ${p.awardedTo === 'batting' ? 'batting' : 'fielding'} side.`
+    case 'strike-swap':
+      return 'Strike swapped.'
+    case 'batsman-in':
+      return `${getPlayer(match, p.playerId)?.name || 'New batsman'} comes to the crease.`
+    case 'bowler-change':
+      return `${getPlayer(match, p.bowlerId)?.name || 'New bowler'} to bowl.`
+    case 'retire':
+      return `${getPlayer(match, p.playerId)?.name || 'Batsman'} retires ${p.type === 'retired-hurt' ? 'hurt' : 'out'}.`
+    default:
+      return entry.event
+  }
 }
 
 /** Short "17.4 — Kohli — SIX — Long On" style label, used by the undo confirmation. */

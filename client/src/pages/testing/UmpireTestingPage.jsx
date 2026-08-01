@@ -17,6 +17,8 @@ import MatchTimeline from '../../components/umpire/MatchTimeline.jsx'
 import CommentaryPanel from '../../components/umpire/CommentaryPanel.jsx'
 import UndoBar from '../../components/umpire/UndoBar.jsx'
 import MatchControlsMenu from '../../components/umpire/MatchControlsMenu.jsx'
+import QuickActionsSheet from '../../components/umpire/QuickActionsSheet.jsx'
+import EditScoreOverlay from '../../components/umpire/EditScoreOverlay.jsx'
 import { useUmpireMatch } from '../../hooks/useUmpireMatch.js'
 import { getPlayer } from '../../models/umpireMatch.model.js'
 import { selectWagonWheelShots } from '../../models/matchStats.model.js'
@@ -33,6 +35,9 @@ export default function UmpireTestingPage() {
     recordNoBall,
     recordByes,
     recordWicket,
+    recordDeadBall,
+    recordEvent,
+    recordPenalty,
     swapStrike,
     selectNewBatsman,
     selectNewBowler,
@@ -41,13 +46,26 @@ export default function UmpireTestingPage() {
     resetMatch,
     canUndo,
     lastDelivery,
+    clearShot,
+    correctHistoricalEntry,
+    undoLastCorrection,
+    canUndoCorrection,
+    corrections,
+    getCorrectionPreview,
   } = useUmpireMatch()
 
   const [wicketOpen, setWicketOpen] = useState(false)
+  const [editScoreOpen, setEditScoreOpen] = useState(false)
+
+  const handleRecordEvent = (eventName, payload, shouldClearShot) => {
+    recordEvent(eventName, payload)
+    if (shouldClearShot) clearShot()
+  }
 
   const inningsComplete = innings.isAllOut || innings.isOversComplete
   const awaitingSelection = Boolean(innings.pendingBatsmanSelection) || innings.pendingBowlerSelection
-  const scoringBlocked = inningsComplete || awaitingSelection
+  const hasConflicts = innings.conflicts.length > 0
+  const scoringBlocked = inningsComplete || awaitingSelection || hasConflicts
 
   const wagonWheelShots = selectWagonWheelShots(innings.deliveries)
   const bowler = getPlayer(match, innings.bowlerId)
@@ -63,7 +81,16 @@ export default function UmpireTestingPage() {
           <h1 className="text-sm font-semibold sm:text-base">Umpire Testing</h1>
           <span className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Testing Mode</span>
         </div>
-        <MatchControlsMenu canEndInnings={matchState.currentInningsIndex === 0} onEndInnings={endInnings} onResetMatch={resetMatch} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditScoreOpen(true)}
+            className="flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20"
+          >
+            ✏ Edit Score
+          </button>
+          <MatchControlsMenu canEndInnings={matchState.currentInningsIndex === 0} onEndInnings={endInnings} onResetMatch={resetMatch} />
+        </div>
       </header>
 
       <div className="flex-1 px-4 py-4 sm:px-6 lg:px-10">
@@ -74,6 +101,16 @@ export default function UmpireTestingPage() {
           {inningsComplete && (
             <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
               {innings.isAllOut ? 'All out!' : 'Overs complete!'} Use Match Controls to end the innings.
+            </div>
+          )}
+
+          {hasConflicts && (
+            <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              ⚠ LINEUP CONFLICT — a historical correction left a batsman substitution pointing at a player who wasn't actually out. Open{' '}
+              <button type="button" onClick={() => setEditScoreOpen(true)} className="font-semibold underline underline-offset-2">
+                Edit Score
+              </button>{' '}
+              to resolve it before continuing.
             </div>
           )}
 
@@ -91,7 +128,7 @@ export default function UmpireTestingPage() {
               </div>
 
               <PartnershipCard match={match} innings={innings} />
-              <MatchTimeline match={match} innings={innings} />
+              <MatchTimeline match={match} innings={innings} corrections={corrections} />
               <CommentaryPanel />
             </div>
 
@@ -99,6 +136,15 @@ export default function UmpireTestingPage() {
               <BatsmenPanel match={match} innings={innings} onSwapStrike={swapStrike} />
               <BowlerCard match={match} innings={innings} onSelectBowler={selectNewBowler} />
               <WicketsPanel match={match} innings={innings} />
+              <QuickActionsSheet
+                disabled={scoringBlocked}
+                match={match}
+                innings={innings}
+                pendingShot={pendingShot}
+                onRecordEvent={handleRecordEvent}
+                onDeadBall={recordDeadBall}
+                onPenalty={recordPenalty}
+              />
             </div>
           </div>
         </div>
@@ -138,6 +184,19 @@ export default function UmpireTestingPage() {
         onSelect={(playerId) => selectNewBatsman(innings.pendingBatsmanSelection, playerId)}
       />
       <WicketModal open={wicketOpen} onClose={() => setWicketOpen(false)} match={match} innings={innings} onConfirm={recordWicket} />
+
+      {editScoreOpen && (
+        <EditScoreOverlay
+          match={match}
+          innings={innings}
+          corrections={corrections}
+          getPreview={getCorrectionPreview}
+          onCorrectEntry={correctHistoricalEntry}
+          canUndoCorrection={canUndoCorrection}
+          onUndoCorrection={undoLastCorrection}
+          onClose={() => setEditScoreOpen(false)}
+        />
+      )}
     </div>
   )
 }

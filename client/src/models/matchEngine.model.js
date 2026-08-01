@@ -1,7 +1,9 @@
 // The only place cricket scoring rules live. Everything here is a pure function:
 // a delivery/event log goes in, a derived innings/match state comes out. Undo is
-// "drop the last log entry and refold"; edit-last-ball is "patch it and refold" —
-// neither needs bespoke inverse-mutation code because nothing here is mutated in place.
+// "drop the last log entry and refold"; historical correction (any entry, not just the
+// last) is "patch it and refold" via `correctEntry` — neither needs bespoke inverse-mutation
+// code because nothing here is mutated in place, and `deriveInningsState` already IS the
+// deterministic replay engine a correction needs (see `previewCorrection`).
 //
 // v1 scope (documented, not guessed): a no-ball can carry EITHER bat runs OR
 // missed-contact byes/leg-byes, never both on the same delivery (the real compound
@@ -17,6 +19,12 @@ export function createDeliveryEntry(outcome) {
 
 export function createEventEntry(event, payload = {}) {
   return { id: crypto.randomUUID(), type: 'event', event, timestamp: new Date(), payload }
+}
+
+/** The single primitive for every kind of historical correction — runs, extra, wicket,
+ * striker, bowler, shot, or voiding an event. Never changes log length or entry identity. */
+export function correctEntry(entry, patch) {
+  return entry.type === 'delivery' ? { ...entry, outcome: { ...entry.outcome, ...patch } } : { ...entry, payload: { ...entry.payload, ...patch } }
 }
 
 function emptyBatsmanStat() {
@@ -45,6 +53,10 @@ function emptyInningsState(battingTeamId, bowlingTeamId) {
     fallOfWickets: [],
     partnership: { runs: 0, balls: 0, batsmen: [] },
     penaltyRunsAwardedToBowlingTeam: 0,
+    // Populated when a historical correction leaves the replay in a state it can't safely
+    // resolve on its own (e.g. a substitution event firing against an end that isn't actually
+    // vacant). Never causes a crash or silent corruption — see the two guards below.
+    conflicts: [],
   }
 }
 
@@ -108,7 +120,15 @@ export function getAllowedDismissals(inningsState, illegal) {
   return DISMISSAL_TYPES.map((d) => d.id)
 }
 
-function applyDelivery(state, outcome, meta) {
+function applyDelivery(rawState, outcome, meta) {
+  // A pure "correct the striker" flag, shadowed here (before anything else reads `state`) so
+  // every downstream read — stats, wicket target resolution, rotation, the enriched delivery's
+  // own strikerId/nonStrikerId — picks up the correction automatically instead of needing to
+  // be touched individually.
+  const state = outcome.swapStrikerNonStriker
+    ? { ...rawState, ends: { strikerEnd: rawState.ends.nonStrikerEnd, nonStrikerEnd: rawState.ends.strikerEnd } }
+    : rawState
+
   if (outcome.isDeadBall) {
     return {
       ...state,
@@ -155,7 +175,18 @@ function applyDelivery(state, outcome, meta) {
   if (wicket) {
     next.wickets = state.wickets + 1
     const outId = wicket.type === 'run-out' ? wicket.batsmanOutId : strikerId
-    if (outId) {
+    // A historical correction upstream can shift strike parity enough that a stored run-out
+    // batsmanOutId no longer matches either current end. Silently doing nothing here would
+    // still count the wicket and mark someone out without ever vacating a crease — worse than
+    // the batsman-in case below because it corrupts within this delivery's own fold, not via a
+    // stale downstream event. Flag it instead of guessing which end to clear.
+    const outIdValid = !outId || outId === next.ends.strikerEnd || outId === next.ends.nonStrikerEnd
+    if (!outIdValid) {
+      next.conflicts = [
+        ...state.conflicts,
+        { type: 'wicket-conflict', deliveryId: meta.id, outId, strikerEnd: next.ends.strikerEnd, nonStrikerEnd: next.ends.nonStrikerEnd },
+      ]
+    } else if (outId) {
       const prevStat = next.batsmen[outId] || emptyBatsmanStat()
       next.batsmen = { ...next.batsmen, [outId]: { ...prevStat, out: true, dismissal: wicket } }
       if (next.ends.strikerEnd === outId) next.ends = { ...next.ends, strikerEnd: null }
@@ -194,10 +225,35 @@ function applyDelivery(state, outcome, meta) {
 
 function applyEvent(state, entry) {
   const { event, payload } = entry
-  const eventRecord = { id: entry.id, timestamp: entry.timestamp, event, payload }
+  // Tagged with the same over/ball position a delivery logged right now would get, so the
+  // timeline can show "17.3 — Catch Dropped" consistently with delivery entries.
+  const eventRecord = {
+    id: entry.id,
+    timestamp: entry.timestamp,
+    event,
+    payload,
+    over: Math.floor(state.legalBalls / 6) + 1,
+    ball: (state.legalBalls % 6) + 1,
+  }
+
+  // A corrected/removed wicket upstream can leave this event stale (e.g. the substitute batsman
+  // it brought in was never actually needed). Voiding keeps it visible/struck-through in history
+  // instead of deleting from the middle of the log — deletion would break the length-invariant
+  // the correction preview's pairwise diff relies on.
+  if (payload?.voided) {
+    return { ...state, events: [...state.events, eventRecord] }
+  }
 
   switch (event) {
     case 'batsman-in': {
+      const occupant = state.ends[payload.end]
+      if (occupant && occupant !== payload.playerId) {
+        return {
+          ...state,
+          events: [...state.events, eventRecord],
+          conflicts: [...state.conflicts, { type: 'lineup-conflict', eventId: entry.id, end: payload.end, occupantId: occupant, incomingId: payload.playerId }],
+        }
+      }
       const batsmen = state.batsmen[payload.playerId] ? state.batsmen : { ...state.batsmen, [payload.playerId]: emptyBatsmanStat() }
       return { ...state, ends: { ...state.ends, [payload.end]: payload.playerId }, batsmen, events: [...state.events, eventRecord] }
     }
@@ -259,4 +315,52 @@ export function deriveMatchState(match) {
   }
 
   return { ...match, innings, currentInnings: innings[match.currentInningsIndex] }
+}
+
+function deliverySignature(d) {
+  return `${d.strikerId}|${d.nonStrikerId}|${d.bowlerId}|${d.totalRuns}|${JSON.stringify(d.wicket)}`
+}
+
+function dismissedPlayerId(delivery) {
+  if (!delivery.wicket) return null
+  return delivery.wicket.type === 'run-out' ? delivery.wicket.batsmanOutId : delivery.strikerId
+}
+
+/**
+ * `deriveInningsState` already IS the replay engine — a correction is just "patch one entry,
+ * refold." This wraps that in a before/after pair plus an honest pairwise diff (never a raw
+ * "everything after this index" count, which would overstate corrections that don't actually
+ * change replay, e.g. a wagon-wheel-only edit). Safe because `correctEntry` never changes log
+ * length, so `before.deliveries[i]`/`after.deliveries[i]` stay index-aligned.
+ */
+export function previewCorrection(log, seed, oversLimit, entryId, patch) {
+  const index = log.findIndex((e) => e.id === entryId)
+  if (index === -1) return null
+
+  const before = deriveInningsState(log, seed, oversLimit)
+  const patchedLog = log.slice()
+  patchedLog[index] = correctEntry(patchedLog[index], patch)
+  const after = deriveInningsState(patchedLog, seed, oversLimit)
+
+  let affectedDeliveryCount = 0
+  const dismissedPlayerChanges = []
+  for (let i = 0; i < before.deliveries.length; i++) {
+    const b = before.deliveries[i]
+    const a = after.deliveries[i]
+    if (!a) break
+    if (deliverySignature(b) !== deliverySignature(a)) affectedDeliveryCount += 1
+
+    const bOut = dismissedPlayerId(b)
+    const aOut = dismissedPlayerId(a)
+    if (bOut && aOut && bOut !== aOut) dismissedPlayerChanges.push({ deliveryId: a.id, over: a.over, ball: a.ball, before: bOut, after: aOut })
+  }
+
+  return {
+    before,
+    after,
+    patchedLog,
+    affectedDeliveryCount,
+    conflictDelta: after.conflicts.length - before.conflicts.length,
+    dismissedPlayerChanges,
+  }
 }
