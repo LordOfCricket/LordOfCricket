@@ -13,7 +13,6 @@ export function useAuthPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [staffCode, setStaffCode] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -31,11 +30,6 @@ export function useAuthPage() {
       return
     }
 
-    if (loginAs === 'staff' && !staffCode) {
-      setError('Enter your staff access code.')
-      return
-    }
-
     setSubmitting(true)
     try {
       let user = mode === 'login' ? await login(email, password) : await signup(name, email, password)
@@ -43,7 +37,7 @@ export function useAuthPage() {
       // First time through role hasn't been chosen yet (fresh signup, or a
       // login where role-select was never completed) — honor the tab they picked.
       if (user.role === 'user') {
-        user = await selectRole(loginAs, staffCode)
+        user = await selectRole(loginAs)
       }
 
       navigate(getPostAuthPath(user), { replace: true })
@@ -65,8 +59,6 @@ export function useAuthPage() {
     setEmail,
     password,
     setPassword,
-    staffCode,
-    setStaffCode,
     error,
     submitting,
     handleSubmit,

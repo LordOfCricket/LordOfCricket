@@ -44,8 +44,8 @@ export function AuthProvider({ children }) {
     setStatus('unauthenticated')
   }
 
-  const selectRole = async (role, staffCode) => {
-    const updated = await authApi.selectRole(role, staffCode)
+  const selectRole = async (role) => {
+    const updated = await authApi.selectRole(role)
     setUser(updated)
     return updated
   }

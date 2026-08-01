@@ -15,8 +15,8 @@ export async function fetchMe() {
   return response.data.user
 }
 
-export async function selectRole(role, staffCode) {
-  const response = await api.patch('/auth/role', { role, staffCode })
+export async function selectRole(role) {
+  const response = await api.patch('/auth/role', { role })
   return response.data.user
 }
 

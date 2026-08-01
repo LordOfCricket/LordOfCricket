@@ -1,19 +1,7 @@
-import Button from '../../components/ui/Button.jsx'
-import Input from '../../components/ui/Input.jsx'
 import { useRoleSelect } from '../../hooks/useRoleSelect.js'
 
 export default function RoleSelectPage() {
-  const {
-    name,
-    submitting,
-    error,
-    showStaffCode,
-    staffCode,
-    setStaffCode,
-    choosePlayer,
-    chooseStaff,
-    confirmStaffCode,
-  } = useRoleSelect()
+  const { name, submitting, error, choosePlayer, chooseStaff } = useRoleSelect()
 
   return (
     <main
@@ -42,42 +30,25 @@ export default function RoleSelectPage() {
               </div>
             )}
 
-            {showStaffCode ? (
-              <form onSubmit={confirmStaffCode} className="space-y-6">
-                <h3 className="text-2xl font-bold">🧑‍🍳 Staff Access</h3>
-                <Input
-                  label="Staff Access Code"
-                  type="password"
-                  value={staffCode}
-                  onChange={(e) => setStaffCode(e.target.value)}
-                  placeholder="Provided by your canteen manager"
-                  required
-                />
-                <Button type="submit" disabled={submitting} className="w-full">
-                  {submitting ? 'Please wait…' : 'Continue as Staff'}
-                </Button>
-              </form>
-            ) : (
-              <div className="grid grid-cols-2 gap-6">
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={choosePlayer}
-                  className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
-                >
-                  <h3 className="text-3xl font-bold">👤 Player</h3>
-                </button>
+            <div className="grid grid-cols-2 gap-6">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={choosePlayer}
+                className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                <h3 className="text-3xl font-bold">👤 Player</h3>
+              </button>
 
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={chooseStaff}
-                  className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
-                >
-                  <h3 className="text-3xl font-bold">🧑‍🍳 Staff</h3>
-                </button>
-              </div>
-            )}
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={chooseStaff}
+                className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                <h3 className="text-3xl font-bold">🧑‍🍳 Staff</h3>
+              </button>
+            </div>
           </div>
         </div>
       </section>

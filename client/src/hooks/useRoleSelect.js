@@ -8,14 +8,12 @@ export function useRoleSelect() {
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [showStaffCode, setShowStaffCode] = useState(false)
-  const [staffCode, setStaffCode] = useState('')
 
-  const finish = async (role, code) => {
+  const finish = async (role) => {
     setSubmitting(true)
     setError('')
     try {
-      const updated = await selectRole(role, code)
+      const updated = await selectRole(role)
       navigate(getPostAuthPath(updated), { replace: true })
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to save your choice.')
@@ -24,27 +22,13 @@ export function useRoleSelect() {
   }
 
   const choosePlayer = () => finish('player')
-
-  const chooseStaff = () => setShowStaffCode(true)
-
-  const confirmStaffCode = (e) => {
-    e.preventDefault()
-    if (!staffCode) {
-      setError('Enter your staff access code.')
-      return
-    }
-    finish('staff', staffCode)
-  }
+  const chooseStaff = () => finish('staff')
 
   return {
     name: user?.name,
     submitting,
     error,
-    showStaffCode,
-    staffCode,
-    setStaffCode,
     choosePlayer,
     chooseStaff,
-    confirmStaffCode,
   }
 }

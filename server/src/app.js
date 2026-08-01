@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import routes from './routes/index.js'
 import { notFound, errorHandler } from './middlewares/errorHandler.js'
+import { allowedOrigins } from './config/corsOrigins.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -14,7 +15,7 @@ if (!fs.existsSync(canteenUploadsDir)) {
   fs.mkdirSync(canteenUploadsDir, { recursive: true })
 }
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN, credentials: true }))
+app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use('/uploads', express.static(join(__dirname, '../uploads')))

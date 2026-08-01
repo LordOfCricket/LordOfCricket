@@ -9,9 +9,13 @@ import AdminPartnersPage from '../pages/admin-partners/AdminPartnersPage.jsx'
 import AuthPage from '../pages/auth/AuthPage.jsx'
 import RoleSelectPage from '../pages/role-select/RoleSelectPage.jsx'
 import PlayerTypeSelectPage from '../pages/player-type/PlayerTypeSelectPage.jsx'
+import PlayerDashboardPage from '../pages/player-dashboard/PlayerDashboardPage.jsx'
 import UmpireStatusPage from '../pages/umpire/UmpireStatusPage.jsx'
 import RequireAuth from './RequireAuth.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
+
+// Temporary testing feature
+import UmpireTestingPage from '../pages/testing/UmpireTestingPage.jsx'
 
 // Canteen (merged from the Canteen-Management repo)
 import CanteenMenuPage from '../pages/canteen/menu/menu.jsx'
@@ -31,7 +35,11 @@ const router = createBrowserRouter([
       { path: '/login', element: <AuthPage /> },
       { path: '/role-select', element: <RequireAuth><RoleSelectPage /></RequireAuth> },
       { path: '/player-type', element: <RequireAuth><PlayerTypeSelectPage /></RequireAuth> },
+      { path: '/player/dashboard', element: <RequireAuth><PlayerDashboardPage /></RequireAuth> },
       { path: '/umpire', element: <RequireAuth><UmpireStatusPage /></RequireAuth> },
+
+      // Temporary testing feature
+      { path: '/testing', element: <UmpireTestingPage /> },
 
       // Canteen
       { path: '/canteen', element: <RequireAuth><CanteenEntryRedirect /></RequireAuth> },

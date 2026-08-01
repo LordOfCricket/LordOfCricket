@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, X, LogIn, LogOut, UtensilsCrossed } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 
@@ -67,6 +67,13 @@ export default function Navbar() {
         {/* CTA */}
         <div className="hidden items-center gap-3 lg:flex">
           <Link
+            to="/testing"
+            className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-amber-200 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-400/60 hover:bg-white/10"
+          >
+            <FlaskConical className="h-5 w-5" />
+            Umpire Testing
+          </Link>
+          <Link
             to="/canteen"
             className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-emerald-100 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-white/10"
           >
@@ -121,6 +128,14 @@ export default function Navbar() {
               {link.label}
             </a>
           ))}
+          <Link
+            to="/testing"
+            onClick={() => setIsOpen(false)}
+            className="mt-2 inline-flex items-center justify-center gap-2 rounded-full border border-amber-400/30 bg-white/5 px-5 py-2.5 text-sm font-semibold text-amber-200 transition-all hover:border-amber-400/60 hover:bg-white/10"
+          >
+            <FlaskConical className="h-4 w-4" />
+            Umpire Testing
+          </Link>
           <Link
             to="/canteen"
             onClick={() => setIsOpen(false)}

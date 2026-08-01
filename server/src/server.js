@@ -3,13 +3,14 @@ import http from 'http'
 import { Server } from 'socket.io'
 import app from './app.js'
 import { connectPostgres, connectMongo } from './config/db.js'
+import { allowedOrigins } from './config/corsOrigins.js'
 
 const PORT = process.env.PORT || 5000
 
 const server = http.createServer(app)
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_ORIGIN || true,
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PATCH'],
   },
 })

@@ -63,16 +63,9 @@ export async function me(req, res) {
 
 export async function selectRole(req, res, next) {
   try {
-    const { role, staffCode } = req.body
+    const { role } = req.body
     if (!['player', 'staff'].includes(role)) {
       return res.status(400).json({ message: "role must be 'player' or 'staff'" })
-    }
-
-    if (role === 'staff') {
-      const requiredCode = process.env.STAFF_SIGNUP_CODE
-      if (!requiredCode || staffCode !== requiredCode) {
-        return res.status(403).json({ message: 'Invalid staff access code.' })
-      }
     }
 
     const user = await updateUser(req.user.id, { role })

@@ -4,7 +4,7 @@ export function getPostAuthPath(user) {
   if (user.role === 'player') {
     if (!user.player_type) return '/player-type'
     if (user.player_type === 'umpire') return '/umpire'
-    return '/canteen/menu'
+    return '/player/dashboard'
   }
   return '/role-select'
 }

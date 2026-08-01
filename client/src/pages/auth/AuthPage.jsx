@@ -14,8 +14,6 @@ export default function AuthPage() {
     setEmail,
     password,
     setPassword,
-    staffCode,
-    setStaffCode,
     error,
     submitting,
     handleSubmit,
@@ -107,17 +105,6 @@ export default function AuthPage() {
                 placeholder="Enter your password"
                 required
               />
-
-              {loginAs === 'staff' && (
-                <Input
-                  label="Staff Access Code"
-                  type="password"
-                  value={staffCode}
-                  onChange={(e) => setStaffCode(e.target.value)}
-                  placeholder="Provided by your canteen manager"
-                  required
-                />
-              )}
 
               {error && (
                 <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-5 py-4 text-rose-300">

@@ -10,4 +10,7 @@ export default defineConfig({
   server: {
     allowedHosts: ['lordofcricket.com', 'www.lordofcricket.com'],
   },
+  preview: {
+    allowedHosts: ['lordofcricket.com', 'www.lordofcricket.com'],
+  },
 })
