@@ -66,7 +66,7 @@ export async function updateInningsCache(client, inningsId, cache) {
   return rows[0]
 }
 
-export async function updateInningsStatus(inningsId, status, extra = {}) {
+export async function updateInningsStatus(inningsId, status, extra = {}, client = pool) {
   const setParts = ['status = $2']
   const values = [inningsId, status]
   if (status === 'live' && !extra.skipStartedAt) {
@@ -75,7 +75,7 @@ export async function updateInningsStatus(inningsId, status, extra = {}) {
   if (status === 'completed' || status === 'forfeited' || status === 'declared') {
     setParts.push('completed_at = NOW()')
   }
-  const { rows } = await pool.query(`UPDATE innings SET ${setParts.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`, values)
+  const { rows } = await client.query(`UPDATE innings SET ${setParts.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`, values)
   return rows[0] || null
 }
 

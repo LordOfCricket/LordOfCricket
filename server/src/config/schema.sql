@@ -105,6 +105,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_players_user_id_unique ON players(user_id)
 -- created via self-service (no roster/scoring flow) starts with no role
 -- until they complete their profile, so `role` can no longer be mandatory.
 ALTER TABLE players ALTER COLUMN role DROP NOT NULL;
+-- VARCHAR(20) was too narrow for 'WICKET_KEEPER_BATSMAN' (21 chars).
+ALTER TABLE players ALTER COLUMN role TYPE VARCHAR(30);
 ALTER TABLE players ADD COLUMN IF NOT EXISTS jersey_number SMALLINT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS city VARCHAR(100);
@@ -329,3 +331,34 @@ CREATE TABLE IF NOT EXISTS score_corrections (
 CREATE INDEX IF NOT EXISTS idx_score_corrections_innings ON score_corrections(innings_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_score_corrections_client_action
   ON score_corrections(innings_id, client_action_id) WHERE client_action_id IS NOT NULL;
+
+-- ============================================================================
+-- PHASE 5 — Real match creation + backend-authoritative scoring
+-- ============================================================================
+
+-- toss_winner_id already existed (Phase 1/2); toss_decision is the one
+-- additive column Phase 5 needs so the server (not the client) can derive
+-- which team bats first from the toss result.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS toss_decision VARCHAR(4) CHECK (toss_decision IN ('bat', 'bowl'));
+
+-- ============================================================================
+-- PHASE 6 — Match & innings lifecycle
+-- ============================================================================
+
+-- matches.status gains two more conventional values on top of the existing
+-- upcoming/live/completed (no CHECK constraint existed before, so this is
+-- additive by convention, not by migration): 'completed' now means the match
+-- result is decided but still open to authorized review/correction;
+-- 'finalized' means the official record is locked (see correction.service.js
+-- — that lock moved from checking 'completed' to checking 'finalized').
+--
+-- `result` (existing TEXT column) already covers the human-readable summary
+-- ("Warriors XI won by 4 wickets") — these add the STRUCTURED fields that
+-- stay authoritative even if the text is regenerated later. No `target`
+-- column: target is always innings-1's live (possibly corrected) score + 1,
+-- computed on demand — never cached, so it can never go stale.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner_team_id INTEGER REFERENCES teams(id);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_type VARCHAR(10) CHECK (result_type IN ('WICKETS', 'RUNS', 'TIE', 'NO_RESULT'));
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_margin INTEGER;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMP;

@@ -13,6 +13,7 @@ import umpireRequestRoutes from './umpireRequest.routes.js'
 import meRoutes from './me.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
+import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
 
 const router = Router()
 
@@ -26,6 +27,11 @@ router.use('/innings', inningsScoringRoutes)
 router.use('/india-match', indiaMatchRoutes)
 router.use('/partners', partnerRoutes)
 router.use('/teams', teamRoutes)
+
+// Phase 7 — official career statistics, derived from finalized match history only.
+router.use('/players', playerStatsRoutes)
+router.use('/me', meStatsRoutes)
+router.use('/stats', leaderboardRoutes)
 
 // Site-wide auth (single login for players, staff, umpires)
 router.use('/auth', authRoutes)

@@ -32,3 +32,22 @@ export async function findMatchPlayerById(id) {
   const { rows } = await pool.query('SELECT * FROM match_players WHERE id = $1', [id])
   return rows[0] || null
 }
+
+/** Map<teamId, count> of players marked is_playing_xi for this match — what
+ * Phase 5's "start match" validation needs to check both sides fielded a XI. */
+export async function countPlayingXiByTeam(matchId) {
+  const { rows } = await pool.query(
+    'SELECT team_id, COUNT(*)::int AS count FROM match_players WHERE match_id = $1 AND is_playing_xi = true GROUP BY team_id',
+    [matchId]
+  )
+  return new Map(rows.map((r) => [r.team_id, r.count]))
+}
+
+/** Scalar count for one team — what replay's roster-aware all-out threshold needs. */
+export async function countPlayingXi(matchId, teamId, client = pool) {
+  const { rows } = await client.query(
+    'SELECT COUNT(*)::int AS count FROM match_players WHERE match_id = $1 AND team_id = $2 AND is_playing_xi = true',
+    [matchId, teamId]
+  )
+  return rows[0].count
+}

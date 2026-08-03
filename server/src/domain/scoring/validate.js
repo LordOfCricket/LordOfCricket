@@ -20,9 +20,13 @@ function fail(code, message, details) {
  * @param {string} params.battingTeamId
  * @param {string} params.bowlingTeamId
  * @param {string} params.inningsStatus
+ * @param {boolean} [params.allowCompleted] - Phase 6: correction.service.js sets
+ *   this true — a 'completed' (not yet 'finalized') innings is still open to
+ *   authorized historical correction, only live *recording* requires 'live'.
  */
-export function validateDeliveryInput({ input, state, matchPlayersById, battingTeamId, bowlingTeamId, inningsStatus }) {
-  if (inningsStatus !== 'live') {
+export function validateDeliveryInput({ input, state, matchPlayersById, battingTeamId, bowlingTeamId, inningsStatus, allowCompleted = false }) {
+  const statusAllowed = inningsStatus === 'live' || (allowCompleted && inningsStatus === 'completed')
+  if (!statusAllowed) {
     fail(CODES.INVALID_INNINGS_STATE, `Cannot record a delivery while innings status is '${inningsStatus}'.`, { inningsStatus })
   }
 
@@ -143,9 +147,10 @@ export function validateDeliveryInput({ input, state, matchPlayersById, battingT
  * @param {string} params.battingTeamId
  * @param {string} params.bowlingTeamId
  * @param {string} params.inningsStatus
+ * @param {boolean} [params.allowCompleted] - see validateDeliveryInput.
  */
-export function validateEventInput({ event, state, matchPlayersById, battingTeamId, bowlingTeamId, inningsStatus }) {
-  if (inningsStatus === 'completed' || inningsStatus === 'forfeited') {
+export function validateEventInput({ event, state, matchPlayersById, battingTeamId, bowlingTeamId, inningsStatus, allowCompleted = false }) {
+  if (inningsStatus === 'forfeited' || (inningsStatus === 'completed' && !allowCompleted)) {
     fail(CODES.INVALID_INNINGS_STATE, `Cannot record an event while innings status is '${inningsStatus}'.`, { inningsStatus })
   }
 

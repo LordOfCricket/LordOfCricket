@@ -333,8 +333,15 @@ export function replayInnings(log, seed, format) {
     ballInOver: state.legalBalls % ballsPerOver,
     ballsPerOver,
     pendingBatsmanSelection: !state.ends.strikerEnd ? 'strikerEnd' : !state.ends.nonStrikerEnd ? 'nonStrikerEnd' : null,
-    isAllOut: state.wickets >= 10,
+    // All-out threshold respects the actual participating batting roster
+    // (Phase 6: LOC supports non-11-a-side local matches) — falls back to the
+    // classic 10 only when the caller doesn't supply a roster size, which
+    // keeps every hand-authored domain test unaffected.
+    isAllOut: state.wickets >= (format?.battingTeamPlayingXiCount != null ? format.battingTeamPlayingXiCount - 1 : 10),
     isOversComplete: format?.oversPerInnings != null && state.legalBalls >= format.oversPerInnings * ballsPerOver,
+    // A chase innings only — target is null for innings 1. Completes the
+    // instant the target is reached, not at the end of the over/innings.
+    isTargetChased: format?.target != null && state.runs >= format.target,
   }
 }
 
@@ -363,7 +370,21 @@ export function previewCorrection(log, seed, format, entryId, patch) {
   const before = replayInnings(log, seed, format)
   const patchedLog = log.slice()
   const target = patchedLog[index]
-  patchedLog[index] = target.kind === 'delivery' ? { ...target, ...patch } : { ...target, payload: { ...target.payload, ...patch } }
+  if (target.kind === 'delivery') {
+    patchedLog[index] = { ...target, ...patch }
+  } else {
+    // `voided` lives on the event entry itself (mirrors deliveries.voided),
+    // never inside payload — everything else in `patch` is event-specific data
+    // and belongs in payload. Splitting them here is what makes "void this
+    // fielding event" actually take effect in replay (applyEvent only checks
+    // entry.voided), instead of silently becoming inert payload.voided.
+    const { voided, ...payloadPatch } = patch
+    patchedLog[index] = {
+      ...target,
+      ...(voided !== undefined ? { voided } : {}),
+      payload: { ...target.payload, ...payloadPatch },
+    }
+  }
   const after = replayInnings(patchedLog, seed, format)
 
   let affectedDeliveryCount = 0

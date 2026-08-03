@@ -19,3 +19,8 @@ export async function fetchTeam(id) {
   const response = await api.get(`/teams/${id}`)
   return response.data.team
 }
+
+export async function fetchTeamPlayers(id) {
+  const response = await api.get(`/teams/${id}/players`)
+  return response.data.players
+}

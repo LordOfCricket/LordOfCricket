@@ -20,6 +20,7 @@ function serializeState({ innings, state, format }) {
     isFreeHitNext: state.isFreeHitNext,
     isAllOut: state.isAllOut,
     isOversComplete: state.isOversComplete,
+    isTargetChased: state.isTargetChased,
     pendingBatsmanSelection: state.pendingBatsmanSelection,
     batsmen: state.batsmen,
     bowlers: state.bowlers,
@@ -27,6 +28,15 @@ function serializeState({ innings, state, format }) {
     fallOfWickets: state.fallOfWickets,
     lastWicket: getLastWicket(state.fallOfWickets),
     conflicts: state.conflicts,
+  }
+}
+
+export async function listInnings(req, res, next) {
+  try {
+    const innings = await scoringService.listInningsByMatch(req.params.matchId)
+    res.json({ innings })
+  } catch (err) {
+    next(err)
   }
 }
 

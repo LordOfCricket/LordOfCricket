@@ -16,7 +16,7 @@ import * as wicketRepo from '../repositories/wicket.repository.js'
 import * as wagonWheelRepo from '../repositories/wagonWheel.repository.js'
 import * as matchPlayerRepo from '../repositories/matchPlayer.repository.js'
 import * as correctionRepo from '../repositories/correction.repository.js'
-import { loadFormat, seedFrom } from './scoring.service.js'
+import { loadFormat, seedFrom, syncInningsStatusAfterCorrection, recomputeMatchResultIfDecided } from './scoring.service.js'
 
 function snapshotDelivery(entry) {
   return {
@@ -57,6 +57,10 @@ async function findTarget(log, targetType, targetId) {
   return log.find((e) => e.id === targetEntryId && e.kind === targetType)
 }
 
+// allowCompleted: true — a correction is never blocked merely because the
+// innings already finished (Phase 6 Part 23: 'completed' still allows
+// authorized review). The only hard lock is 'finalized', already checked
+// before this is ever reached (see the MATCH_LOCKED check in applyCorrection).
 function validatePatchedEntry({ targetType, patchedEntry, state, matchPlayersById, innings }) {
   if (targetType === 'delivery') {
     if (patchedEntry.voided) return // a voided delivery is excluded from scoring — nothing to validate
@@ -67,6 +71,7 @@ function validatePatchedEntry({ targetType, patchedEntry, state, matchPlayersByI
       battingTeamId: innings.batting_team_id,
       bowlingTeamId: innings.bowling_team_id,
       inningsStatus: innings.status,
+      allowCompleted: true,
     })
   } else {
     validateEventInput({
@@ -76,6 +81,7 @@ function validatePatchedEntry({ targetType, patchedEntry, state, matchPlayersByI
       battingTeamId: innings.batting_team_id,
       bowlingTeamId: innings.bowling_team_id,
       inningsStatus: innings.status,
+      allowCompleted: true,
     })
   }
 }
@@ -90,7 +96,7 @@ export async function previewCorrection({ inningsId, targetType, targetId, patch
   const innings = await inningsRepo.findInningsById(inningsId)
   if (!innings) return null
 
-  const format = await loadFormat(innings.match_id)
+  const format = await loadFormat(innings.match_id, { battingTeamId: innings.batting_team_id, inningsNumber: innings.innings_number })
   const seed = seedFrom(innings)
   const log = await inningsRepo.loadInningsLog(inningsId)
   const target = await findTarget(log, targetType, targetId)
@@ -145,9 +151,11 @@ export async function applyCorrection({ inningsId, targetType, targetId, patch, 
     const innings = await inningsRepo.lockInningsForUpdate(client, inningsId)
     if (!innings) throw new ScoringError(CODES.INVALID_INNINGS_STATE, 'Innings not found.', { inningsId })
 
+    // Locked only once FINALIZED (Phase 6) — a merely 'completed' match still
+    // allows authorized review/correction, with the result recomputed below.
     const matchStatus = await getMatchStatus(innings.match_id, client)
-    if (matchStatus === 'completed') {
-      throw new ScoringError(CODES.MATCH_LOCKED, 'This match is completed; historical corrections are locked.', { matchId: innings.match_id })
+    if (matchStatus === 'finalized') {
+      throw new ScoringError(CODES.MATCH_LOCKED, 'This match is finalized; historical corrections are locked.', { matchId: innings.match_id })
     }
 
     if (clientActionId) {
@@ -191,7 +199,12 @@ export async function applyCorrection({ inningsId, targetType, targetId, patch, 
 
       await wicketRepo.deleteWicketByDelivery(client, target.id)
       if (patchedEntry.wicket) {
-        const afterTargetDelivery = result.after.deliveries[result.index]
+        // NOT result.after.deliveries[result.index] — result.index positions the
+        // target within the merged delivery+event log, but deliveries here is a
+        // deliveries-only array, so that index is only correct by coincidence
+        // when no event precedes the target in the log (e.g. never, once the
+        // innings has opening batsman-in events before ball one).
+        const afterTargetDelivery = result.after.deliveries.find((d) => d.id === target.id)
         const dismissedMatchPlayerId =
           patchedEntry.wicket.type === 'run-out' ? patchedEntry.wicket.dismissedMatchPlayerId : afterTargetDelivery.strikerMatchPlayerId
         await wicketRepo.insertWicket(client, target.id, { ...patchedEntry.wicket, dismissedMatchPlayerId })
@@ -225,6 +238,17 @@ export async function applyCorrection({ inningsId, targetType, targetId, patch, 
       bowlerMatchPlayerId: lastDelivery ? lastDelivery.bowlerMatchPlayerId : null,
       isFreeHitNext: result.after.isFreeHitNext,
     })
+
+    // 2b. Phase 6: a correction can flip this innings' own completion state in
+    // either direction, and — independently — can change a match result that
+    // was already decided (e.g. correcting innings 1 changes the target).
+    // Known limitation: if innings 2 has already been fully played out and a
+    // correction to innings 1 retroactively changes the target, the WINNER/
+    // MARGIN are still recomputed correctly from final totals, but the
+    // ball-by-ball log for innings 2 is not retroactively trimmed/extended —
+    // it keeps whatever was actually, historically bowled.
+    await syncInningsStatusAfterCorrection(client, innings, result.after)
+    await recomputeMatchResultIfDecided(client, innings.match_id)
 
     // 3. Version bump + immutable audit row — both or neither.
     const bumped = await inningsRepo.bumpVersion(client, inningsId, innings.version)

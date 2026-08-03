@@ -16,6 +16,16 @@ import UmpireStatusPage from '../pages/umpire/UmpireStatusPage.jsx'
 import RequireAuth from './RequireAuth.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
 
+// Phase 5 — real, backend-authoritative match scoring
+import MatchSetupPage from '../pages/match-setup/MatchSetupPage.jsx'
+import MatchRosterPage from '../pages/match-setup/MatchRosterPage.jsx'
+import RealScorerPage from '../pages/scorer/RealScorerPage.jsx'
+
+// Phase 8 — player discovery, public profiles, leaderboards (all public reads)
+import PlayersDiscoveryPage from '../pages/players/PlayersDiscoveryPage.jsx'
+import PublicPlayerProfilePage from '../pages/players/PublicPlayerProfilePage.jsx'
+import LeaderboardsPage from '../pages/leaderboards/LeaderboardsPage.jsx'
+
 // Temporary testing feature
 import UmpireTestingPage from '../pages/testing/UmpireTestingPage.jsx'
 
@@ -41,6 +51,16 @@ const router = createBrowserRouter([
       { path: '/profile', element: <RequireAuth><ProfilePage /></RequireAuth> },
       { path: '/profile/edit', element: <RequireAuth><ProfileEditPage /></RequireAuth> },
       { path: '/umpire', element: <RequireAuth><UmpireStatusPage /></RequireAuth> },
+
+      // Phase 8 — player discovery, public profiles, leaderboards (public reads, no auth wall)
+      { path: '/players', element: <PlayersDiscoveryPage /> },
+      { path: '/players/:publicPlayerId', element: <PublicPlayerProfilePage /> },
+      { path: '/leaderboards', element: <LeaderboardsPage /> },
+
+      // Phase 5 — real match scoring
+      { path: '/matches/new', element: <RequireAuth><MatchSetupPage /></RequireAuth> },
+      { path: '/matches/:matchId/setup', element: <RequireAuth><MatchRosterPage /></RequireAuth> },
+      { path: '/matches/:matchId/score', element: <RequireAuth><RealScorerPage /></RequireAuth> },
 
       // Temporary testing feature
       { path: '/testing', element: <UmpireTestingPage /> },

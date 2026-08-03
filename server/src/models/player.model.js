@@ -3,11 +3,11 @@ import { generatePublicId } from '../utils/publicId.js'
 
 const MAX_PUBLIC_ID_ATTEMPTS = 5
 
-export async function createPlayer({ name, teamId, role, battingStyle = null, bowlingStyle = null, userId = null }) {
+export async function createPlayer({ name, teamId, role, battingStyle = null, bowlingStyle = null, userId = null }, client = pool) {
   for (let attempt = 0; attempt < MAX_PUBLIC_ID_ATTEMPTS; attempt++) {
     const publicPlayerId = generatePublicId('CVP')
     try {
-      const { rows } = await pool.query(
+      const { rows } = await client.query(
         `INSERT INTO players (name, team_id, role, batting_style, bowling_style, user_id, public_player_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,

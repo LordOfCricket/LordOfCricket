@@ -11,6 +11,8 @@ import {
   Settings,
   FlaskConical,
   LogOut,
+  Search,
+  Trophy,
 } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
@@ -21,6 +23,8 @@ const MENU_LINKS = [
   { label: 'My Teams', to: '/player/dashboard#teams', icon: Users },
   { label: 'My Matches', to: '/player/dashboard#matches', icon: CalendarDays },
   { label: 'My Statistics', to: '/player/dashboard#career', icon: BarChart3 },
+  { label: 'Players', to: '/players', icon: Search },
+  { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
   { label: 'Canteen', to: '/canteen', icon: UtensilsCrossed },
   { label: 'Settings', to: '/profile/edit', icon: Settings },
 ]

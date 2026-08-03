@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
+import { useCareerStats } from '../../hooks/useCareerStats.js'
 import { fetchTeam } from '../../services/playerApi.js'
 import Avatar from '../../components/ui/Avatar.jsx'
 import Button from '../../components/ui/Button.jsx'
-import { roleLabel, battingStyleLabel, bowlingStyleLabel } from '../../models/player.model.js'
+import { roleLabel, battingStyleLabel, bowlingStyleLabel, statPriorityForRole } from '../../models/player.model.js'
+import { StatsLoadingGrid, StatsErrorState, StatsEmptyState } from '../../components/stats/StatsStates.jsx'
+import BattingStatsPanel from '../../components/stats/BattingStatsPanel.jsx'
+import BowlingStatsPanel from '../../components/stats/BowlingStatsPanel.jsx'
+import FieldingStatsPanel from '../../components/stats/FieldingStatsPanel.jsx'
+import MatchHistoryPanel from '../../components/stats/MatchHistoryPanel.jsx'
+import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
 
 const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'TEAMS']
 
@@ -18,12 +25,22 @@ function Field({ label, value }) {
   )
 }
 
-function EmptyStatsState({ label }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-sm text-slate-300">
-      {label} will appear after your first official recorded match.
-    </div>
-  )
+// Batting panel is visually primary unless the player's role says otherwise
+// (Part 46: role changes presentation emphasis, never which stats are true).
+function OverviewPanels({ role, matches, batting, bowling }) {
+  const primary = statPriorityForRole(role)[0]
+  const bowlingFirst = primary === 'wickets' || primary === 'economy'
+  const panels = [
+    <div key="batting">
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Batting</p>
+      <BattingStatsPanel matches={matches} batting={batting} />
+    </div>,
+    <div key="bowling">
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Bowling</p>
+      <BowlingStatsPanel bowling={bowling} />
+    </div>,
+  ]
+  return <div className="space-y-6">{bowlingFirst ? panels.slice().reverse() : panels}</div>
 }
 
 export default function ProfilePage() {
@@ -31,6 +48,7 @@ export default function ProfilePage() {
   const [team, setTeam] = useState(null)
   const [tab, setTab] = useState('OVERVIEW')
   const navigate = useNavigate()
+  const { stats, loading, error, retry, loadMoreMatchHistory } = useCareerStats()
 
   useEffect(() => {
     if (!player) refreshPlayer()
@@ -112,11 +130,30 @@ export default function ProfilePage() {
         </div>
 
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
-          {tab === 'OVERVIEW' && <EmptyStatsState label="A career overview" />}
-          {tab === 'BATTING' && <EmptyStatsState label="Batting statistics" />}
-          {tab === 'BOWLING' && <EmptyStatsState label="Bowling statistics" />}
-          {tab === 'FIELDING' && <EmptyStatsState label="Fielding statistics" />}
-          {tab === 'MATCHES' && <EmptyStatsState label="Match history" />}
+          {tab !== 'TEAMS' && loading && <StatsLoadingGrid tiles={tab === 'FIELDING' ? 3 : 8} />}
+          {tab !== 'TEAMS' && !loading && error && <StatsErrorState message={error} onRetry={retry} />}
+          {tab !== 'TEAMS' && !loading && !error && stats && stats.career.matches === 0 && (
+            <StatsEmptyState label={tab === 'OVERVIEW' ? 'Your career overview' : `Your ${tab.toLowerCase()} statistics`} />
+          )}
+          {tab !== 'TEAMS' && !loading && !error && stats && stats.career.matches > 0 && (
+            <>
+              {tab === 'OVERVIEW' && (
+                <div className="space-y-6">
+                  <OverviewPanels role={player?.role} matches={stats.career.matches} batting={stats.career.batting} bowling={stats.career.bowling} />
+                  {stats.recentForm.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Recent Form</p>
+                      <RecentFormStrip performances={stats.recentForm} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/setup`)} />
+                    </div>
+                  )}
+                </div>
+              )}
+              {tab === 'BATTING' && <BattingStatsPanel matches={stats.career.matches} batting={stats.career.batting} />}
+              {tab === 'BOWLING' && <BowlingStatsPanel bowling={stats.career.bowling} />}
+              {tab === 'FIELDING' && <FieldingStatsPanel fielding={stats.career.fielding} />}
+              {tab === 'MATCHES' && <MatchHistoryPanel matchHistory={stats.matchHistory} onLoadMore={loadMoreMatchHistory} />}
+            </>
+          )}
           {tab === 'TEAMS' &&
             (displayTeam ? (
               <div className="flex items-center gap-4 rounded-2xl bg-white/5 px-4 py-4">

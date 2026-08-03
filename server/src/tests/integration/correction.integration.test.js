@@ -435,13 +435,15 @@ test('undo correction: restores prior state as a new audited row, original row u
   }
 })
 
-test('completed match: corrections are locked, database untouched', async () => {
+test('finalized match: corrections are locked, database untouched', async () => {
   const fx = await createFixture()
   try {
     await fx.seatOpeners()
     const [d1] = await recordRuns(fx, [2])
     const version = (await scoringService.getInningsState(fx.inningsId)).innings.version
-    await pool.query("UPDATE matches SET status = 'completed' WHERE id = $1", [fx.matchId])
+    // Phase 6: the correction lock moved from 'completed' (still reviewable)
+    // to 'finalized' (the official record locked) — see correction.service.js.
+    await pool.query("UPDATE matches SET status = 'finalized' WHERE id = $1", [fx.matchId])
 
     await assert.rejects(
       () =>
@@ -460,6 +462,148 @@ test('completed match: corrections are locked, database untouched', async () => 
 
     const { rows } = await pool.query('SELECT bat_runs FROM deliveries WHERE id = $1', [d1])
     assert.equal(rows[0].bat_runs, 2)
+  } finally {
+    await fx.cleanup()
+  }
+})
+
+test('void delivery: an accidental extra tap is excluded from scoring but stays visible in the audit trail', async () => {
+  const fx = await createFixture()
+  try {
+    await fx.seatOpeners()
+    const [d1, d2] = await recordRuns(fx, [1, 4]) // d2 was accidentally recorded twice by the scorer
+    const version = (await scoringService.getInningsState(fx.inningsId)).innings.version
+    const beforeState = await scoringService.getInningsState(fx.inningsId)
+
+    const applied = await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'delivery',
+      targetId: d2,
+      patch: { voided: true },
+      reasonCode: 'ACCIDENTAL_DELIVERY',
+      note: 'Scorer tapped 4 twice by accident',
+      expectedVersion: version,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+    assert.equal(applied.correction.reason_code, 'ACCIDENTAL_DELIVERY')
+
+    const state = await scoringService.getInningsState(fx.inningsId)
+    assert.equal(state.state.runs, beforeState.state.runs - 4, 'voided delivery no longer contributes to the score')
+    assert.equal(state.state.legalBalls, beforeState.state.legalBalls - 1, 'voided delivery no longer counts as a legal ball')
+
+    // Row is preserved, not deleted — traceable in the timeline as voided.
+    const { rows } = await pool.query('SELECT id, voided, bat_runs FROM deliveries WHERE id = $1', [d2])
+    assert.equal(rows[0].voided, true)
+    assert.equal(rows[0].bat_runs, 4, 'the physical entry itself is untouched, only excluded from scoring')
+
+    // d1 is unaffected.
+    const d1Row = await pool.query('SELECT bat_runs, voided FROM deliveries WHERE id = $1', [d1])
+    assert.equal(d1Row.rows[0].bat_runs, 1)
+    assert.equal(d1Row.rows[0].voided, false)
+  } finally {
+    await fx.cleanup()
+  }
+})
+
+test('wicket correction: adding a wicket to a previously-clean delivery, then removing it again', async () => {
+  const fx = await createFixture()
+  try {
+    await fx.seatOpeners()
+    const [d1] = await recordRuns(fx, [0]) // recorded as a dot, actually a bowled wicket
+    const version1 = (await scoringService.getInningsState(fx.inningsId)).innings.version
+
+    const withWicket = await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'delivery',
+      targetId: d1,
+      patch: { wicket: { type: 'bowled' } },
+      reasonCode: 'WRONG_WICKET',
+      expectedVersion: version1,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+    assert.equal(withWicket.state.wickets, 1)
+
+    const wicketRow = await pool.query('SELECT dismissal_type, dismissed_match_player_id FROM wickets WHERE delivery_id = $1', [d1])
+    assert.equal(wicketRow.rows[0].dismissal_type, 'bowled')
+    assert.equal(wicketRow.rows[0].dismissed_match_player_id, fx.rahul, 'derived dismissed player is whoever was on strike')
+    assert.equal(withWicket.state.bowlers[fx.bowler1].wickets, 1, 'bowled is bowler-credited')
+
+    // Now remove it again — the scorer realizes it was never actually a wicket.
+    const version2 = withWicket.version
+    const withoutWicket = await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'delivery',
+      targetId: d1,
+      patch: { wicket: null },
+      reasonCode: 'WRONG_WICKET',
+      expectedVersion: version2,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+    assert.equal(withoutWicket.state.wickets, 0)
+    assert.equal(withoutWicket.state.bowlers[fx.bowler1].wickets, 0)
+
+    const wicketRowAfter = await pool.query('SELECT COUNT(*)::int AS c FROM wickets WHERE delivery_id = $1', [d1])
+    assert.equal(wicketRowAfter.rows[0].c, 0, 'wicket row removed entirely, not just nulled out')
+  } finally {
+    await fx.cleanup()
+  }
+})
+
+test('fielding event correction: a catch-dropped event can be added, corrected, and removed without touching scoring', async () => {
+  const fx = await createFixture()
+  try {
+    await fx.seatOpeners()
+    await recordRuns(fx, [1])
+    const version1 = (await scoringService.getInningsState(fx.inningsId)).innings.version
+
+    const eventResult = await scoringService.recordEvent({
+      inningsId: fx.inningsId,
+      expectedVersion: version1,
+      clientActionId: randomUUID(),
+      event: { eventType: 'catch-dropped', payload: { fielderMatchPlayerId: fx.bowler1 } },
+    })
+    const eventId = eventResult.event.id
+
+    // Correct which fielder actually dropped it.
+    const version2 = eventResult.version
+    const corrected = await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'event',
+      targetId: eventId,
+      patch: { fielderMatchPlayerId: fx.bowler2 },
+      reasonCode: 'WRONG_FIELDER',
+      expectedVersion: version2,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+    assert.equal(corrected.correction.reason_code, 'WRONG_FIELDER')
+
+    const eventRow = await pool.query('SELECT payload, voided FROM match_events WHERE id = $1', [eventId])
+    assert.equal(eventRow.rows[0].payload.fielderMatchPlayerId, fx.bowler2)
+    assert.equal(eventRow.rows[0].voided, false)
+
+    // Scoring state is completely unaffected by a fielding-event-only correction.
+    const state = await scoringService.getInningsState(fx.inningsId)
+    assert.equal(state.state.runs, 1)
+
+    // Remove it entirely (it never happened) by voiding the event.
+    const corrected2 = await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'event',
+      targetId: eventId,
+      patch: { voided: true },
+      reasonCode: 'OTHER',
+      note: 'Catch-dropped event recorded in error',
+      expectedVersion: corrected.version,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+    const eventRowAfter = await pool.query('SELECT voided FROM match_events WHERE id = $1', [eventId])
+    assert.equal(eventRowAfter.rows[0].voided, true)
+    assert.equal(corrected2.version, corrected.version + 1)
   } finally {
     await fx.cleanup()
   }

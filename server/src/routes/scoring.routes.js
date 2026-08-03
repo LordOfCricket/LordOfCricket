@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireAuth, requireScorer } from '../middlewares/auth.js'
 import {
   createInnings,
+  listInnings,
   addMatchPlayer,
   listMatchPlayers,
   getInningsState,
@@ -16,6 +17,7 @@ import { previewCorrection, applyCorrection, listCorrections, undoCorrection } f
 export const matchScoringRoutes = Router()
 matchScoringRoutes.get('/:matchId/match-players', listMatchPlayers)
 matchScoringRoutes.post('/:matchId/match-players', requireAuth, requireScorer, addMatchPlayer)
+matchScoringRoutes.get('/:matchId/innings', listInnings)
 matchScoringRoutes.post('/:matchId/innings', requireAuth, requireScorer, createInnings)
 
 // Mounted at /api/innings

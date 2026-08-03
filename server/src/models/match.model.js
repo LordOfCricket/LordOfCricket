@@ -1,13 +1,28 @@
 import { pool } from '../config/db.js'
 
-export async function createMatch({ teamAId, teamBId, venue, matchDate, status = 'upcoming' }) {
+export async function createMatch({ teamAId, teamBId, venue, matchDate, status = 'upcoming', oversPerInnings = null, ballsPerOver = 6, rules = {} }) {
   const { rows } = await pool.query(
-    `INSERT INTO matches (team_a_id, team_b_id, venue, match_date, status)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO matches (team_a_id, team_b_id, venue, match_date, status, overs_per_innings, balls_per_over, rules)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [teamAId, teamBId, venue, matchDate, status]
+    [teamAId, teamBId, venue, matchDate, status, oversPerInnings, ballsPerOver, rules]
   )
   return rows[0]
+}
+
+export async function findMatchByIdWithTeams(id) {
+  const { rows } = await pool.query(
+    `SELECT
+       m.*,
+       ta.name AS team_a_name, ta.short_name AS team_a_short, ta.logo_url AS team_a_logo,
+       tb.name AS team_b_name, tb.short_name AS team_b_short, tb.logo_url AS team_b_logo
+     FROM matches m
+     JOIN teams ta ON ta.id = m.team_a_id
+     JOIN teams tb ON tb.id = m.team_b_id
+     WHERE m.id = $1`,
+    [id]
+  )
+  return rows[0] || null
 }
 
 export async function findMatchById(id) {
@@ -72,12 +87,12 @@ export async function findMatchesByStatus(status) {
   return rows
 }
 
-export async function updateMatch(id, fields) {
+export async function updateMatch(id, fields, client = pool) {
   const keys = Object.keys(fields)
   if (keys.length === 0) return findMatchById(id)
 
   const setClause = keys.map((key, i) => `${key} = $${i + 2}`).join(', ')
-  const { rows } = await pool.query(
+  const { rows } = await client.query(
     `UPDATE matches SET ${setClause} WHERE id = $1 RETURNING *`,
     [id, ...keys.map((key) => fields[key])]
   )
