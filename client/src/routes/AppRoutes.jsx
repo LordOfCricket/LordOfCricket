@@ -26,6 +26,9 @@ import PlayersDiscoveryPage from '../pages/players/PlayersDiscoveryPage.jsx'
 import PublicPlayerProfilePage from '../pages/players/PublicPlayerProfilePage.jsx'
 import LeaderboardsPage from '../pages/leaderboards/LeaderboardsPage.jsx'
 
+// Phase 9 — public match summary/scorecard (public read, no auth wall)
+import MatchSummaryPage from '../pages/match-summary/MatchSummaryPage.jsx'
+
 // Temporary testing feature
 import UmpireTestingPage from '../pages/testing/UmpireTestingPage.jsx'
 
@@ -56,6 +59,9 @@ const router = createBrowserRouter([
       { path: '/players', element: <PlayersDiscoveryPage /> },
       { path: '/players/:publicPlayerId', element: <PublicPlayerProfilePage /> },
       { path: '/leaderboards', element: <LeaderboardsPage /> },
+
+      // Phase 9 — public match summary/scorecard
+      { path: '/matches/:matchId/summary', element: <MatchSummaryPage /> },
 
       // Phase 5 — real match scoring
       { path: '/matches/new', element: <RequireAuth><MatchSetupPage /></RequireAuth> },

@@ -35,7 +35,7 @@ export default function MatchHistoryPanel({ matchHistory, onLoadMore }) {
           <button
             type="button"
             key={perf.matchId}
-            onClick={() => navigate(`/matches/${perf.matchId}/setup`)}
+            onClick={() => navigate(`/matches/${perf.matchId}/summary`)}
             className="flex w-full flex-col gap-2 rounded-2xl bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>

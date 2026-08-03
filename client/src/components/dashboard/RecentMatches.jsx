@@ -22,7 +22,7 @@ export default function RecentMatches() {
           </div>
         )}
         {!loading && !error && stats && stats.recentForm.length > 0 && (
-          <RecentFormStrip performances={stats.recentForm} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/setup`)} />
+          <RecentFormStrip performances={stats.recentForm} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/summary`)} />
         )}
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { findFeaturedMatch, findAllMatchesWithTeams, findMatchByIdWithTeams } from '../models/match.model.js'
 import * as matchService from '../services/match.service.js'
+import * as matchSummaryService from '../services/matchSummary.service.js'
 
 export async function getFeaturedMatch(req, res, next) {
   try {
@@ -60,6 +61,17 @@ export async function finalizeMatch(req, res, next) {
   try {
     const match = await matchService.finalizeMatch(req.params.id)
     res.json({ match })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Phase 9 — public match summary/scorecard read model. No auth: consistent
+// with GET /matches and GET /matches/:id's existing public-read posture.
+export async function getMatchSummary(req, res, next) {
+  try {
+    const summary = await matchSummaryService.getMatchSummary(req.params.id)
+    res.json(summary)
   } catch (err) {
     next(err)
   }

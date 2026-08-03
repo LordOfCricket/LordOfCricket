@@ -47,6 +47,13 @@ function emptyInningsState(seed) {
     bowlers: {},
     fallOfWickets: [],
     partnership: { runs: 0, balls: 0, batsmen: [] },
+    // Completed partnerships only (the CURRENT/ongoing one stays in
+    // `partnership` above, unchanged from its original v1 shape — every
+    // existing consumer of `state.partnership` is unaffected). Closed out in
+    // the wicket branch of applyDelivery, right where the current partnership
+    // is already reset — same fold, same moment, no second derivation of
+    // "did the pair change" anywhere else (Phase 9 Part 65).
+    partnerships: [],
     penaltyRunsAwardedToBowlingTeam: 0,
     // Populated when a historical correction leaves the replay unable to safely
     // resolve something on its own (e.g. a stored run-out dismissed-player no
@@ -171,6 +178,19 @@ function applyDelivery(rawState, input, meta, ballsPerOver) {
 
   if (wicket) {
     next.wickets = state.wickets + 1
+    // Close out the partnership that was batting BEFORE this ball (the ball
+    // on which a wicket falls has never counted toward either the closing or
+    // the next partnership — see the reset below, unchanged since v1). Uses
+    // `state.ends` (pre-this-delivery, but post any swap-striker remap at the
+    // top of this function) rather than `state.partnership.batsmen`, which can
+    // still be empty on a wicket-off-the-very-first-ball edge case.
+    const closingPair = [state.ends.strikerEnd, state.ends.nonStrikerEnd].filter(Boolean)
+    if (closingPair.length > 0) {
+      next.partnerships = [
+        ...state.partnerships,
+        { batsmen: closingPair, runs: state.partnership.runs, balls: state.partnership.balls, endWicketNumber: next.wickets },
+      ]
+    }
     // Authoritative only for run-out (the scorer must say which end) — every
     // other dismissal type always attributes to whoever is on strike right now.
     const outId = wicket.type === 'run-out' ? wicket.dismissedMatchPlayerId : strikerId
@@ -349,7 +369,9 @@ function deliverySignature(d) {
   return `${d.strikerMatchPlayerId}|${d.nonStrikerMatchPlayerId}|${d.bowlerMatchPlayerId}|${d.totalRuns}|${d.voided}|${JSON.stringify(d.wicket)}`
 }
 
-function dismissedPlayerId(delivery) {
+// Exported so read models (Phase 9 match summary) can find "which delivery
+// dismissed this batter" without re-deriving this mapping a second time.
+export function dismissedPlayerId(delivery) {
   if (!delivery.wicket) return null
   return delivery.wicket.type === 'run-out' ? delivery.wicket.dismissedMatchPlayerId : delivery.strikerMatchPlayerId
 }

@@ -144,7 +144,7 @@ export default function PublicPlayerProfilePage() {
                       {stats.recentForm.length > 0 && (
                         <div>
                           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Recent Form</p>
-                          <RecentFormStrip performances={stats.recentForm} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/setup`)} />
+                          <RecentFormStrip performances={stats.recentForm} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/summary`)} />
                         </div>
                       )}
                     </div>
