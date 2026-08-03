@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 const STATUS_BADGE = {
   upcoming: { text: 'Upcoming', className: 'bg-sky-500/15 text-sky-200' },
   live: { text: 'Live', className: 'bg-rose-500/15 text-rose-200 animate-pulse' },
@@ -14,7 +16,7 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function MatchHero({ summary }) {
+export default function MatchHero({ summary, liveScore = null }) {
   const { match, teams, innings, result } = summary
   const badge = statusBadge(match)
 
@@ -26,7 +28,13 @@ export default function MatchHero({ summary }) {
       </div>
 
       <h1 className="mt-3 text-xl font-extrabold text-white sm:text-2xl">
-        {teams.teamA.name} <span className="text-slate-400">vs</span> {teams.teamB.name}
+        <Link to={`/teams/${teams.teamA.id}`} className="hover:text-emerald-300 hover:underline">
+          {teams.teamA.name}
+        </Link>{' '}
+        <span className="text-slate-400">vs</span>{' '}
+        <Link to={`/teams/${teams.teamB.id}`} className="hover:text-emerald-300 hover:underline">
+          {teams.teamB.name}
+        </Link>
       </h1>
 
       {innings.length > 0 && (
@@ -37,20 +45,28 @@ export default function MatchHero({ summary }) {
             if (!latest) {
               return (
                 <div key={team.id} className="rounded-2xl bg-white/5 px-4 py-3">
-                  <p className="text-sm font-semibold text-white">{team.name}</p>
+                  <Link to={`/teams/${team.id}`} className="text-sm font-semibold text-white hover:text-emerald-300 hover:underline">
+                    {team.name}
+                  </Link>
                   <p className="text-xs text-slate-400">Yet to bat</p>
                 </div>
               )
             }
-            const allOut = latest.score.wickets >= 9 && latest.score.endReason === 'ALL_OUT'
+            // Phase 10 Part 3: if the live poller is tracking THIS exact
+            // innings, its numbers supersede the page-load snapshot — one
+            // authoritative score, never two drifting apart on screen.
+            const score = liveScore && liveScore.inningsId === latest.inningsId ? liveScore : latest.score
+            const allOut = score.wickets >= 9 && latest.score.endReason === 'ALL_OUT'
             return (
               <div key={team.id} className="rounded-2xl bg-white/5 px-4 py-3">
-                <p className="text-sm font-semibold text-white">{team.name}</p>
+                <Link to={`/teams/${team.id}`} className="text-sm font-semibold text-white hover:text-emerald-300 hover:underline">
+                  {team.name}
+                </Link>
                 <p className="text-3xl font-extrabold text-white">
-                  {latest.score.runs}
-                  {!allOut && <span className="text-lg font-semibold text-slate-300">/{latest.score.wickets}</span>}
+                  {score.runs}
+                  {!allOut && <span className="text-lg font-semibold text-slate-300">/{score.wickets}</span>}
                 </p>
-                <p className="text-xs text-slate-400">{latest.score.oversLabel} overs</p>
+                <p className="text-xs text-slate-400">{score.oversLabel} overs</p>
               </div>
             )
           })}

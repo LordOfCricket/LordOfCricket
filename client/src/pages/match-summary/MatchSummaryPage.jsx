@@ -1,8 +1,11 @@
+import { useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useMatchSummary } from '../../hooks/useMatchSummary.js'
+import { useLiveMatch } from '../../hooks/useLiveMatch.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import MatchHero from '../../components/match-summary/MatchHero.jsx'
+import LiveMatchPanel from '../../components/live-match/LiveMatchPanel.jsx'
 import InningsTabs from '../../components/match-summary/InningsTabs.jsx'
 import BattingScorecard from '../../components/match-summary/BattingScorecard.jsx'
 import BowlingScorecard from '../../components/match-summary/BowlingScorecard.jsx'
@@ -31,7 +34,23 @@ export default function MatchSummaryPage() {
   const { matchId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { summary, loading, error, retry } = useMatchSummary(matchId)
+  const { summary, loading, error, retry, reload } = useMatchSummary(matchId)
+
+  // Phase 10 Part 3 — the ONE live poller for this page (Part 53). Disabled
+  // until `summary` has loaded once (initialStatus known), and self-latches
+  // off once the server reports a terminal match status (Part 17/96).
+  const { liveState, loading: liveLoading, connectionStatus, lastUpdatedAt, refresh: refreshLive } = useLiveMatch(matchId, { initialStatus: summary?.match?.status })
+
+  // When the live poller detects a lifecycle transition the initial summary
+  // fetch doesn't know about yet (upcoming -> live, innings break -> second
+  // innings, live -> completed), silently refetch the full Phase 9 summary
+  // so the static scorecard/Playing XI/result catch up too — no page reload
+  // (Part 20/22/39).
+  const liveLifecycleSignature = liveState ? `${liveState.match.status}:${liveState.match.isInningsBreak}:${liveState.currentInnings?.number ?? 0}` : null
+  const summaryLifecycleSignature = summary ? `${summary.match.status}:${summary.match.isInningsBreak}:${summary.innings.length}` : null
+  useEffect(() => {
+    if (liveLifecycleSignature && summaryLifecycleSignature && liveLifecycleSignature !== summaryLifecycleSignature) reload()
+  }, [liveLifecycleSignature, summaryLifecycleSignature, reload])
 
   const tab = TABS.some((t) => t.key === searchParams.get('tab')) ? searchParams.get('tab') : 'scorecard'
 
@@ -68,6 +87,14 @@ export default function MatchSummaryPage() {
 
   const activeInnings = summary.innings.find((i) => i.inningsId === activeInningsId) || summary.innings[summary.innings.length - 1] || null
 
+  // Supersedes MatchHero's snapshot score for whichever innings the live
+  // poller is currently tracking — one authoritative score display, never
+  // two numbers silently drifting apart on the same page.
+  const liveScoreForHero = liveState?.currentInnings
+    ? { inningsId: liveState.currentInnings.id, runs: liveState.currentInnings.runs, wickets: liveState.currentInnings.wickets, oversLabel: liveState.currentInnings.oversLabel }
+    : null
+  const liveCoversActiveInnings = Boolean(liveState?.currentInnings && activeInnings && liveState.currentInnings.id === activeInnings.inningsId && liveState.currentInnings.status === 'live')
+
   return (
     <main
       className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-8 text-white sm:px-6 lg:px-8"
@@ -80,7 +107,11 @@ export default function MatchSummaryPage() {
         </button>
 
         <div className="mt-4 space-y-4">
-          <MatchHero summary={summary} />
+          <MatchHero summary={summary} liveScore={liveScoreForHero} />
+
+          {summary.match.status === 'live' && (
+            <LiveMatchPanel liveState={liveState} loading={liveLoading} connectionStatus={connectionStatus} lastUpdatedAt={lastUpdatedAt} refresh={refreshLive} />
+          )}
 
           {summary.innings.length === 0 ? (
             <MatchInfoPanel summary={summary} />
@@ -88,7 +119,7 @@ export default function MatchSummaryPage() {
             <>
               <InningsTabs summary={summary} activeInningsId={activeInnings?.inningsId} onSelect={selectInnings} />
 
-              {activeInnings?.chase && (
+              {activeInnings?.chase && !liveCoversActiveInnings && (
                 <div className="rounded-[1.5rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm font-semibold text-amber-200">
                   Target {activeInnings.target} · {requiredRunRateLabel(activeInnings.chase)}
                 </div>

@@ -29,6 +29,13 @@ import LeaderboardsPage from '../pages/leaderboards/LeaderboardsPage.jsx'
 // Phase 9 — public match summary/scorecard (public read, no auth wall)
 import MatchSummaryPage from '../pages/match-summary/MatchSummaryPage.jsx'
 
+// Phase 10 Part 1 — public match discovery (public read, no auth wall)
+import MatchesPage from '../pages/matches/MatchesPage.jsx'
+
+// Phase 10 Part 2 — public team ecosystem (public read, no auth wall)
+import TeamsPage from '../pages/teams/TeamsPage.jsx'
+import TeamProfilePage from '../pages/teams/TeamProfilePage.jsx'
+
 // Temporary testing feature
 import UmpireTestingPage from '../pages/testing/UmpireTestingPage.jsx'
 
@@ -59,6 +66,13 @@ const router = createBrowserRouter([
       { path: '/players', element: <PlayersDiscoveryPage /> },
       { path: '/players/:publicPlayerId', element: <PublicPlayerProfilePage /> },
       { path: '/leaderboards', element: <LeaderboardsPage /> },
+
+      // Phase 10 Part 1 — public match discovery
+      { path: '/matches', element: <MatchesPage /> },
+
+      // Phase 10 Part 2 — public team ecosystem
+      { path: '/teams', element: <TeamsPage /> },
+      { path: '/teams/:teamId', element: <TeamProfilePage /> },
 
       // Phase 9 — public match summary/scorecard
       { path: '/matches/:matchId/summary', element: <MatchSummaryPage /> },

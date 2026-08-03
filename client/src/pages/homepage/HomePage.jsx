@@ -2,8 +2,8 @@ import { Mail, MapPin, Phone } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import Navbar from '../../components/layout/Navbar.jsx'
 import ImageSlider from '../../components/common/ImageSlider.jsx'
-import LiveScoreCard from '../../components/common/LiveScoreCard.jsx'
 import IndiaMatchCard from '../../components/common/IndiaMatchCard.jsx'
+import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
@@ -40,24 +40,21 @@ export default function HomePage() {
       <Navbar />
 
       <div className="relative flex flex-col items-center gap-16 pt-28 pb-16">
-        {/* Gallery / slider + live score */}
+        {/* Gallery / slider + India live score */}
         <div id="gallery" className="w-full scroll-mt-24 px-6 lg:px-10">
           <div className="flex flex-col gap-6 lg:h-128 lg:flex-row">
             <div className="h-64 w-full sm:h-80 md:h-112 lg:h-full lg:w-2/3">
               <ImageSlider />
             </div>
-            <div
-              id="live-score"
-              className="flex w-full scroll-mt-24 flex-col gap-6 sm:flex-row lg:h-full lg:w-1/3"
-            >
-              <div className="w-full sm:w-1/2">
-                <LiveScoreCard />
-              </div>
-              <div className="w-full sm:w-1/2">
-                <IndiaMatchCard />
-              </div>
+            <div id="live-score" className="w-full scroll-mt-24 lg:h-full lg:w-1/3">
+              <IndiaMatchCard />
             </div>
           </div>
+        </div>
+
+        {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
+        <div id="matches" className="w-full scroll-mt-24">
+          <MatchActivitySection />
         </div>
 
         {/* Amenities */}

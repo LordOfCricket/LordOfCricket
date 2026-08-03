@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, User, Users, CalendarDays, BarChart3, Settings, LayoutDashboard, Search, Trophy } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, User, Users, CalendarDays, BarChart3, Settings, LayoutDashboard, Search, Trophy, CalendarClock } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 import Avatar from '../ui/Avatar.jsx'
@@ -16,6 +16,18 @@ const NAV_LINKS = [
   { label: 'Tournament', href: '#tournament' },
   { label: 'Booking', href: '#booking' },
   { label: 'Team', href: '#team' },
+]
+
+// Phase 10 Part 1 (Part 56/57/59/60/61) — real routed pages, visible to
+// logged-out visitors too (previously Players/Leaderboards only appeared in
+// the authenticated ACCOUNT_LINKS mobile menu, and there was no public link
+// to Matches at all). No universal search here — just the three existing
+// public discovery destinations.
+const PUBLIC_ROUTE_LINKS = [
+  { label: 'Matches', to: '/matches', icon: CalendarClock },
+  { label: 'Players', to: '/players', icon: Search },
+  { label: 'Teams', to: '/teams', icon: Users },
+  { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
 ]
 
 const ACCOUNT_LINKS = [
@@ -77,6 +89,16 @@ export default function Navbar() {
               {link.label}
               <span className="absolute inset-x-4 -bottom-0.5 h-px scale-x-0 bg-emerald-400 transition-transform duration-300 group-hover:scale-x-100" />
             </a>
+          ))}
+          <span className="mx-1 h-5 w-px bg-white/10" aria-hidden="true" />
+          {PUBLIC_ROUTE_LINKS.map((link) => (
+            <Link
+              key={link.label}
+              to={link.to}
+              className="relative px-4 py-2 text-base font-medium text-emerald-100/70 transition-colors duration-200 hover:text-white"
+            >
+              {link.label}
+            </Link>
           ))}
         </div>
 
@@ -158,6 +180,23 @@ export default function Navbar() {
               {link.label}
             </a>
           ))}
+
+          <div className="mt-1 border-t border-white/10 pt-1">
+            {PUBLIC_ROUTE_LINKS.map((link) => {
+              const Icon = link.icon
+              return (
+                <Link
+                  key={link.label}
+                  to={link.to}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-emerald-100/80 transition-colors hover:bg-white/5 hover:text-white"
+                >
+                  <Icon className="h-4 w-4 text-emerald-300" />
+                  {link.label}
+                </Link>
+              )
+            })}
+          </div>
 
           {user && (
             <div className="mt-2 border-t border-white/10 pt-2">

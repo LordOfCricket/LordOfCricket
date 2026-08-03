@@ -29,5 +29,11 @@ export function useMatchSummary(matchId) {
     load()
   }, [load])
 
-  return { summary, loading, error, retry }
+  // Phase 10 Part 3 — a SILENT refetch (no loading-skeleton flash), used when
+  // the live-match poller detects a lifecycle transition (innings break,
+  // second innings starting, match completing) and the page needs the full
+  // scorecard/Playing XI to catch up without a jarring reload (Part 22/75).
+  const reload = useCallback(() => load(), [load])
+
+  return { summary, loading, error, retry, reload }
 }

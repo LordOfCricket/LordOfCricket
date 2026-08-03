@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { fetchPublicPlayerInfo } from '../../services/statisticsApi.js'
 import { useCareerStats } from '../../hooks/useCareerStats.js'
@@ -109,7 +109,16 @@ export default function PublicPlayerProfilePage() {
                 <Field label="Batting Style" value={battingStyleLabel(player.battingStyle)} />
                 <Field label="Bowling Style" value={bowlingStyleLabel(player.bowlingStyle)} />
                 <Field label="Jersey Number" value={player.jerseyNumber != null ? `#${player.jerseyNumber}` : null} />
-                <Field label="Team" value={player.team?.name} />
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Team</p>
+                  {player.team ? (
+                    <Link to={`/teams/${player.team.id}`} className="mt-1 block text-sm font-semibold text-emerald-300 hover:underline">
+                      {player.team.name}
+                    </Link>
+                  ) : (
+                    <p className="mt-1 text-sm font-semibold text-white">—</p>
+                  )}
+                </div>
               </div>
 
               {player.bio && <p className="mt-6 text-sm text-slate-300">{player.bio}</p>}
