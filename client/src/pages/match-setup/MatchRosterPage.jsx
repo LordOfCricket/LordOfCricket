@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Check, Trophy } from 'lucide-react'
 import { fetchMatch, setToss as setTossApi, startMatch as startMatchApi, finalizeMatch as finalizeMatchApi, fetchMatchInnings } from '../../services/matchApi.js'
 import { fetchTeamPlayers } from '../../services/playerApi.js'
+import { fetchMatchAvailability } from '../../services/matchAvailabilityApi.js'
 import * as scoringApi from '../../services/scoringApi.js'
 import { battingTeamIdFromToss, bowlingTeamIdFromToss } from '../../models/match.model.js'
 import { roleLabel } from '../../models/player.model.js'
@@ -31,12 +32,22 @@ function topBowler(state, playersById) {
   return entries.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0]
 }
 
-function PlayerCheckboxList({ players, selectedIds, disabledIds, onToggle }) {
+// Phase 14 Part 1 (3) — availability is informational only, shown to help the
+// organizer build the roster; it never drives selection/locking itself.
+const AVAILABILITY_BADGE = {
+  AVAILABLE: { label: 'Available', className: 'bg-emerald-500/15 text-emerald-300' },
+  NOT_AVAILABLE: { label: 'Not Available', className: 'bg-rose-500/15 text-rose-300' },
+  PENDING: { label: 'Pending', className: 'bg-white/10 text-slate-400' },
+}
+
+function PlayerCheckboxList({ players, selectedIds, disabledIds, onToggle, availabilityMap }) {
   return (
     <div className="space-y-2">
       {players.map((p) => {
         const selected = selectedIds.has(p.id)
         const locked = disabledIds.has(p.id)
+        const availability = availabilityMap?.get(p.id)
+        const badge = availability ? AVAILABILITY_BADGE[availability] : null
         return (
           <button
             key={p.id}
@@ -52,11 +63,44 @@ function PlayerCheckboxList({ players, selectedIds, disabledIds, onToggle }) {
               <p className="truncate text-sm font-semibold text-white">{p.name}</p>
               <p className="text-xs text-slate-400">{roleLabel(p.role) || 'Role not set'}</p>
             </div>
+            {badge && <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${badge.className}`}>{badge.label}</span>}
             {(selected || locked) && <Check className="h-5 w-5 shrink-0 text-emerald-400" />}
           </button>
         )
       })}
       {players.length === 0 && <p className="text-sm text-slate-400">This team has no players yet.</p>}
+    </div>
+  )
+}
+
+// Phase 13 — captain/wicketkeeper designation. The backend/summary display
+// already fully support isCaptain/isWicketkeeper (match_players columns,
+// rendered as "(C)"/"(WK)" badges); this was the missing input. Only players
+// selected but not yet locked into a saved roster are eligible, since
+// match_players has no update path once a row exists — one insert per row.
+function CaptainWkPicker({ players, selectedIds, lockedIds, captainId, wicketkeeperId, onCaptainChange, onWicketkeeperChange }) {
+  const eligible = players.filter((p) => selectedIds.has(p.id) && !lockedIds.has(p.id))
+  if (eligible.length === 0) return null
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-400">Captain</label>
+        <select value={captainId} onChange={(e) => onCaptainChange(e.target.value)} className="w-full rounded-lg border border-white/15 bg-white/5 px-2 py-2 text-xs text-white">
+          <option value="" className="bg-slate-900">— None —</option>
+          {eligible.map((p) => (
+            <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-400">Wicketkeeper</label>
+        <select value={wicketkeeperId} onChange={(e) => onWicketkeeperChange(e.target.value)} className="w-full rounded-lg border border-white/15 bg-white/5 px-2 py-2 text-xs text-white">
+          <option value="" className="bg-slate-900">— None —</option>
+          {eligible.map((p) => (
+            <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>
+          ))}
+        </select>
+      </div>
     </div>
   )
 }
@@ -69,8 +113,13 @@ export default function MatchRosterPage() {
   const [teamAPlayers, setTeamAPlayers] = useState([])
   const [teamBPlayers, setTeamBPlayers] = useState([])
   const [matchPlayers, setMatchPlayers] = useState([])
+  const [availabilityMap, setAvailabilityMap] = useState(new Map())
   const [selectedA, setSelectedA] = useState(new Set())
   const [selectedB, setSelectedB] = useState(new Set())
+  const [captainA, setCaptainA] = useState('')
+  const [wicketkeeperA, setWicketkeeperA] = useState('')
+  const [captainB, setCaptainB] = useState('')
+  const [wicketkeeperB, setWicketkeeperB] = useState('')
   const [tossWinnerId, setTossWinnerId] = useState('')
   const [tossDecision, setTossDecision] = useState('bat')
   const [strikerMpId, setStrikerMpId] = useState('')
@@ -94,6 +143,11 @@ export default function MatchRosterPage() {
     setTeamAPlayers(playersA)
     setTeamBPlayers(playersB)
     setMatchPlayers(mps)
+    if (m.status === 'upcoming') {
+      fetchMatchAvailability(matchId)
+        .then((players) => setAvailabilityMap(new Map(players.map((p) => [p.playerId, p.status]))))
+        .catch(() => setAvailabilityMap(new Map()))
+    }
     setSelectedA(new Set(mps.filter((mp) => mp.team_id === m.team_a_id).map((mp) => mp.player_id)))
     setSelectedB(new Set(mps.filter((mp) => mp.team_id === m.team_b_id).map((mp) => mp.player_id)))
     if (m.toss_winner_id) setTossWinnerId(String(m.toss_winner_id))
@@ -164,11 +218,11 @@ export default function MatchRosterPage() {
     setBusy(true)
     try {
       const toAdd = [
-        ...[...selectedA].filter((id) => !rosterLockedA.has(id)).map((playerId) => ({ teamId: match.team_a_id, playerId })),
-        ...[...selectedB].filter((id) => !rosterLockedB.has(id)).map((playerId) => ({ teamId: match.team_b_id, playerId })),
+        ...[...selectedA].filter((id) => !rosterLockedA.has(id)).map((playerId) => ({ teamId: match.team_a_id, playerId, isCaptain: playerId === Number(captainA), isWicketkeeper: playerId === Number(wicketkeeperA) })),
+        ...[...selectedB].filter((id) => !rosterLockedB.has(id)).map((playerId) => ({ teamId: match.team_b_id, playerId, isCaptain: playerId === Number(captainB), isWicketkeeper: playerId === Number(wicketkeeperB) })),
       ]
       for (const entry of toAdd) {
-        await scoringApi.addMatchPlayer(matchId, { teamId: entry.teamId, playerId: entry.playerId, isPlayingXi: true })
+        await scoringApi.addMatchPlayer(matchId, { teamId: entry.teamId, playerId: entry.playerId, isPlayingXi: true, isCaptain: entry.isCaptain, isWicketkeeper: entry.isWicketkeeper })
       }
       await loadAll()
     } catch (err) {
@@ -302,11 +356,29 @@ export default function MatchRosterPage() {
           <div className="mt-4 grid gap-6 sm:grid-cols-2">
             <div>
               <p className="mb-2 text-sm font-semibold text-emerald-300">{match.team_a_name}</p>
-              <PlayerCheckboxList players={teamAPlayers} selectedIds={selectedA} disabledIds={rosterLockedA} onToggle={(id) => toggle(setSelectedA, selectedA, id)} />
+              <PlayerCheckboxList players={teamAPlayers} selectedIds={selectedA} disabledIds={rosterLockedA} onToggle={(id) => toggle(setSelectedA, selectedA, id)} availabilityMap={availabilityMap} />
+              <CaptainWkPicker
+                players={teamAPlayers}
+                selectedIds={selectedA}
+                lockedIds={rosterLockedA}
+                captainId={captainA}
+                wicketkeeperId={wicketkeeperA}
+                onCaptainChange={setCaptainA}
+                onWicketkeeperChange={setWicketkeeperA}
+              />
             </div>
             <div>
               <p className="mb-2 text-sm font-semibold text-emerald-300">{match.team_b_name}</p>
-              <PlayerCheckboxList players={teamBPlayers} selectedIds={selectedB} disabledIds={rosterLockedB} onToggle={(id) => toggle(setSelectedB, selectedB, id)} />
+              <PlayerCheckboxList players={teamBPlayers} selectedIds={selectedB} disabledIds={rosterLockedB} onToggle={(id) => toggle(setSelectedB, selectedB, id)} availabilityMap={availabilityMap} />
+              <CaptainWkPicker
+                players={teamBPlayers}
+                selectedIds={selectedB}
+                lockedIds={rosterLockedB}
+                captainId={captainB}
+                wicketkeeperId={wicketkeeperB}
+                onCaptainChange={setCaptainB}
+                onWicketkeeperChange={setWicketkeeperB}
+              />
             </div>
           </div>
           <Button disabled={busy} onClick={handleSaveRoster} className="mt-5 h-11 px-5 text-sm">

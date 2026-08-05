@@ -12,3 +12,14 @@ export async function fetchTeamProfile(teamId) {
   const { data } = await api.get(`/teams/${teamId}/profile`)
   return data
 }
+
+// Phase 13 — staff-only team roster management.
+export async function addPlayerToTeam(teamId, publicPlayerId) {
+  const { data } = await api.post(`/teams/${teamId}/players`, { publicPlayerId })
+  return data
+}
+
+export async function removePlayerFromTeam(teamId, publicPlayerId) {
+  const { data } = await api.delete(`/teams/${teamId}/players/${publicPlayerId}`)
+  return data
+}

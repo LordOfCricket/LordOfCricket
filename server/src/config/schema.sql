@@ -362,3 +362,134 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_type VARCHAR(10) CHECK (resu
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_margin INTEGER;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMP;
+
+-- ============================================================================
+-- PHASE 12 — Deterministic commentary projection
+-- ============================================================================
+
+-- A PROJECTION of authoritative cricket history, never a second truth (see
+-- server/src/domain/commentary's module comment). Lives in PostgreSQL
+-- alongside the deliveries/match_events it describes — not MongoDB — because
+-- it is transactionally/referentially tied to one innings' log (FK cascade
+-- on delivery/innings deletion, correction-time delete+regenerate as one
+-- atomic replace), which a document store would not give for free. If
+-- disagreement with the replay engine is ever found, this table is wrong and
+-- gets regenerated (rebuildInningsCommentary) — deliveries/match_events are
+-- never touched to make commentary match.
+--
+-- entry_key is a deterministic, content-derived identity (e.g. 'd:4821',
+-- 'm:4821:fifty:17', 'oe:12:3', 'ie:12', 'ib:12', 'mr:9') — never an
+-- auto-generated surrogate meaning — so the SAME logical event (replayed
+-- identically after a correction or a retried request) always maps to the
+-- same row instead of accumulating duplicates. `sequence` is assigned by
+-- generateInningsCommentary's fold over the log (Part 7) — NEVER created_at —
+-- so an historical correction that shifts what happens after the edited
+-- point re-derives a fully consistent order, not a randomly-reordered feed.
+CREATE TABLE IF NOT EXISTS commentary_entries (
+  id BIGSERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  innings_id INTEGER NOT NULL REFERENCES innings(id) ON DELETE CASCADE,
+  entry_key VARCHAR(80) NOT NULL,
+  sequence INTEGER NOT NULL,
+  type VARCHAR(20) NOT NULL CHECK (type IN (
+    'DELIVERY', 'WICKET', 'MILESTONE', 'OVER_END', 'INNINGS_END', 'INNINGS_BREAK', 'MATCH_RESULT', 'MATCH_EVENT'
+  )),
+  source_delivery_id BIGINT REFERENCES deliveries(id) ON DELETE CASCADE,
+  source_event_id BIGINT REFERENCES match_events(id) ON DELETE CASCADE,
+  over_number SMALLINT,
+  ball_in_over SMALLINT,
+  ball_label VARCHAR(10),
+  text TEXT NOT NULL,
+  tags JSONB NOT NULL DEFAULT '[]',
+  score_runs INTEGER,
+  score_wickets SMALLINT,
+  -- The innings.version this entry was generated FROM — lets a client
+  -- reconcile a paginated commentary response against the match:state it
+  -- already has, and lets the realtime layer tell "append" from "resync"
+  -- apart without inventing a second version counter (Part 32).
+  innings_version INTEGER NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (innings_id, entry_key)
+);
+CREATE INDEX IF NOT EXISTS idx_commentary_entries_innings_seq ON commentary_entries(innings_id, sequence);
+CREATE INDEX IF NOT EXISTS idx_commentary_entries_match ON commentary_entries(match_id, sequence);
+
+-- ============================================================================
+-- PHASE 14 Part 1 — Player match availability / RSVP
+-- ============================================================================
+
+-- Eligibility is derived from players.team_id (the player belongs to one of
+-- the match's two teams), NOT match_players — RSVP happens BEFORE the Playing
+-- XI is chosen (Upcoming Match -> availability -> organizer picks XI), so
+-- match_players rows typically don't exist yet when a player responds.
+-- Informational only: nothing reads this table to auto-populate match_players.
+CREATE TABLE IF NOT EXISTS match_availability (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'AVAILABLE', 'NOT_AVAILABLE')),
+  responded_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (match_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_availability_match_id ON match_availability(match_id);
+
+-- ============================================================================
+-- PHASE 14 Part 3 — Ground booking
+-- ============================================================================
+
+-- PostgreSQL chosen as the booking source of truth (not MongoDB): bookings
+-- have relational references (users, and LOC matches for occupancy checks),
+-- overlapping-time-range queries, and a hard concurrency requirement — the
+-- exact shape PostgreSQL's transactional/constraint machinery is built for,
+-- and MongoDB has no equivalent to a range exclusion constraint. Google
+-- Calendar is sync-only, never queried for availability (see
+-- googleCalendar.service.js).
+--
+-- btree_gist is required for the EXCLUDE constraint below to index a plain
+-- scalar (start/end timestamps) alongside a range comparison.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- One table for both real customer bookings AND staff-created "block" rows
+-- (booking_type). They share the same EXCLUDE constraint, so a staff block
+-- and a customer booking mutually exclude each other for free — no separate
+-- "is this range blocked by staff OR booked by a customer" merge query needed.
+CREATE TABLE IF NOT EXISTS ground_bookings (
+  id SERIAL PRIMARY KEY,
+  public_booking_id VARCHAR(20) UNIQUE NOT NULL,
+  booking_type VARCHAR(20) NOT NULL DEFAULT 'CUSTOMER' CHECK (booking_type IN ('CUSTOMER', 'STAFF_BLOCK')),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  customer_name VARCHAR(150) NOT NULL,
+  contact_phone VARCHAR(30),
+  contact_email VARCHAR(150),
+  start_time TIMESTAMPTZ NOT NULL,
+  end_time TIMESTAMPTZ NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'CONFIRMED' CHECK (status IN ('CONFIRMED', 'CANCELLED')),
+  purpose VARCHAR(200),
+  expected_players SMALLINT,
+  notes VARCHAR(500),
+  client_action_id UUID,
+  google_calendar_event_id VARCHAR(200),
+  google_sync_status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (google_sync_status IN ('PENDING', 'SYNCED', 'FAILED', 'NOT_CONFIGURED')),
+  created_by_staff_id INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cancelled_at TIMESTAMPTZ,
+  CONSTRAINT ground_bookings_end_after_start CHECK (end_time > start_time),
+  -- THE non-negotiable concurrency guarantee (Phase 14 Part 3): two
+  -- transactions concurrently inserting overlapping [start_time, end_time)
+  -- ranges with status='CONFIRMED' cannot both commit — Postgres enforces
+  -- this at the index level, independent of any application-level check or
+  -- row lock. The loser gets a 23P01 exclusion-violation error, translated to
+  -- HTTP 409 BOOKING_CONFLICT by groundBooking.service.js. CANCELLED rows are
+  -- excluded from the constraint (the WHERE clause) so a cancelled booking's
+  -- time range becomes bookable again.
+  CONSTRAINT ground_bookings_no_overlap EXCLUDE USING gist (
+    tstzrange(start_time, end_time, '[)') WITH &&
+  ) WHERE (status = 'CONFIRMED')
+);
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_start_time ON ground_bookings(start_time);
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_user_id ON ground_bookings(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ground_bookings_client_action_id ON ground_bookings(client_action_id) WHERE client_action_id IS NOT NULL;

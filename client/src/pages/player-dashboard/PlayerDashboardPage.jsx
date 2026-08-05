@@ -44,14 +44,20 @@ export default function PlayerDashboardPage() {
 
           <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-6">
-              <NextMatchCard />
-              <CareerOverview />
+              <div id="matches">
+                <NextMatchCard teamId={team?.id} />
+              </div>
+              <div id="career">
+                <CareerOverview />
+              </div>
               <RecentMatches />
             </div>
 
             <div className="space-y-6">
               <QuickActions player={player} team={team} />
-              <MyTeams team={team} player={player} />
+              <div id="teams">
+                <MyTeams team={team} player={player} />
+              </div>
               <CanteenSummary
                 activeOrder={activeOrder}
                 recentOrders={recentOrders}

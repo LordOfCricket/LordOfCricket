@@ -55,7 +55,12 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
 
   const poll = useCallback(
     async ({ manual = false } = {}) => {
-      if (!enabled) return
+      // A manual call (explicit user refresh, or a sibling transport's
+      // "please resync over HTTP" request — Phase 11's useLiveMatch relies on
+      // this) always goes through even while the automatic loop is disabled;
+      // it just never reschedules a recurring loop in that case (see the
+      // `enabled` check in the `finally` block below).
+      if (!enabled && !manual) return
       if (!manual && typeof document !== 'undefined' && document.visibilityState === 'hidden') return // paused while hidden (Part 8)
       if (!manual && typeof navigator !== 'undefined' && !navigator.onLine) return // no point hammering while offline (Part 10)
       if (inFlightRef.current) return // dedup (Part 54)

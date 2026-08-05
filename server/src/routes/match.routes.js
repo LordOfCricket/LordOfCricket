@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getPublicMatches, getHomeDiscovery, listMatches, getMatch, createMatchHandler, setToss, startMatch, finalizeMatch, getMatchSummary, getLiveMatchState } from '../controllers/match.controller.js'
+import { getPublicMatches, getHomeDiscovery, listMatches, getMatch, createMatchHandler, setToss, startMatch, finalizeMatch, getMatchSummary, getLiveMatchState, getMatchCommentary } from '../controllers/match.controller.js'
 import { requireAuth, requireScorer } from '../middlewares/auth.js'
 
 const router = Router()
@@ -13,6 +13,7 @@ router.post('/', requireAuth, requireScorer, createMatchHandler)
 router.get('/:id', getMatch)
 router.get('/:id/summary', getMatchSummary)
 router.get('/:id/live-state', getLiveMatchState)
+router.get('/:id/commentary', getMatchCommentary)
 router.patch('/:id/toss', requireAuth, requireScorer, setToss)
 router.post('/:id/start', requireAuth, requireScorer, startMatch)
 router.post('/:id/finalize', requireAuth, requireScorer, finalizeMatch)

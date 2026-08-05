@@ -3,6 +3,8 @@ import * as matchService from '../services/match.service.js'
 import * as matchSummaryService from '../services/matchSummary.service.js'
 import * as publicMatchService from '../services/publicMatch.service.js'
 import * as liveMatchService from '../services/liveMatch.service.js'
+import * as commentaryService from '../services/commentary.service.js'
+import { publishMatchState } from '../realtime/cricketRealtime.js'
 
 // Phase 10 Part 1 — public match discovery (no auth, same public-read
 // posture as GET /matches and GET /matches/:id/summary).
@@ -68,6 +70,10 @@ export async function startMatch(req, res, next) {
   try {
     const match = await matchService.startMatch(req.params.id)
     res.json({ match })
+    // Phase 11: lets a spectator already sitting on an upcoming match's page
+    // see the upcoming -> live transition immediately (Part 20 of the Phase
+    // 10 readiness notes) instead of waiting for the next slow lifecycle poll.
+    publishMatchState(req.io, match.id, 'lifecycle')
   } catch (err) {
     next(err)
   }
@@ -77,6 +83,7 @@ export async function finalizeMatch(req, res, next) {
   try {
     const match = await matchService.finalizeMatch(req.params.id)
     res.json({ match })
+    publishMatchState(req.io, match.id, 'lifecycle')
   } catch (err) {
     next(err)
   }
@@ -100,6 +107,26 @@ export async function getLiveMatchState(req, res, next) {
   try {
     const state = await liveMatchService.getLiveMatchState(req.params.id)
     res.json(state)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Phase 12 — public, read-only commentary feed (same public-read posture as
+// the summary/live-state endpoints above). `inningsId` defaults to the
+// match's latest innings; `before`/`limit` paginate newest-first; `type`
+// filters to one COMMENTARY_TYPES value.
+export async function getMatchCommentary(req, res, next) {
+  try {
+    const page = await commentaryService.getCommentaryPage({
+      matchId: req.params.id,
+      inningsId: req.query.inningsId,
+      before: req.query.before,
+      limit: req.query.limit,
+      type: req.query.type,
+    })
+    if (!page) return res.status(404).json({ message: 'No commentary available for this match.' })
+    res.json(page)
   } catch (err) {
     next(err)
   }

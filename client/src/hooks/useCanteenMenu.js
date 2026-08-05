@@ -71,7 +71,7 @@ export function useMenu() {
     if (!userId) return
 
     const socket = io(socketUrl)
-    socket.emit('join-user-room', userId)
+    let hasConnectedBefore = false
 
     const refreshMenu = async () => {
       const items = await fetchMenu()
@@ -90,6 +90,21 @@ export function useMenu() {
         setDetailsOrder((current) => (current?.id === order.id ? order : current))
       }
     }
+
+    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // auto-rejoins an app-level room on its own reconnect. Without re-emitting
+    // 'join-user-room' here, a dropped connection silently stopped receiving
+    // every canteen event forever after the first reconnect. On any reconnect
+    // (not the first connect) also resync menu/orders via HTTP, since events
+    // published while disconnected are gone for good otherwise.
+    socket.on('connect', () => {
+      socket.emit('join-user-room', userId)
+      if (hasConnectedBefore) {
+        refreshMenu().catch(() => {})
+        loadPlayerOrders().catch(() => {})
+      }
+      hasConnectedBefore = true
+    })
 
     socket.on('menu-updated', refreshMenu)
     socket.on('order-created', refreshPlayerOrders)

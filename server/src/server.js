@@ -4,6 +4,8 @@ import { Server } from 'socket.io'
 import app from './app.js'
 import { connectPostgres, connectMongo } from './config/db.js'
 import { allowedOrigins } from './config/corsOrigins.js'
+import { registerCricketRealtime } from './realtime/cricketRealtime.js'
+import { registerBookingRealtime } from './realtime/bookingRealtime.js'
 
 const PORT = process.env.PORT || 5000
 
@@ -30,6 +32,15 @@ io.on('connection', (socket) => {
   })
   socket.on('disconnect', () => console.log('Socket disconnected:', socket.id))
 })
+
+// Phase 11 — cricket realtime (spectator match rooms). A second, additive
+// connection listener on the SAME io/http server — canteen's handlers above
+// are untouched. See server/src/realtime/cricketRealtime.js.
+registerCricketRealtime(io)
+
+// Phase 14 Part 3 — ground booking availability refresh rooms. Same additive
+// pattern as cricket realtime above. See server/src/realtime/bookingRealtime.js.
+registerBookingRealtime(io)
 
 async function start() {
   await connectPostgres()

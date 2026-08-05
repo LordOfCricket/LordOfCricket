@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, User, Users, CalendarDays, BarChart3, Settings, LayoutDashboard, Search, Trophy, CalendarClock } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, Users, Search, Trophy, CalendarClock } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 import Avatar from '../ui/Avatar.jsx'
 import NotificationBell from './NotificationBell.jsx'
 import AccountMenu from './AccountMenu.jsx'
 import { roleLabel } from '../../models/player.model.js'
+import { getAccountLinks } from '../../models/navLinks.model.js'
 
 const NAV_LINKS = [
   { label: 'Home', href: '#home' },
@@ -28,18 +29,6 @@ const PUBLIC_ROUTE_LINKS = [
   { label: 'Players', to: '/players', icon: Search },
   { label: 'Teams', to: '/teams', icon: Users },
   { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
-]
-
-const ACCOUNT_LINKS = [
-  { label: 'View Dashboard', to: '/player/dashboard', icon: LayoutDashboard },
-  { label: 'My Profile', to: '/profile', icon: User },
-  { label: 'My Teams', to: '/player/dashboard#teams', icon: Users },
-  { label: 'My Matches', to: '/player/dashboard#matches', icon: CalendarDays },
-  { label: 'My Statistics', to: '/player/dashboard#career', icon: BarChart3 },
-  { label: 'Players', to: '/players', icon: Search },
-  { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
-  { label: 'Canteen', to: '/canteen', icon: UtensilsCrossed },
-  { label: 'Settings', to: '/profile/edit', icon: Settings },
 ]
 
 export default function Navbar() {
@@ -200,7 +189,7 @@ export default function Navbar() {
 
           {user && (
             <div className="mt-2 border-t border-white/10 pt-2">
-              {ACCOUNT_LINKS.map((link) => {
+              {getAccountLinks(user).map((link) => {
                 const Icon = link.icon
                 return (
                   <Link

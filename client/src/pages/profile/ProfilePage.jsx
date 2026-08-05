@@ -48,7 +48,7 @@ export default function ProfilePage() {
   const [team, setTeam] = useState(null)
   const [tab, setTab] = useState('OVERVIEW')
   const navigate = useNavigate()
-  const { stats, loading, error, retry, loadMoreMatchHistory } = useCareerStats()
+  const { stats, loading, error, noPlayerProfile, retry, loadMoreMatchHistory } = useCareerStats()
 
   useEffect(() => {
     if (!player) refreshPlayer()
@@ -131,11 +131,14 @@ export default function ProfilePage() {
 
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
           {tab !== 'TEAMS' && loading && <StatsLoadingGrid tiles={tab === 'FIELDING' ? 3 : 8} />}
-          {tab !== 'TEAMS' && !loading && error && <StatsErrorState message={error} onRetry={retry} />}
-          {tab !== 'TEAMS' && !loading && !error && stats && stats.career.matches === 0 && (
+          {tab !== 'TEAMS' && !loading && noPlayerProfile && (
             <StatsEmptyState label={tab === 'OVERVIEW' ? 'Your career overview' : `Your ${tab.toLowerCase()} statistics`} />
           )}
-          {tab !== 'TEAMS' && !loading && !error && stats && stats.career.matches > 0 && (
+          {tab !== 'TEAMS' && !loading && !noPlayerProfile && error && <StatsErrorState message={error} onRetry={retry} />}
+          {tab !== 'TEAMS' && !loading && !noPlayerProfile && !error && stats && stats.career.matches === 0 && (
+            <StatsEmptyState label={tab === 'OVERVIEW' ? 'Your career overview' : `Your ${tab.toLowerCase()} statistics`} />
+          )}
+          {tab !== 'TEAMS' && !loading && !noPlayerProfile && !error && stats && stats.career.matches > 0 && (
             <>
               {tab === 'OVERVIEW' && (
                 <div className="space-y-6">

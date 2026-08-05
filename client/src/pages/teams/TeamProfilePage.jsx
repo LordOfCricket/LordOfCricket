@@ -1,11 +1,13 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useTeamProfile } from '../../hooks/useTeamProfile.js'
+import { useAuth } from '../../hooks/useAuth.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import TeamHero from '../../components/teams/TeamHero.jsx'
 import TeamRecordTiles from '../../components/teams/TeamRecordTiles.jsx'
 import TeamRecentForm from '../../components/teams/TeamRecentForm.jsx'
 import TeamSquadList from '../../components/teams/TeamSquadList.jsx'
+import TeamSquadManager from '../../components/teams/TeamSquadManager.jsx'
 import TeamTopPerformers from '../../components/teams/TeamTopPerformers.jsx'
 import TeamMatchSection from '../../components/teams/TeamMatchSection.jsx'
 import MatchCard from '../../components/matches/MatchCard.jsx'
@@ -17,6 +19,7 @@ function SectionHeading({ children }) {
 export default function TeamProfilePage() {
   const { teamId } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { profile, loading, error, retry } = useTeamProfile(teamId)
 
   if (loading) {
@@ -87,6 +90,15 @@ export default function TeamProfilePage() {
             <TeamSquadList squad={squad} />
           </div>
         </div>
+
+        {user?.role === 'staff' && (
+          <div>
+            <SectionHeading>Roster Management</SectionHeading>
+            <div className="mt-3">
+              <TeamSquadManager team={team} squad={squad} onChange={retry} />
+            </div>
+          </div>
+        )}
 
         <div>
           <SectionHeading>Top Performers</SectionHeading>

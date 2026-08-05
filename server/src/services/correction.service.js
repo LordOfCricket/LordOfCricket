@@ -278,6 +278,7 @@ export async function applyCorrection({ inningsId, targetType, targetId, patch, 
       version: bumped,
       affectedFromSequence: target.logSequence,
       affectedDeliveryCount: result.affectedDeliveryCount,
+      matchId: innings.match_id,
     }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})

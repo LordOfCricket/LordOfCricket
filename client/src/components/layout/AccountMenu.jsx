@@ -1,35 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  ChevronDown,
-  LayoutDashboard,
-  User,
-  Users,
-  CalendarDays,
-  BarChart3,
-  UtensilsCrossed,
-  Settings,
-  FlaskConical,
-  LogOut,
-  Search,
-  Trophy,
-} from 'lucide-react'
+import { ChevronDown, FlaskConical, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
-
-const MENU_LINKS = [
-  { label: 'View Dashboard', to: '/player/dashboard', icon: LayoutDashboard },
-  { label: 'My Profile', to: '/profile', icon: User },
-  { label: 'My Teams', to: '/player/dashboard#teams', icon: Users },
-  { label: 'My Matches', to: '/player/dashboard#matches', icon: CalendarDays },
-  { label: 'My Statistics', to: '/player/dashboard#career', icon: BarChart3 },
-  { label: 'Players', to: '/players', icon: Search },
-  { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
-  { label: 'Canteen', to: '/canteen', icon: UtensilsCrossed },
-  { label: 'Settings', to: '/profile/edit', icon: Settings },
-]
+import { getAccountLinks } from '../../models/navLinks.model.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
+  const MENU_LINKS = getAccountLinks(user)
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 

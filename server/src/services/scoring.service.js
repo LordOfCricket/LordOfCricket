@@ -289,7 +289,7 @@ export async function recordDelivery({ inningsId, expectedVersion, clientActionI
     const completion = await maybeCompleteInnings(client, innings, format, stateAfter)
 
     await client.query('COMMIT')
-    return { delivery: { ...deliveryRow, ...enrichedDelivery }, state: stateAfter, version: bumped, completion }
+    return { delivery: { ...deliveryRow, ...enrichedDelivery }, state: stateAfter, version: bumped, completion, matchId: innings.match_id }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     throw err
@@ -370,7 +370,7 @@ export async function recordEvent({ inningsId, expectedVersion, clientActionId, 
     const completion = await maybeCompleteInnings(client, innings, format, stateAfter)
 
     await client.query('COMMIT')
-    return { event: eventRow, state: stateAfter, version: bumped, completion }
+    return { event: eventRow, state: stateAfter, version: bumped, completion, matchId: innings.match_id }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     throw err

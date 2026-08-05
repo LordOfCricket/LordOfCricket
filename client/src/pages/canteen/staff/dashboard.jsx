@@ -44,6 +44,12 @@ export default function StaffDashboardPage() {
     handleEditFoodImageChange,
     totalPages,
     filteredOrders,
+    historyPage,
+    setHistoryPage,
+    historyTotalPages,
+    historyStatusFilter,
+    setHistoryStatusFilter,
+    filteredHistoryOrders,
   } = useStaffDashboard()
 
   return (
@@ -91,6 +97,7 @@ export default function StaffDashboardPage() {
               <Button className={`h-12 px-4 ${tab === 'manage' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('manage')}>Manage Today</Button>
               <Button className={`h-12 px-4 ${tab === 'all' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('all')}>All Food</Button>
               <Button className={`h-12 px-4 ${tab === 'orders' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('orders')}>Orders</Button>
+              <Button className={`h-12 px-4 ${tab === 'history' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('history')}>Order History</Button>
               <Button className={`h-12 px-4 ${tab === 'add' ? 'bg-emerald-600' : 'bg-emerald-200 text-slate-900'}`} onClick={() => setTab('add')}>Add Food</Button>
               <Button className={`h-12 px-4 ${tab === 'umpires' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('umpires')}>
                 Umpire Requests{umpireRequests.length > 0 ? ` (${umpireRequests.length})` : ''}
@@ -278,6 +285,69 @@ export default function StaffDashboardPage() {
                 <div className="flex items-center gap-3">
                   <button disabled={page <= 1} className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-white disabled:opacity-50" onClick={() => setPage(page - 1)}>Previous</button>
                   <button disabled={page >= totalPages} className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-white disabled:opacity-50" onClick={() => setPage(page + 1)}>Next</button>
+                </div>
+              </div>
+            </>
+          ) : tab === 'history' ? (
+            <>
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {['all', 'Completed', 'Cancelled', 'Pending', 'Accepted', 'Preparing', 'Ready'].map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setHistoryStatusFilter(filter)}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+                        historyStatusFilter === filter
+                          ? 'bg-green-400 text-slate-950'
+                          : 'border border-white/10 bg-white/10 text-slate-200 hover:bg-white/20'
+                      }`}
+                    >
+                      {filter === 'all' ? 'All Status' : filter}
+                    </button>
+                  ))}
+                </div>
+                <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white">{historyTotalPages > 1 ? `Page ${historyPage} of ${historyTotalPages}` : `${filteredHistoryOrders.length} orders`}</span>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10 bg-slate-950/10">
+                <table className="min-w-full divide-y divide-white/10 text-left text-sm text-white">
+                  <thead className="bg-white/10 text-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Order ID</th>
+                      <th className="px-4 py-3">Seat / Mobile</th>
+                      <th className="px-4 py-3">Items</th>
+                      <th className="px-4 py-3">Total</th>
+                      <th className="px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {filteredHistoryOrders.map((order) => (
+                      <tr key={order.id}>
+                        <td className="px-4 py-4 font-medium text-white">{order.id}</td>
+                        <td className="px-4 py-4 text-slate-200">{order.seatId} / {order.customerName}</td>
+                        <td className="px-4 py-4 text-slate-200">
+                          {order.items.map((item) => `${item.name}×${item.qty}`).join(', ')}
+                        </td>
+                        <td className="px-4 py-4 text-slate-200">₹{order.total}</td>
+                        <td className="px-4 py-4">
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusBadgeClass(order.status)}`}>{order.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {filteredHistoryOrders.length === 0 && (
+                <p className="mt-5 rounded-2xl bg-white/10 p-5 text-slate-300">No orders match the current filter.</p>
+              )}
+
+              <div className="mt-6 flex items-center justify-between">
+                <p className="text-sm text-slate-300">Page {historyPage} of {historyTotalPages}</p>
+                <div className="flex items-center gap-3">
+                  <button disabled={historyPage <= 1} className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-white disabled:opacity-50" onClick={() => setHistoryPage(historyPage - 1)}>Previous</button>
+                  <button disabled={historyPage >= historyTotalPages} className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-white disabled:opacity-50" onClick={() => setHistoryPage(historyPage + 1)}>Next</button>
                 </div>
               </div>
             </>

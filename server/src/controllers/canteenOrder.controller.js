@@ -113,15 +113,33 @@ export async function createOrder(req, res) {
     }
 
     if (isMongoReady()) {
-      const order = await Order.create({
-        userId,
-        customerName,
-        seatId: seatId || 'unknown',
-        items: normalizedItems,
-        total: orderPayload.total,
-        status: PRESET_STATUS[0],
-        orderedAt,
-      })
+      let order
+      try {
+        order = await Order.create({
+          userId,
+          customerName,
+          seatId: seatId || 'unknown',
+          items: normalizedItems,
+          total: orderPayload.total,
+          status: PRESET_STATUS[0],
+          orderedAt,
+          hasActiveOrderFlag: true,
+        })
+      } catch (err) {
+        // Phase 14 — the partial unique index on { userId, hasActiveOrderFlag }
+        // is the real concurrency guarantee: two near-simultaneous requests can
+        // both pass the findOne check above, but MongoDB rejects the second
+        // insert here (E11000). This is not a fallback path, it's the source
+        // of correctness — the findOne check above is only a friendly fast path.
+        if (err.code === 11000) {
+          const activeOrder = await Order.findOne({ userId, hasActiveOrderFlag: true })
+          return res.status(409).json({
+            error: 'You already have an active order.',
+            order: normalizeOrder(activeOrder),
+          })
+        }
+        throw err
+      }
       const responseOrder = normalizeOrder(order)
       emitToOrderRooms(req.io, 'order-created', responseOrder)
       return res.json({ order: responseOrder })
@@ -272,6 +290,13 @@ export async function updateOrderStatus(req, res) {
       order.status = status
       order.completedAt = FINISHED_STATUSES.includes(status) ? new Date() : null
       await order.save()
+      if (FINISHED_STATUSES.includes(status)) {
+        // Mongoose does not reliably translate `doc.field = undefined` into a
+        // real MongoDB $unset on save() — do it explicitly so the partial
+        // unique index genuinely stops applying to this now-terminal order.
+        await Order.updateOne({ _id: order._id }, { $unset: { hasActiveOrderFlag: 1 } })
+        order.hasActiveOrderFlag = undefined
+      }
       const responseOrder = normalizeOrder(order)
       emitToOrderRooms(req.io, 'order-status-updated', responseOrder)
       if (responseOrder.status === 'Completed') {

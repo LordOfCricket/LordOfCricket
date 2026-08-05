@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useVisibilityAwarePolling } from './useVisibilityAwarePolling.js'
+import { useSocketMatchTransport } from './useSocketMatchTransport.js'
 import { fetchLiveMatchState } from '../services/liveMatchApi.js'
 
 // Recommended cadence (Part 7/101, documented): a fast 3s tick while the
@@ -14,39 +15,73 @@ const UPCOMING_LIFECYCLE_INTERVAL_MS = 30000
 const TERMINAL_STATUSES = new Set(['completed', 'finalized'])
 const isTerminalResponse = (data) => TERMINAL_STATUSES.has(data.match.status)
 
+/** True if `candidate` is at least as fresh as `current` — the ONE place
+ * Phase 11 compares realtime state across two independent transports
+ * (socket + HTTP polling fallback). Keyed on (inningsId, version), exactly
+ * the composite identity Part 10/57 call for: a plain global version
+ * comparison would misfire across an innings 1 -> innings 2 transition,
+ * where version legitimately resets. Neither transport's data is ever
+ * trusted merely because it arrived "later" in wall-clock time — only
+ * because it is verifiably newer. */
+function isNewer(candidate, current) {
+  if (!candidate) return false
+  if (!current) return true
+  const c = candidate.currentInnings
+  const b = current.currentInnings
+  if (!c) return !b // both innings-less (e.g. still upcoming) counts as fresh; regressing to null does not
+  if (!b) return true
+  if (c.id !== b.id) return true // an innings transition always wins, regardless of version numbers
+  return c.version >= b.version
+}
+
 /**
- * Phase 10 Part 3 spectator polling. Deliberately thin: no cricket
- * calculation lives here (Part 51) — it only decides WHEN to poll
- * `/matches/:id/live-state` and hands back whatever the server returned.
- * Out-of-order responses are already impossible to apply: the transport
- * layer's request-sequence guard rejects any response older than the most
- * recently STARTED request — a strictly stronger guarantee than comparing
- * innings.version, and one that needs no special-casing for an innings
- * 1 -> innings 2 transition (Part 56/57).
+ * Phase 11 spectator transport: Socket.IO is primary, HTTP polling is the
+ * resilience fallback (Part 31) — never both running aggressively at once.
+ * While the socket is connected, polling is disabled entirely (no redundant
+ * 3s HTTP calls); the moment the socket disconnects, polling re-arms
+ * immediately and keeps the spectator's view fresh (at most one polling
+ * interval stale) for the whole outage — a continuous resync, not a single
+ * one-shot fetch exactly at reconnect (Part 30's concern, solved more
+ * simply: there is never a "missed events" window longer than one poll tick).
  *
- * `initialStatus` should be the match's status from the page's initial
- * (non-live) load — polling stays fully disabled until it's known, so a
- * page for an already-finalized match never issues a single live-state
- * request (Part 18/96). The transport's `shouldStop` halts polling for good
- * the moment a response itself reports a terminal status — a completed/
- * finalized match never keeps polling every 3 seconds forever (Part 17/93/96).
+ * `useLiveMatch`/`LiveMatchPanel` and everything under `components/live-match/`
+ * still only see `{ liveState, loading, connectionStatus, lastUpdatedAt,
+ * refresh, isPolling }` (Part 25) — no component reaches into
+ * `socket.on(...)` directly.
  */
 export function useLiveMatch(matchId, { initialStatus } = {}) {
-  const fetchFn = useCallback(() => fetchLiveMatchState(matchId), [matchId])
-
   const isUpcomingSoFar = initialStatus === 'upcoming'
   const intervalMs = isUpcomingSoFar ? UPCOMING_LIFECYCLE_INTERVAL_MS : LIVE_INTERVAL_MS
   const initiallyTerminal = initialStatus != null && TERMINAL_STATUSES.has(initialStatus)
   const enabled = Boolean(matchId) && initialStatus != null && !initiallyTerminal
 
-  const polling = useVisibilityAwarePolling(fetchFn, { intervalMs, enabled, resetKey: matchId, shouldStop: isTerminalResponse })
+  const socket = useSocketMatchTransport(matchId, { enabled })
+
+  const fetchFn = useCallback(() => fetchLiveMatchState(matchId), [matchId])
+  const polling = useVisibilityAwarePolling(fetchFn, {
+    intervalMs,
+    enabled: enabled && !socket.connected,
+    resetKey: matchId,
+    shouldStop: isTerminalResponse,
+  })
+
+  const liveState = isNewer(socket.data, polling.data) ? socket.data : polling.data
+  const lastUpdatedAt = liveState === socket.data ? socket.lastUpdatedAt : polling.lastUpdatedAt
+  const loading = polling.loading && !socket.data
+  // Browser-level offline is authoritative regardless of what the socket
+  // currently believes: a dead network can leave a socket "connected" for
+  // several seconds past the last successful heartbeat (Engine.IO detects a
+  // stale connection lazily), but navigator.onLine flips immediately —
+  // exactly the polling transport's existing offline detection (Part 33).
+  const connectionStatus = polling.status === 'offline' ? 'offline' : socket.connected ? 'ok' : polling.status
+  const isNowTerminal = liveState ? isTerminalResponse(liveState) : false
 
   return {
-    liveState: polling.data,
-    loading: polling.loading,
-    connectionStatus: polling.status,
-    lastUpdatedAt: polling.lastUpdatedAt,
-    refresh: polling.refresh,
-    isPolling: enabled && !(polling.data && isTerminalResponse(polling.data)),
+    liveState,
+    loading,
+    connectionStatus,
+    lastUpdatedAt,
+    refresh: polling.refresh, // always available — bypasses polling's own enabled gate for manual/cross-transport resync (Part 13)
+    isPolling: enabled && !isNowTerminal,
   }
 }

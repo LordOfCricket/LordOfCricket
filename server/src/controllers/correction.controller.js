@@ -1,4 +1,23 @@
 import * as correctionService from '../services/correction.service.js'
+import * as commentaryService from '../services/commentary.service.js'
+import { publishMatchState, publishCommentary } from '../realtime/cricketRealtime.js'
+
+// Phase 12: a correction can change MANY commentary entries at once (a
+// milestone that no longer exists, a wicket now attributed to someone else,
+// every score-after value downstream of the edit) — so this always does a
+// full rebuild (Part 30) and tells spectators to resync over HTTP rather
+// than trying to describe what changed (Part 40). Same isolation as the
+// realtime match:state publish beside it: a rebuild failure is logged and
+// never surfaces as a correction failure (Part 38/78) — the correction
+// itself already committed successfully.
+async function rebuildAndPublishCommentary(req, inningsId) {
+  try {
+    const result = await commentaryService.rebuildInningsCommentary(inningsId)
+    if (result) publishCommentary(req.io, result.matchId, { inningsId: Number(inningsId), inningsVersion: result.inningsVersion, mode: 'resync' })
+  } catch (err) {
+    console.error(`Commentary rebuild failed for innings ${inningsId}:`, err.message)
+  }
+}
 
 function parseTarget(body) {
   const { targetType, targetId, patch } = body
@@ -40,6 +59,10 @@ export async function applyCorrection(req, res, next) {
       correctedByUserId: req.user.id,
     })
     res.status(201).json(result)
+    if (!result.idempotentReplay) {
+      publishMatchState(req.io, result.matchId, 'correction')
+      rebuildAndPublishCommentary(req, req.params.inningsId)
+    }
   } catch (err) {
     next(err)
   }
@@ -65,6 +88,10 @@ export async function undoCorrection(req, res, next) {
       correctedByUserId: req.user.id,
     })
     res.status(201).json(result)
+    if (!result.idempotentReplay) {
+      publishMatchState(req.io, result.matchId, 'correction_undo')
+      rebuildAndPublishCommentary(req, req.params.inningsId)
+    }
   } catch (err) {
     next(err)
   }

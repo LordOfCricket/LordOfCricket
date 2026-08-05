@@ -15,10 +15,12 @@ import WagonWheelSection from '../../components/match-summary/WagonWheelSection.
 import OversPanel from '../../components/match-summary/OversPanel.jsx'
 import MatchTimelinePanel from '../../components/match-summary/MatchTimelinePanel.jsx'
 import MatchInfoPanel from '../../components/match-summary/MatchInfoPanel.jsx'
+import CommentaryPanel from '../../components/match-summary/CommentaryPanel.jsx'
 
 const TABS = [
   { key: 'scorecard', label: 'Scorecard' },
   { key: 'overs', label: 'Overs' },
+  { key: 'commentary', label: 'Commentary' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'info', label: 'Info' },
 ]
@@ -152,6 +154,7 @@ export default function MatchSummaryPage() {
                     </>
                   )}
                   {tab === 'overs' && <OversPanel innings={activeInnings} />}
+                  {tab === 'commentary' && <CommentaryPanel matchId={matchId} inningsId={activeInnings.inningsId} />}
                   {tab === 'timeline' && <MatchTimelinePanel innings={activeInnings} />}
                   {tab === 'info' && <MatchInfoPanel summary={summary} />}
                 </div>

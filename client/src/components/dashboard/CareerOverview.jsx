@@ -6,7 +6,7 @@ import StatTile from '../stats/StatTile.jsx'
 // match history on every load, never from local counters. Keep this card
 // concise (5 headline numbers); the full breakdown lives on the Profile page.
 export default function CareerOverview() {
-  const { stats, loading, error, retry } = useCareerStats()
+  const { stats, loading, error, noPlayerProfile, retry } = useCareerStats()
 
   return (
     <div id="career" className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm scroll-mt-24">
@@ -14,9 +14,10 @@ export default function CareerOverview() {
 
       <div className="mt-4">
         {loading && <StatsLoadingGrid tiles={5} />}
-        {!loading && error && <StatsErrorState message={error} onRetry={retry} />}
-        {!loading && !error && stats && stats.career.matches === 0 && <StatsEmptyState label="Your cricket statistics" />}
-        {!loading && !error && stats && stats.career.matches > 0 && (
+        {!loading && noPlayerProfile && <StatsEmptyState label="Your cricket statistics" />}
+        {!loading && !noPlayerProfile && error && <StatsErrorState message={error} onRetry={retry} />}
+        {!loading && !noPlayerProfile && !error && stats && stats.career.matches === 0 && <StatsEmptyState label="Your cricket statistics" />}
+        {!loading && !noPlayerProfile && !error && stats && stats.career.matches > 0 && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="Matches" value={stats.career.matches} emphasis />
             <StatTile label="Runs" value={stats.career.batting.runs} />

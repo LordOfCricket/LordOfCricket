@@ -1,0 +1,224 @@
+import { pool } from '../config/db.js'
+import { generatePublicId } from '../utils/publicId.js'
+import * as bookingRepo from '../repositories/groundBooking.repository.js'
+import { computeDayAvailability } from '../domain/booking/availability.js'
+import { findNearbyAlternatives } from '../domain/booking/recommendations.js'
+import { groundLocalToUtc, isValidDateStr, groundTodayDateStr, addDaysToDateStr } from '../domain/booking/timezone.js'
+import { SLOT_DURATION_MINUTES, MAX_BOOKING_HORIZON_DAYS, GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR } from '../domain/booking/policy.js'
+import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
+import * as googleCalendar from './googleCalendar.service.js'
+import { publishBookingUpdate } from '../realtime/bookingRealtime.js'
+
+// Phase 14 Part 3 — orchestration. PostgreSQL is authoritative throughout;
+// Google Calendar sync only ever runs AFTER a booking row has already
+// committed (Part 13/29/31), and its result never changes the booking's own
+// success/failure. This mirrors scoring.service.js's shape: domain layer for
+// pure rules, repository for SQL, this file for the transaction + external
+// side effects.
+
+function assertBookableDate(dateStr) {
+  if (!isValidDateStr(dateStr)) throw new BookingError(BOOKING_ERROR_CODES.INVALID_DATE, 'A valid date (YYYY-MM-DD) is required.')
+  const today = groundTodayDateStr()
+  if (dateStr < today) throw new BookingError(BOOKING_ERROR_CODES.INVALID_DATE, 'Cannot view availability for a past date.')
+  const maxDate = addDaysToDateStr(today, MAX_BOOKING_HORIZON_DAYS)
+  if (dateStr > maxDate) throw new BookingError(BOOKING_ERROR_CODES.INVALID_DATE, `Bookings are only open up to ${MAX_BOOKING_HORIZON_DAYS} days ahead.`)
+}
+
+/** Builds the flat `{startTime, endTime, reason}` occupancy list a single
+ * day's availability is computed against: confirmed bookings/staff blocks
+ * (real ranges) + LOC match days (whole-day, Part 37). */
+async function buildOccupiedRanges(dateStr) {
+  const dayStart = groundLocalToUtc(dateStr, 0, 0)
+  const dayEnd = groundLocalToUtc(dateStr, 24, 0)
+
+  const [confirmed, matchDates] = await Promise.all([
+    bookingRepo.listConfirmedInRange(dayStart, dayEnd),
+    bookingRepo.listMatchDatesInRange(dateStr, addDaysToDateStr(dateStr, 1)),
+  ])
+
+  const ranges = confirmed.map((row) => ({
+    startTime: new Date(row.start_time),
+    endTime: new Date(row.end_time),
+    reason: row.booking_type === 'STAFF_BLOCK' ? 'BLOCKED' : 'BOOKED',
+  }))
+
+  if (matchDates.includes(dateStr)) {
+    // A whole-day block, not a fabricated time range (see repository comment).
+    ranges.push({ startTime: groundLocalToUtc(dateStr, GROUND_OPENING_HOUR, 0), endTime: groundLocalToUtc(dateStr, GROUND_CLOSING_HOUR, 0), reason: 'MATCH' })
+  }
+
+  return ranges
+}
+
+/** @param opts.isStaff — staff sees the specific reason (BOOKED/BLOCKED/MATCH/PAST);
+ * the public view only ever sees AVAILABLE/UNAVAILABLE (Part 47 — "Unavailable is often enough"). */
+export async function getDayAvailability(dateStr, { isStaff = false } = {}) {
+  assertBookableDate(dateStr)
+  const occupied = await buildOccupiedRanges(dateStr)
+  const slots = computeDayAvailability(dateStr, occupied)
+  return slots.map((s) => ({
+    startTime: s.startTime.toISOString(),
+    endTime: s.endTime.toISOString(),
+    status: s.status,
+    reason: isStaff ? s.reason : null,
+  }))
+}
+
+function availabilityLookupFactory(cache) {
+  return (dateStr) => cache.get(dateStr) || []
+}
+
+async function buildRecommendations(dateStr, hour, minute) {
+  // Bounded pre-fetch: the requested day plus a short lookahead window,
+  // matching recommendations.js's own default maxDaysAhead.
+  const maxDaysAhead = 7
+  const cache = new Map()
+  const dates = [dateStr, ...Array.from({ length: maxDaysAhead }, (_, i) => addDaysToDateStr(dateStr, i + 1))]
+  for (const d of dates) {
+    if (d > addDaysToDateStr(groundTodayDateStr(), MAX_BOOKING_HORIZON_DAYS)) continue
+    const occupied = await buildOccupiedRanges(d)
+    cache.set(d, computeDayAvailability(d, occupied))
+  }
+  const alternatives = findNearbyAlternatives(dateStr, hour, minute, availabilityLookupFactory(cache), { maxDaysAhead })
+  return alternatives.map((a) => ({ startTime: a.startTime.toISOString(), endTime: a.endTime.toISOString() }))
+}
+
+function validateSlotAlignment(dateStr, hour, minute) {
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    throw new BookingError(BOOKING_ERROR_CODES.INVALID_SLOT, 'A valid start time is required.')
+  }
+  const startTime = groundLocalToUtc(dateStr, hour, minute)
+  const dayStart = groundLocalToUtc(dateStr, GROUND_OPENING_HOUR, 0)
+  const dayEnd = groundLocalToUtc(dateStr, GROUND_CLOSING_HOUR, 0)
+  const offsetMinutes = (startTime.getTime() - dayStart.getTime()) / 60000
+  if (startTime.getTime() < dayStart.getTime() || startTime.getTime() + SLOT_DURATION_MINUTES * 60000 > dayEnd.getTime() || offsetMinutes % SLOT_DURATION_MINUTES !== 0) {
+    throw new BookingError(BOOKING_ERROR_CODES.INVALID_SLOT, 'That start time does not align with a valid booking slot.')
+  }
+  const endTime = new Date(startTime.getTime() + SLOT_DURATION_MINUTES * 60000)
+  if (startTime.getTime() < Date.now()) {
+    throw new BookingError(BOOKING_ERROR_CODES.PAST_TIME, 'That time has already passed.')
+  }
+  return { startTime, endTime }
+}
+
+/**
+ * Creates a CONFIRMED booking. The database EXCLUDE constraint
+ * (ground_bookings_no_overlap) is the actual, non-negotiable concurrency
+ * guarantee — this function's pre-checks (match-day, idempotency) are
+ * friendly UX/fast-path only. A 23P01 exclusion-violation from the INSERT
+ * itself is what proves correctness under real concurrent requests.
+ */
+export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null }) {
+  assertBookableDate(dateStr)
+  const { startTime, endTime } = validateSlotAlignment(dateStr, hour, minute)
+  if (!customerName || !String(customerName).trim()) {
+    throw new BookingError(BOOKING_ERROR_CODES.INVALID_SLOT, 'A customer/booking name is required.')
+  }
+
+  if (clientActionId) {
+    const existing = await bookingRepo.findByClientActionId(clientActionId)
+    if (existing) return { booking: existing, idempotentReplay: true }
+  }
+
+  // Match-day pre-check: a friendly, fast rejection before even attempting
+  // the INSERT (matches are rarely created in the same instant as a booking
+  // attempt, so this check-then-act window is not the guarantee the
+  // "non-negotiable" requirement is about — that's the EXCLUDE constraint
+  // below, which also protects customer-vs-customer and customer-vs-staff-
+  // block races that genuinely do race in practice).
+  const matchDates = await bookingRepo.listMatchDatesInRange(dateStr, addDaysToDateStr(dateStr, 1))
+  if (matchDates.includes(dateStr)) {
+    const alternatives = await buildRecommendations(dateStr, hour, minute)
+    throw new BookingError(BOOKING_ERROR_CODES.BOOKING_CONFLICT, 'This time is unavailable — the ground has a scheduled match that day.', { alternatives })
+  }
+
+  const client = await pool.connect()
+  let booking
+  try {
+    await client.query('BEGIN')
+    booking = await bookingRepo.insertBooking(client, {
+      publicBookingId: generatePublicId('LOC', 6),
+      bookingType,
+      userId,
+      customerName: String(customerName).trim(),
+      contactPhone,
+      contactEmail,
+      startTime,
+      endTime,
+      purpose,
+      expectedPlayers,
+      notes,
+      clientActionId,
+      createdByStaffId,
+    })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    if (err.code === '23P01') {
+      // THE non-negotiable guarantee firing: this request lost the race.
+      const alternatives = await buildRecommendations(dateStr, hour, minute)
+      throw new BookingError(BOOKING_ERROR_CODES.BOOKING_CONFLICT, 'This time was just booked or is unavailable.', { alternatives })
+    }
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // Google Calendar sync — strictly AFTER commit, never allowed to affect
+  // the booking's own success (Part 13/31). Idempotent by construction: this
+  // is the only code path that ever calls createCalendarEvent for a booking,
+  // and it only runs once, right here, right after the row is first created.
+  if (googleCalendar.isCalendarConfigured()) {
+    const sync = await googleCalendar.createCalendarEvent({ publicBookingId: booking.public_booking_id, customerName: booking.customer_name, startTime: new Date(booking.start_time), endTime: new Date(booking.end_time), purpose: booking.purpose })
+    booking = await bookingRepo.updateGoogleSync(booking.id, { eventId: sync.ok ? sync.eventId : null, status: sync.ok ? 'SYNCED' : 'FAILED' })
+  } else {
+    booking = await bookingRepo.updateGoogleSync(booking.id, { eventId: null, status: 'NOT_CONFIGURED' })
+  }
+
+  return { booking, idempotentReplay: false }
+}
+
+export async function findBookingByPublicId(publicBookingId) {
+  return bookingRepo.findByPublicId(publicBookingId)
+}
+
+export async function cancelBooking(publicBookingId, { actingUserId, isStaff }) {
+  const booking = await bookingRepo.findByPublicId(publicBookingId)
+  if (!booking) throw new BookingError(BOOKING_ERROR_CODES.BOOKING_NOT_FOUND, 'Booking not found.')
+  if (!isStaff && booking.user_id !== actingUserId) {
+    throw new BookingError(BOOKING_ERROR_CODES.FORBIDDEN, 'You can only cancel your own bookings.')
+  }
+  if (booking.status !== 'CONFIRMED') {
+    throw new BookingError(BOOKING_ERROR_CODES.ALREADY_CANCELLED, 'This booking is already cancelled.')
+  }
+
+  const cancelled = await bookingRepo.cancelBooking(booking.id)
+
+  // Best-effort calendar cleanup — never blocks the cancellation itself.
+  if (booking.google_calendar_event_id) {
+    const result = await googleCalendar.cancelCalendarEvent(booking.google_calendar_event_id)
+    if (!result.ok) console.error(`Google Calendar cancel failed for booking ${booking.public_booking_id}:`, result.error)
+  }
+
+  return cancelled
+}
+
+export async function listMyBookings(userId) {
+  return bookingRepo.listByUser(userId)
+}
+
+export async function listStaffSchedule({ fromDate, toDate } = {}) {
+  const fromUtc = fromDate ? groundLocalToUtc(fromDate, 0, 0) : undefined
+  const toUtc = toDate ? groundLocalToUtc(toDate, 24, 0) : undefined
+  return bookingRepo.listForStaffSchedule({ fromUtc, toUtc })
+}
+
+export async function createStaffBlock({ dateStr, hour, minute = 0, purpose, createdByStaffId }) {
+  return createBooking({ dateStr, hour, minute, customerName: purpose || 'Ground Block', purpose, bookingType: 'STAFF_BLOCK', createdByStaffId })
+}
+
+export function notifyBookingDateChanged(io, dateStr) {
+  publishBookingUpdate(io, dateStr)
+}
+
+export { GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR, SLOT_DURATION_MINUTES }

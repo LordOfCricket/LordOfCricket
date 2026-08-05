@@ -66,27 +66,39 @@ function normalizeMatch(match) {
   }
 }
 
-export async function getIndiaFeaturedMatch() {
-  const cached = getCache(CACHE_KEY)
-  if (cached !== undefined) return cached
-
+async function loadIndiaFeaturedMatch() {
   const currentMatches = await fetchCricApi('/currentMatches?offset=0')
   const liveIndiaMatch = currentMatches.find(
     (match) => involvesIndia(match) && match.matchStarted && !match.matchEnded
   )
-
-  if (liveIndiaMatch) {
-    const result = normalizeMatch(liveIndiaMatch)
-    setCache(CACHE_KEY, result, CACHE_TTL_SECONDS)
-    return result
-  }
+  if (liveIndiaMatch) return normalizeMatch(liveIndiaMatch)
 
   const schedule = await fetchCricApi('/matches?offset=0')
   const upcomingIndiaMatches = schedule
     .filter((match) => involvesIndia(match) && !match.matchStarted && match.dateTimeGMT)
     .sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT))
 
-  const result = upcomingIndiaMatches[0] ? normalizeMatch(upcomingIndiaMatches[0]) : null
+  return upcomingIndiaMatches[0] ? normalizeMatch(upcomingIndiaMatches[0]) : null
+}
+
+// Pre-Phase-11 cleanup: this widget shows a genuinely external, unofficial
+// data source (a different competition's live score, nothing to do with
+// LOC's own cricket truth) — an unset CRICAPI_KEY or a CricAPI outage is an
+// EXPECTED degraded state, not a LOC server bug, and must never surface as a
+// 500 (Part 94). The frontend already renders "No India international match
+// info available right now" for both `null` and a failed request identically,
+// so failing soft here removes a long-standing noisy console error with zero
+// visible behavior change.
+export async function getIndiaFeaturedMatch() {
+  const cached = getCache(CACHE_KEY)
+  if (cached !== undefined) return cached
+
+  let result = null
+  try {
+    result = await loadIndiaFeaturedMatch()
+  } catch (err) {
+    console.error('India featured match unavailable (external CricAPI):', err.message)
+  }
   setCache(CACHE_KEY, result, CACHE_TTL_SECONDS)
   return result
 }

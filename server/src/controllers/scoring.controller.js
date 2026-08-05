@@ -1,5 +1,7 @@
 import * as scoringService from '../services/scoring.service.js'
+import * as commentaryService from '../services/commentary.service.js'
 import { selectWagonWheelShots, getTimeline, groupDeliveriesByOver, getLastWicket } from '../domain/scoring/selectors.js'
+import { publishMatchState, publishCommentary } from '../realtime/cricketRealtime.js'
 
 function serializeState({ innings, state, format }) {
   return {
@@ -131,6 +133,33 @@ function parseDeliveryInput(body) {
   }
 }
 
+// Phase 11: publish only for a REAL write — an idempotent replay of an
+// already-processed clientActionId changed nothing, so re-broadcasting it
+// would be a harmless but wasteful no-op (Part 36). Fire-and-forget: the
+// scorer's response is never held up waiting on spectator delivery, and
+// publishMatchState never throws (Part 78/79 — a realtime hiccup must not
+// surface as a scoring failure).
+function maybePublish(req, result, reason) {
+  if (!result.idempotentReplay) publishMatchState(req.io, result.matchId, reason)
+}
+
+// Phase 12: commentary generation/persistence is a SEPARATE step from the
+// cricket write above — it runs only after that write already committed, and
+// its own failure is caught here and logged only (Part 38: an already-
+// committed delivery is never rolled back because commentary failed, and the
+// scorer's response — already sent by the time this runs — is never
+// affected). Persist-then-publish (Part 37): the socket only fires with rows
+// that are already durably in commentary_entries.
+async function maybePublishCommentary(req, result, inningsId) {
+  if (result.idempotentReplay) return
+  try {
+    const { entries, inningsVersion, matchId } = await commentaryService.appendCommentaryForInnings(inningsId)
+    if (entries.length) publishCommentary(req.io, matchId, { inningsId, inningsVersion, mode: 'append', entries })
+  } catch (err) {
+    console.error(`Commentary append failed for innings ${inningsId}:`, err.message)
+  }
+}
+
 export async function recordDelivery(req, res, next) {
   try {
     const result = await scoringService.recordDelivery({
@@ -141,6 +170,8 @@ export async function recordDelivery(req, res, next) {
       input: parseDeliveryInput(req.body),
     })
     res.status(201).json(result)
+    maybePublish(req, result, result.completion?.match ? 'match_completed' : 'delivery')
+    maybePublishCommentary(req, result, req.params.inningsId)
   } catch (err) {
     next(err)
   }
@@ -157,6 +188,8 @@ export async function recordEvent(req, res, next) {
       event: { eventType, payload: payload || {}, deliveryId: deliveryId ?? null },
     })
     res.status(201).json(result)
+    maybePublish(req, result, result.completion?.match ? 'match_completed' : 'event')
+    maybePublishCommentary(req, result, req.params.inningsId)
   } catch (err) {
     next(err)
   }

@@ -13,6 +13,12 @@ export function useCareerStats(publicPlayerId = null) {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Distinguishes "this account has no linked player profile yet" (an
+  // expected state for staff/umpire-only accounts — GET /me/stats 404s by
+  // design, see statistics.controller.js#getMyStats) from a genuine fetch
+  // failure. Consumers should show StatsEmptyState for this, never
+  // StatsErrorState with a Retry button that would just 404 again.
+  const [noPlayerProfile, setNoPlayerProfile] = useState(false)
   const [matchHistoryLimit, setMatchHistoryLimit] = useState(DEFAULT_MATCH_HISTORY_LIMIT)
 
   const fetchStats = useCallback(
@@ -22,8 +28,16 @@ export function useCareerStats(publicPlayerId = null) {
         .then((data) => {
           setStats(data)
           setError(null)
+          setNoPlayerProfile(false)
         })
-        .catch((err) => setError(err.response?.data?.message || "Couldn't load career statistics."))
+        .catch((err) => {
+          if (!publicPlayerId && err.response?.status === 404) {
+            setNoPlayerProfile(true)
+            setError(null)
+          } else {
+            setError(err.response?.data?.message || "Couldn't load career statistics.")
+          }
+        })
         .finally(() => setLoading(false))
     },
     [publicPlayerId]
@@ -48,5 +62,5 @@ export function useCareerStats(publicPlayerId = null) {
     fetchStats(next)
   }, [matchHistoryLimit, fetchStats])
 
-  return { stats, loading, error, retry, loadMoreMatchHistory }
+  return { stats, loading, error, noPlayerProfile, retry, loadMoreMatchHistory }
 }

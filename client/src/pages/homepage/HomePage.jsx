@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Mail, MapPin, Phone } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import Navbar from '../../components/layout/Navbar.jsx'
@@ -6,6 +7,7 @@ import IndiaMatchCard from '../../components/common/IndiaMatchCard.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
+import BookingModal from '../../components/booking/BookingModal.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
 
 function SectionHeading({ eyebrow, title, subtitle }) {
@@ -27,6 +29,7 @@ function SectionHeading({ eyebrow, title, subtitle }) {
 
 export default function HomePage() {
   const { stats, groundAddress, currentYear } = useHomePage()
+  const [bookingOpen, setBookingOpen] = useState(false)
 
   return (
     <div id="home" className="relative min-h-screen overflow-x-hidden bg-emerald-950">
@@ -122,19 +125,19 @@ export default function HomePage() {
         <div id="booking" className="w-full scroll-mt-24 px-6 py-6">
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-emerald-400/20 bg-linear-to-b from-emerald-400/10 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm">
             <h2 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-              Ready to Play?
+              Book Our Cricket Ground
             </h2>
             <span className="h-1 w-16 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600" />
             <p className="max-w-xl text-emerald-100/60">
-              Reach out to reserve a pitch, nets, or the full ground for your
-              next match.
+              Check live availability and reserve a pitch, nets, or the full ground for your next match.
             </p>
-            <a
-              href="mailto:booking@loc-ground.com"
+            <button
+              type="button"
+              onClick={() => setBookingOpen(true)}
               className="mt-2 inline-flex items-center rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-7 py-3 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-emerald-400/50"
             >
-              Reserve Your Slot
-            </a>
+              Book Ground
+            </button>
           </div>
         </div>
       </div>
@@ -169,6 +172,8 @@ export default function HomePage() {
           © {currentYear} LOC — Lord of Cricket Ground. All rights reserved.
         </p>
       </footer>
+
+      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
     </div>
   )
 }

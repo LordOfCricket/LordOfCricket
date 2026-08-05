@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { listTeams, getTeam, listTeamPlayers, getPublicTeams, getTeamProfile } from '../controllers/team.controller.js'
-import { requireAuth } from '../middlewares/auth.js'
+import { listTeams, getTeam, listTeamPlayers, getPublicTeams, getTeamProfile, addTeamPlayer, removeTeamPlayer } from '../controllers/team.controller.js'
+import { requireAuth, requireRole } from '../middlewares/auth.js'
 
 const router = Router()
 
@@ -16,5 +16,9 @@ router.get('/', listTeams)
 router.get('/:id/profile', getTeamProfile)
 router.get('/:id', requireAuth, getTeam)
 router.get('/:id/players', requireAuth, listTeamPlayers)
+
+// Phase 13 — staff-only team roster management (join/leave a team's squad).
+router.post('/:id/players', requireAuth, requireRole('staff'), addTeamPlayer)
+router.delete('/:id/players/:publicPlayerId', requireAuth, requireRole('staff'), removeTeamPlayer)
 
 export default router

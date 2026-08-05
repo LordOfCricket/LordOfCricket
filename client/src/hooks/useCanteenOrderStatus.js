@@ -52,16 +52,27 @@ export function useOrderStatus() {
   useEffect(() => {
     if (!orderId) return
     const socket = io(socketUrl)
-    socket.emit('join-order-room', orderId)
-    if (order?.userId) {
-      socket.emit('join-user-room', order.userId)
-    }
+    let hasConnectedBefore = false
 
     const updateOrder = (updated) => {
       if (updated.id === orderId) {
         setOrder(updated)
       }
     }
+
+    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // auto-rejoins an app-level room on its own reconnect; re-emit the joins
+    // every time, and resync the order via HTTP on any reconnect (not the
+    // first connect) since a status update published while disconnected would
+    // otherwise never arrive.
+    socket.on('connect', () => {
+      socket.emit('join-order-room', orderId)
+      if (order?.userId) socket.emit('join-user-room', order.userId)
+      if (hasConnectedBefore) {
+        fetchOrder(orderId).then(setOrder).catch(() => {})
+      }
+      hasConnectedBefore = true
+    })
 
     socket.on('order-status-updated', updateOrder)
     socket.on('order-completed', updateOrder)

@@ -14,6 +14,8 @@ import meRoutes from './me.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
+import groundBookingRoutes from './groundBooking.routes.js'
+import matchAvailabilityRoutes, { meAvailabilityRoutes } from './matchAvailability.routes.js'
 
 const router = Router()
 
@@ -27,6 +29,13 @@ router.use('/innings', inningsScoringRoutes)
 router.use('/india-match', indiaMatchRoutes)
 router.use('/partners', partnerRoutes)
 router.use('/teams', teamRoutes)
+
+// Phase 14 Part 1 — player match availability/RSVP.
+router.use('/matches', matchAvailabilityRoutes)
+router.use('/me', meAvailabilityRoutes)
+
+// Phase 14 Part 3 — ground booking.
+router.use('/bookings', groundBookingRoutes)
 
 // Phase 7 — official career statistics, derived from finalized match history only.
 router.use('/players', playerStatsRoutes)

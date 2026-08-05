@@ -44,14 +44,18 @@ import CanteenMenuPage from '../pages/canteen/menu/menu.jsx'
 import CanteenOrderStatusPage from '../pages/canteen/order-status/orderStatus.jsx'
 import CanteenStaffDashboardPage from '../pages/canteen/staff/dashboard.jsx'
 
+// Phase 14 Part 3 — ground booking
+import MyBookingsPage from '../pages/booking/MyBookingsPage.jsx'
+import StaffBookingPage from '../pages/booking/StaffBookingPage.jsx'
+
 const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
       { path: '/', element: <HomePage /> },
-      { path: '/admin/photos', element: <AdminPhotosPage /> },
-      { path: '/admin/amenities', element: <AdminAmenitiesPage /> },
-      { path: '/admin/partners', element: <AdminPartnersPage /> },
+      { path: '/admin/photos', element: <RequireAuth><AdminPhotosPage /></RequireAuth> },
+      { path: '/admin/amenities', element: <RequireAuth><AdminAmenitiesPage /></RequireAuth> },
+      { path: '/admin/partners', element: <RequireAuth><AdminPartnersPage /></RequireAuth> },
 
       // Auth
       { path: '/login', element: <AuthPage /> },
@@ -90,6 +94,10 @@ const router = createBrowserRouter([
       { path: '/canteen/menu', element: <RequireAuth><CanteenMenuPage /></RequireAuth> },
       { path: '/canteen/order-status', element: <RequireAuth><CanteenOrderStatusPage /></RequireAuth> },
       { path: '/canteen/staff', element: <RequireAuth><CanteenStaffDashboardPage /></RequireAuth> },
+
+      // Phase 14 Part 3 — ground booking
+      { path: '/bookings', element: <RequireAuth><MyBookingsPage /></RequireAuth> },
+      { path: '/bookings/staff', element: <RequireAuth><StaffBookingPage /></RequireAuth> },
     ],
   },
 ])

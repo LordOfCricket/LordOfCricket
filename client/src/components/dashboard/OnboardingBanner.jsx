@@ -14,7 +14,7 @@ export default function OnboardingBanner({ player, team }) {
 
   return (
     <div className="rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/10 p-6 shadow-sm backdrop-blur-sm">
-      <h2 className="text-xl font-bold text-white">Welcome to CricVerse.</h2>
+      <h2 className="text-xl font-bold text-white">Welcome to Lord Of Cricket.</h2>
       <p className="mt-1 text-sm text-emerald-100/80">A few steps to build your cricket identity.</p>
 
       <ul className="mt-5 space-y-3">
