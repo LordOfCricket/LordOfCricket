@@ -7,6 +7,7 @@ import { formatLabel, statusLabel, stageLabel, formatDateRange, formatMatchDateT
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import BracketView from '../../components/tournaments/BracketView.jsx'
 import OrganizerPanel from '../../components/tournaments/OrganizerPanel.jsx'
+import TournamentAnalyticsPanel from '../../components/tournaments/TournamentAnalyticsPanel.jsx'
 
 const TABS_BASE = ['Overview', 'Fixtures', 'Results', 'Teams', 'Statistics']
 
@@ -252,7 +253,9 @@ export default function TournamentPage() {
           )}
 
           {tab === 'Statistics' && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-4">
+              <TournamentAnalyticsPanel publicTournamentId={publicTournamentId} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <h3 className="text-sm font-bold text-white">Top Run Scorers</h3>
                 {(!statistics || statistics.topRunScorers.length === 0) && <p className="mt-2 text-sm text-slate-400">No batting data yet.</p>}
@@ -286,6 +289,7 @@ export default function TournamentPage() {
                     </li>
                   ))}
                 </ol>
+              </div>
               </div>
             </div>
           )}

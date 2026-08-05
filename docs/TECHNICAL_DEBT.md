@@ -237,6 +237,92 @@ crowned champion — was driven through real browser clicks). The squad-manageme
 logic itself has full integration-test coverage (duplicate/cross-team rejection, squad-size limits,
 the transfer-safety test).
 
+**AI Insight quality/behavior could not be live-verified against a real model in this environment
+(Phase 16)** — no `AI_API_KEY` was available. `ai/providers/anthropicProvider.js` is implemented
+against the current Anthropic Messages API structured-output shape and exercised for its *absence*
+(every AI Insight endpoint returns `{available:false, reason:'NOT_CONFIGURED'}`, verified directly
+against this environment's real, unconfigured backend — no page is blocked or degraded) — but actual
+narrative quality, actual resistance to a prompt-injection payload when processed by a real model,
+and actual end-to-end latency have not been manually confirmed. Everything upstream and downstream
+of the provider call (context building, fingerprinting, schema validation, hallucination
+post-processing, caching, single-flight concurrency, failure handling) was verified against a fake
+provider (`aiFixtures.js#makeFakeProvider`) instead — see `docs/ARCHITECTURE.md` §16.12. Same
+posture as the Google Calendar item above: do this once real credentials are provisioned, before
+relying on AI Insight quality operationally.
+
+**AI Insight has no user-facing "regenerate" affordance** — `POST .../ai-insight/regenerate` exists
+and is staff-only (Part 24), but no UI button calls it yet. Deliberate v1 scope: the automatic
+fingerprint-based invalidation (§16.13) already covers the only case that matters (a correction),
+so a manual staff regenerate button is a natural, bounded follow-up rather than a gap in the core
+mandate.
+
+**No token-usage/cost tracking or per-endpoint rate limiting on the AI Insight endpoints.** At
+current club scale, single-flight de-dup (§16.16) plus the fingerprint cache already keep provider
+calls rare (one generation per finalized match/player/team per correction, not per page view).
+Worth adding real usage metering before this ever runs at a scale where that stops being true.
+
+**Tournament Analytics deliberately omits "most fours"/"most sixes" (Phase 17).** Computing them
+would require a second full tournament replay pass duplicating `tournamentStats.service.js`'s
+existing work (Part 46/90's "avoid duplicate replay" caution) for a metric outside the mandatory
+Phase 17 list. A real need would be better served by adding `fours`/`sixes` fields to that existing
+service's leader entries in a small, focused follow-up, not a second parallel replay path.
+
+**Player Analytics' dot-ball/boundary metrics are bounded to the requested `recent` window (default
+5, max 20 matches), not the full career (Phase 17).** Deliberate: computing them career-wide would
+mean replaying every finalized match a player has ever appeared in on every profile-page load — the
+exact N+1-across-many-matches cost Part 46 warns against — for a metric this app's existing
+career-stats page (Phase 7) has never needed at full scope either. A real need for a career-wide
+version would be a bounded, explicit "load full history" action, not the default page load.
+
+**No Redis/queue-backed rate limiting or caching layer on the new Analytics endpoints (Phase 17).**
+Same posture as every other read endpoint in this app (P3 item below) — each Analytics request
+either reads cheap SQL aggregates over `innings`' own cache columns or replays a small, bounded set
+of matches; nothing measured here justified a cache. Revisit only with real evidence at a larger
+scale.
+
+**Chart accessibility is "value always in a native tooltip or visible text," not full ARIA chart
+semantics (Phase 17).** `LineChart.jsx` exposes point values via SVG `<title>` (native hover
+tooltip) plus a visually-hidden text summary of the same data (see `docs/ARCHITECTURE.md` §17.16
+for the real `<table>`-auto-layout overflow bug this replaced); `BarChart.jsx` renders every value
+as always-visible text next to its bar. Neither implements `role="img"` + a full structured ARIA
+table or per-datapoint keyboard navigation — a reasonable v1 scope for three simple, small charts
+with no chart library in this codebase, not a claim of full WCAG chart conformance.
+
+**No manual booking-approval workflow — PENDING/REJECTED/EXPIRED are not real states in this system
+(Phase 18).** Phase 14 deliberately auto-confirms every booking (the EXCLUDE constraint is the only
+gate); Phase 18's Feature 9 asked for a fuller status lifecycle, but bolting on a fake PENDING queue
+nothing would ever populate was judged worse than being honest about it. `domain/booking/
+bookingStatus.js` derives exactly the states that ARE real (`APPROVED`/`COMPLETED`/`CANCELLED`) — see
+`docs/ARCHITECTURE.md` §18.5. A genuine future need for staff pre-approval (e.g. large private
+events) would be a real, additive feature, not something this phase should have faked.
+
+**Scheduling a match/tournament fixture on top of an existing CONFIRMED ground booking is not
+rejected (Phase 18).** The read direction has worked since Phase 14 (a live/upcoming match already
+blocks new bookings — `listMatchDatesInRange`), but the reverse write-side check — reject
+`match.service.js#createMatch` if the ground already has a confirmed booking that day — was
+deliberately not added. `createMatch` is the one function both plain matches and every tournament
+fixture (`tournamentFixture.service.js#scheduleFixture`) funnel through, and it's exercised by a
+large number of existing tests that create matches at concurrent/overlapping real-world timestamps;
+adding a hard availability gate there carried real regression risk against code the Phase 18 brief
+explicitly said not to touch (scoring/tournament architecture). The realistic failure mode this
+would prevent — staff double-booking their own ground against their own confirmed reservation — is
+a self-inflicted scheduling error a human will notice immediately (both would show up on the
+Ground Operations dashboard/timeline for that day), not a customer-facing double-booking. Worth
+adding as a narrow, explicit check inside `tournamentFixture.service.js#scheduleFixture`/a new
+staff match-creation guard specifically (never inside `createMatch` itself) if this ever becomes a
+real operational problem.
+
+**No revenue analytics in the booking reports (Phase 18).** Explicitly out of scope — this app has
+no payment integration (see the existing "Ground booking has no guest/non-account flow and no
+payment" item above), so there is no revenue figure any report could honestly show.
+
+**`GET /ground/timeline`'s match-day entry is still whole-operating-window, not the match's real
+start/end time (Phase 18).** Same root cause as Phase 14's own documented limitation two items
+above: `matches.match_date` has no end time. Phase 18 only improved the LABEL (real team names/
+tournament context instead of a bare flag); a real per-match time range would need a real
+`match_date` + duration/end-time column on `matches`, unchanged since Phase 14 first documented
+this gap.
+
 ## P3 — Future
 
 **No caching layer (Redis or otherwise).** Every measured endpoint (match discovery ~2ms, live

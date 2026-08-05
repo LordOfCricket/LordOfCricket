@@ -6,7 +6,10 @@ import { findNearbyAlternatives } from '../domain/booking/recommendations.js'
 import { groundLocalToUtc, isValidDateStr, groundTodayDateStr, addDaysToDateStr } from '../domain/booking/timezone.js'
 import { SLOT_DURATION_MINUTES, MAX_BOOKING_HORIZON_DAYS, GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR } from '../domain/booking/policy.js'
 import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
+import { isValidBlockType } from '../domain/booking/blockTypes.js'
 import * as googleCalendar from './googleCalendar.service.js'
+import * as auditLogService from './groundAuditLog.service.js'
+import * as notificationService from './groundNotification.service.js'
 import { publishBookingUpdate } from '../realtime/bookingRealtime.js'
 
 // Phase 14 Part 3 — orchestration. PostgreSQL is authoritative throughout;
@@ -108,11 +111,14 @@ function validateSlotAlignment(dateStr, hour, minute) {
  * friendly UX/fast-path only. A 23P01 exclusion-violation from the INSERT
  * itself is what proves correctness under real concurrent requests.
  */
-export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null }) {
+export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null, blockType = null }) {
   assertBookableDate(dateStr)
   const { startTime, endTime } = validateSlotAlignment(dateStr, hour, minute)
   if (!customerName || !String(customerName).trim()) {
     throw new BookingError(BOOKING_ERROR_CODES.INVALID_SLOT, 'A customer/booking name is required.')
+  }
+  if (blockType != null && !isValidBlockType(blockType)) {
+    throw new BookingError(BOOKING_ERROR_CODES.INVALID_SLOT, `Unknown block type: ${blockType}`)
   }
 
   if (clientActionId) {
@@ -150,6 +156,7 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
       notes,
       clientActionId,
       createdByStaffId,
+      blockType,
     })
     await client.query('COMMIT')
   } catch (err) {
@@ -164,13 +171,41 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     client.release()
   }
 
+  // Phase 18 Feature 16 — audit log, strictly AFTER commit (never allowed to
+  // affect booking success — same "best-effort side effect" posture as
+  // Google Calendar sync below). CREATED action, no previous value (a new row).
+  const entityType = bookingType === 'STAFF_BLOCK' ? 'BLOCK' : 'BOOKING'
+  await auditLogService.logEvent({ entityType, entityId: booking.id, action: 'CREATED', actorUserId: createdByStaffId || userId, newValue: booking })
+
+  // Phase 18 Feature 17 — in-app "approved" notification. LOC has no manual
+  // approval step (Phase 14: auto-confirm by design — see
+  // domain/booking/bookingStatus.js), so CONFIRMED is the moment a real
+  // approval notification is meaningful; never sent for a staff block (no
+  // customer to notify).
+  if (bookingType === 'CUSTOMER' && userId) {
+    await notificationService.createNotification({
+      userId,
+      type: 'BOOKING_APPROVED',
+      title: 'Booking confirmed',
+      body: `Your ground booking (${booking.public_booking_id}) is confirmed.`,
+      relatedBookingId: booking.id,
+    })
+  }
+
   // Google Calendar sync — strictly AFTER commit, never allowed to affect
   // the booking's own success (Part 13/31). Idempotent by construction: this
   // is the only code path that ever calls createCalendarEvent for a booking,
   // and it only runs once, right here, right after the row is first created.
   if (googleCalendar.isCalendarConfigured()) {
-    const sync = await googleCalendar.createCalendarEvent({ publicBookingId: booking.public_booking_id, customerName: booking.customer_name, startTime: new Date(booking.start_time), endTime: new Date(booking.end_time), purpose: booking.purpose })
+    const sync = await googleCalendar.createCalendarEvent({
+      publicBookingId: booking.public_booking_id,
+      customerName: booking.customer_name,
+      startTime: new Date(booking.start_time),
+      endTime: new Date(booking.end_time),
+      purpose: bookingType === 'STAFF_BLOCK' ? `Ground Block: ${booking.purpose || 'Ground Block'}` : booking.purpose,
+    })
     booking = await bookingRepo.updateGoogleSync(booking.id, { eventId: sync.ok ? sync.eventId : null, status: sync.ok ? 'SYNCED' : 'FAILED' })
+    await auditLogService.logEvent({ entityType, entityId: booking.id, action: 'GOOGLE_SYNC', newValue: { status: booking.google_sync_status } })
   } else {
     booking = await bookingRepo.updateGoogleSync(booking.id, { eventId: null, status: 'NOT_CONFIGURED' })
   }
@@ -194,10 +229,24 @@ export async function cancelBooking(publicBookingId, { actingUserId, isStaff }) 
 
   const cancelled = await bookingRepo.cancelBooking(booking.id)
 
+  const entityType = booking.booking_type === 'STAFF_BLOCK' ? 'BLOCK' : 'BOOKING'
+  await auditLogService.logEvent({ entityType, entityId: booking.id, action: 'CANCELLED', actorUserId: actingUserId, previousValue: booking, newValue: cancelled })
+
+  if (booking.booking_type === 'CUSTOMER' && booking.user_id) {
+    await notificationService.createNotification({
+      userId: booking.user_id,
+      type: 'BOOKING_CANCELLED',
+      title: 'Booking cancelled',
+      body: `Your ground booking (${booking.public_booking_id}) has been cancelled.`,
+      relatedBookingId: booking.id,
+    })
+  }
+
   // Best-effort calendar cleanup — never blocks the cancellation itself.
   if (booking.google_calendar_event_id) {
     const result = await googleCalendar.cancelCalendarEvent(booking.google_calendar_event_id)
     if (!result.ok) console.error(`Google Calendar cancel failed for booking ${booking.public_booking_id}:`, result.error)
+    await auditLogService.logEvent({ entityType, entityId: booking.id, action: 'GOOGLE_SYNC', newValue: { status: result.ok ? 'CANCELLED_SYNCED' : 'CANCEL_FAILED' } })
   }
 
   return cancelled
@@ -213,8 +262,8 @@ export async function listStaffSchedule({ fromDate, toDate } = {}) {
   return bookingRepo.listForStaffSchedule({ fromUtc, toUtc })
 }
 
-export async function createStaffBlock({ dateStr, hour, minute = 0, purpose, createdByStaffId }) {
-  return createBooking({ dateStr, hour, minute, customerName: purpose || 'Ground Block', purpose, bookingType: 'STAFF_BLOCK', createdByStaffId })
+export async function createStaffBlock({ dateStr, hour, minute = 0, purpose, blockType = null, createdByStaffId }) {
+  return createBooking({ dateStr, hour, minute, customerName: purpose || 'Ground Block', purpose, bookingType: 'STAFF_BLOCK', blockType, createdByStaffId })
 }
 
 export function notifyBookingDateChanged(io, dateStr) {

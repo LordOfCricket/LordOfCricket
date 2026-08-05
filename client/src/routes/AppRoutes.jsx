@@ -26,6 +26,10 @@ import PlayersDiscoveryPage from '../pages/players/PlayersDiscoveryPage.jsx'
 import PublicPlayerProfilePage from '../pages/players/PublicPlayerProfilePage.jsx'
 import LeaderboardsPage from '../pages/leaderboards/LeaderboardsPage.jsx'
 
+// Phase 17 — Advanced Cricket Analytics: player/team comparison (public reads)
+import PlayerComparePage from '../pages/players/PlayerComparePage.jsx'
+import TeamComparePage from '../pages/teams/TeamComparePage.jsx'
+
 // Phase 9 — public match summary/scorecard (public read, no auth wall)
 import MatchSummaryPage from '../pages/match-summary/MatchSummaryPage.jsx'
 
@@ -73,6 +77,7 @@ const router = createBrowserRouter([
 
       // Phase 8 — player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: <PlayersDiscoveryPage /> },
+      { path: '/players/compare', element: <PlayerComparePage /> },
       { path: '/players/:publicPlayerId', element: <PublicPlayerProfilePage /> },
       { path: '/leaderboards', element: <LeaderboardsPage /> },
 
@@ -81,6 +86,7 @@ const router = createBrowserRouter([
 
       // Phase 10 Part 2 — public team ecosystem
       { path: '/teams', element: <TeamsPage /> },
+      { path: '/teams/compare', element: <TeamComparePage /> },
       { path: '/teams/:teamId', element: <TeamProfilePage /> },
 
       // Phase 9 — public match summary/scorecard

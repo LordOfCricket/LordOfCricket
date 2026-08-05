@@ -794,3 +794,726 @@ Public tournament endpoints (`tournament.controller.js`'s serializers) never sel
 inspects every returned row's keys. All mutating endpoints require `requireAuth` +
 `requireRole('staff')` (the exact same middleware every other staff-only feature in this app already
 uses — no new authorization mechanism introduced).
+
+## 16. AI Match/Player/Team Insight (Phase 16)
+
+### 16.1 The one non-negotiable rule
+
+```
+PostgreSQL (authoritative cricket truth)
+        ↓
+Existing, UNMODIFIED services (matchSummary.service.js / statistics.service.js / publicTeam.service.js)
+        ↓
+domain/ai — pure, bounded context builders (buildMatchAIContext.js / buildPlayerAIContext.js / buildTeamAIContext.js)
+        ↓
+ai/aiProvider.js — the ONE abstraction application code depends on
+        ↓
+ai/providers/anthropicProvider.js — the ONLY file that imports the Anthropic SDK
+        ↓
+Structured JSON response
+        ↓
+domain/ai/validateStructuredOutput.js — schema validation + post-processing (candidateId/playerId
+cross-checked against the supplied context, never trusted blindly)
+        ↓
+MongoDB `AiInsight` cache (generated narrative only — never cricket truth)
+        ↓
+GET /matches/:id/ai-insight, /players/:id/ai-insight, /teams/:id/ai-insight
+```
+
+AI is never on the write path of anything cricket-authoritative. `aiInsight.service.js` (the one
+place all of this is orchestrated) never issues an `UPDATE`/`INSERT` against any PostgreSQL table —
+its only write, ever, is an upsert into the MongoDB `AiInsight` cache document. Verified directly by
+an integration test (`RESULT TRUTH TEST`) that feeds a fake provider a response contradicting the
+real match result and confirms `matches`/`innings` are byte-for-byte unchanged afterward.
+
+### 16.2 Provider abstraction
+
+`ai/aiProvider.js` exports one function, `generateStructuredInsight({systemPrompt, factsPayload,
+taskInstruction, schema, maxTokens})`, and `isAIConfigured()`. Every service call goes through this
+— never a vendor SDK import outside `ai/providers/`. Swapping providers later means adding a new
+file under `providers/` and changing one `if` branch here, never touching a controller, a service,
+or the React client. Mirrors the exact "optional dependency, degrade gracefully" shape
+`googleCalendar.service.js` (Phase 14) already established: `isAIConfigured()` ↔
+`isCalendarConfigured()`, both gate every call, neither ever throws past their own boundary.
+
+### 16.3 Provider selection
+
+Audited first (Part 1 of the spec): no AI/LLM code, no AI SDK dependency, and no `AI_*`/OpenAI/
+Gemini/Anthropic env vars existed anywhere in the repository before this phase. One provider was
+implemented — **Anthropic (`@anthropic-ai/sdk`)** — the environment this project already runs
+inside, with no second paid API required. Default model is `claude-sonnet-5` (env-overridable via
+`AI_MODEL`): this is short, bounded, template-shaped narrative generation from an already-computed
+fact set — not open-ended reasoning or agentic work — so the cost/latency profile of a mid-tier
+model was chosen deliberately over the largest available one, consistent with the deadline
+execution mode's "simple, bounded, production-safe" directive. Structured outputs
+(`output_config.format` with a JSON Schema) constrain the model's response shape server-side;
+`domain/ai/validateStructuredOutput.js` independently re-validates the parsed result regardless
+(Part 47 — "never trust provider JSON blindly").
+
+### 16.4 Environment configuration
+
+`AI_PROVIDER` (currently only `'anthropic'`), `AI_API_KEY`, `AI_MODEL` — see `server/.env.example`.
+Names only, values are secrets and never logged/exposed; never a `VITE_`-prefixed variable, so the
+key can never reach the React bundle. With `AI_API_KEY` unset, `isAIConfigured()` returns `false`,
+every AI endpoint returns `{available:false, reason:'NOT_CONFIGURED'}`, and the server boots exactly
+as it does today — verified directly (`NOT_CONFIGURED` integration test, and this environment's own
+real backend smoke test, which genuinely has no key configured).
+
+### 16.5 Database / persistence
+
+No new PostgreSQL tables. One new MongoDB collection, `AiInsight` (`models/aiInsight.model.js`):
+`sourceType` (`MATCH`/`PLAYER`/`TEAM`), `sourceId`, `sourceFingerprint`, `provider`, `model`,
+`payload` (the validated structured insight), `generatedAt` — unique on `(sourceType, sourceId)`.
+MongoDB is the right home for exactly the reason the Phase 15/16 spec calls out: this is
+generated/unstructured narrative content, not a second source of cricket truth (README principle
+#4/#9) — deleting the whole collection loses nothing authoritative, unlike any PostgreSQL table in
+this app. Consistent with MongoDB's existing "optional, canteen-only until now" role: with Mongo
+unreachable, `aiInsight.service.js` simply skips caching (calls the provider fresh every time,
+verified via the `NOT_CONFIGURED` test's environment, where Mongo was also unreachable throughout
+this session) rather than failing.
+
+### 16.6 Match AI context
+
+`domain/ai/buildMatchAIContext.js` — pure, zero I/O. Input is the SAME public Match Summary DTO
+(`matchSummary.service.js#getMatchSummary`, completely unmodified) plus the match's Phase 12
+commentary rows. Bounds: top 3 batters/bowlers per innings by runs/wickets, at most 15 candidate key
+moments. Nothing here re-derives a score, wicket, or result — every number is read straight off the
+already-replay-derived summary DTO.
+
+### 16.7 AI Match Summary & key moments
+
+**Key moments are never invented by the model.** Candidates come from the EXISTING deterministic
+Phase 12 commentary projection (`commentary_entries`), filtered to `WICKET`/`MILESTONE` rows and
+`FOUR`/`SIX`-tagged deliveries — reusing a real, already-tested cricket-evidence source rather than
+building a second one. Each candidate gets an application-assigned `candidateId` (`"km-1"`,
+`"km-2"`, ...); the schema only ever asks the model to reference a `candidateId` and write an
+`explanation` — it can never fabricate a `deliveryId`. After validation,
+`aiInsight.service.js#postProcessMatchInsight` maps the model's chosen `candidateId`s back to their
+real `deliveryId`/`type`/`label` via a server-side lookup, and silently drops any `candidateId` the
+model referenced that isn't actually in the supplied candidate list (Part 11/48 — "prefer
+deterministic application code to attach IDs after AI selection"). `standoutPerformers` are
+filtered the same way against `FACTS.allowedPlayerIds`.
+
+### 16.8 Player / Team AI context
+
+`domain/ai/buildPlayerAIContext.js` / `buildTeamAIContext.js` — pure projections of
+`statistics.service.js#getPlayerCareerStats` and `publicTeam.service.js#getPublicTeamProfile`
+(both unmodified, both already finalized-only per Phase 7's rule). No ratings, predictions, or
+personality judgments are ever *possible* to produce — the boundary is structural (those fields
+never exist in the context or the schema), not something the model is merely asked not to do.
+
+### 16.9 Structured output & validation
+
+Two schemas (`ai/schemas/`): `MATCH_INSIGHT_SCHEMA` (`headline`, `summary`, `keyMoments[]`,
+`standoutPerformers[]`) and `PERSON_INSIGHT_SCHEMA` (`headline`, `summary`, `highlights[]`, shared by
+player and team — structurally identical shapes). `domain/ai/validateStructuredOutput.js` is a
+small, hand-rolled JSON-Schema subset (type/required/properties/items/min-maxItems/maxLength/
+enum/additionalProperties) — no schema library exists anywhere in this repo's dependencies, and
+these three schemas don't justify adding one. Malformed/out-of-schema output is rejected wholesale
+(`INVALID_OUTPUT`), never partially trusted.
+
+### 16.10 Hallucination guardrails
+
+1. Bounded, pre-computed context (never raw DB rows, never unlimited history).
+2. Structured output, schema-validated both server-side (`output_config.format`) and independently,
+   defensively, in this codebase.
+3. Key-moment/player references are cross-checked against the exact candidate set supplied — a
+   reference to anything else is silently dropped, never trusted.
+4. AI cannot override or restate a different result than `matches.winner_team_id`/`result_type` as
+   truth anywhere the UI treats as authoritative — the AI's prose is always rendered in a visually
+   distinct, clearly-labeled card, never merged into the deterministic scorecard.
+5. AI never writes to PostgreSQL — structurally impossible, not merely avoided (§16.1).
+6. Bounded output (`maxLength`/`maxItems` on every field) and a bounded 30-second request timeout
+   (`ai/providers/anthropicProvider.js`).
+
+### 16.11 Privacy
+
+Context builders only ever read already-public DTOs (the same ones the page itself renders) — no
+email/phone/password/token/booking/canteen field is ever selected into a context object, verified
+directly by an integration test that inspects the EXACT payload sent to the (fake) provider.
+
+### 16.12 Prompt-injection resilience
+
+`domain/ai/buildPromptPayload.js#buildUserContent` has exactly one templated slot: `JSON.stringify`
+of the context object, always followed by the fixed task instruction. A hostile string embedded in
+a team/player name (e.g. `"Ignore previous instructions..."`) can only ever land inside that
+JSON-serialized value — it structurally cannot alter the system prompt, inject a second top-level
+JSON object, or merge into the task instruction. Verified by a unit test constructing exactly this
+adversarial input. **What this does NOT prove**: whether a live model actually resists following
+such text once it reaches it — that requires a real API call this environment has no credentials
+for (see `docs/TECHNICAL_DEBT.md`). The system prompt (`ai/prompts/systemPrompts.js`) additionally
+instructs the model explicitly to treat the FACTS block as inert data, never instructions.
+
+### 16.13 Caching & source fingerprinting
+
+`domain/ai/computeSourceFingerprint.js` — a deterministic SHA-256 hash of a small, explicit "what
+would make this insight stale" fact set. For a match, that's `matchId`/`status`/`resultType`/
+`winnerTeamId` plus **every innings' `version` number** — the exact optimistic-concurrency counter
+every scoring correction already bumps (schema.sql's Phase 3 comment), so ANY correction
+invalidates the cached insight, even one that happens to leave final totals unchanged (e.g.
+correcting who took a catch). For a player/team, the fingerprint is the aggregated career/record
+object itself — since `getPlayerCareerStats`/`getPublicTeamProfile` already fully re-derive from
+current authoritative data on every call, hashing their own output is sufficient and simpler.
+
+`aiInsight.service.js#getOrGenerate`: on each request, compute the current fingerprint, compare
+against the cached document's `sourceFingerprint`. A match → regenerate; a match → serve the cached
+payload with `cached: true`, never calling the provider again. **A stale cached document is never
+served** — a mismatch always regenerates before returning.
+
+### 16.14 Correction invalidation — the mandatory test
+
+Real corrections can only ever apply to a `completed` (not yet `finalized`) match — finalize is a
+documented one-way lock (`match.service.js`), so a genuinely finalized match's underlying rows can
+never be touched by a correction again. Two integration tests cover this honestly:
+
+- **`REAL CORRECTION, PRE-FINALIZE`** — the real, legitimate flow: score a match, apply a real
+  correction via `correctionService.applyCorrection` while still `completed`, finalize, then
+  generate the insight. Asserts the context sent to the (fake) provider reflects the CORRECTED
+  result (winner/margin), never the pre-correction one.
+- **`CRITICAL CORRECTION TEST`** — directly exercises the fingerprint/staleness MECHANISM: generate
+  and cache an insight for a finalized match, then bump `innings.version` (the same counter a real
+  correction always bumps) to simulate the only kind of state change that could ever reach an
+  already-finalized match's rows, and verify the next request detects the mismatch, regenerates
+  (never serves the stale cached payload), and persists a new fingerprint.
+
+Together these prove the fingerprint mechanism is correct (test 2) and that it's fed by data that
+genuinely reflects reality end-to-end through the real correction pipeline (test 1) — without
+faking a scenario ("correct an already-finalized match") the app's own rules make impossible.
+
+### 16.15 Failure / timeout behavior
+
+Every failure mode — unconfigured, provider timeout/network/5xx, safety refusal, malformed/
+out-of-schema JSON — is caught inside `aiInsight.service.js#getOrGenerate` and turned into
+`{available:false, reason}`. Nothing ever propagates as a thrown error the controller has to turn
+into a 500; a `GET .../ai-insight` request is always HTTP 200. Verified directly (`PROVIDER FAILURE`
+integration test: a fake provider that throws, confirmed the underlying Match Summary read stays
+fully usable) and structurally true in this environment throughout the whole phase (no `AI_API_KEY`
+was ever configured here, and the server booted and served every page normally the entire time).
+Requests are bounded to a 30-second timeout (`ai/providers/anthropicProvider.js`); no custom retry
+logic was added (the SDK's own small default retry is sufficient — Part 27's "avoid aggressive
+retries").
+
+### 16.16 Concurrent generation
+
+An in-process `Map` in `aiInsight.service.js` de-dupes concurrent requests for the same
+`sourceType:sourceId` to a single in-flight provider call — N spectators opening the same finalized
+Match Summary at once trigger exactly one generation, not N (verified with a real
+`Promise.all` concurrent-request integration test). Deliberately not Redis (explicitly out of scope
+for this phase) — a single Node process is this app's actual current scale, the same assumption
+every other in-memory cache in this codebase already makes.
+
+### 16.17 Frontend integration
+
+One shared component, `components/ai/AIInsightSection.jsx`, mounted independently (its own
+`useAIInsight` hook, its own loading/error/unavailable state) on Match Summary, Player Profile, and
+Team Profile — never blocking the page's primary, deterministic content, which always renders
+first. Clearly labeled "✨ AI Match/Performance/Team Insight" in a visually distinct card; every
+unavailable state (`NOT_CONFIGURED`/`INSUFFICIENT_DATA`/`PROVIDER_ERROR`/...) fails soft to a plain
+sentence, never an error banner. Live/upcoming matches simply show `INSUFFICIENT_DATA` — no fake
+analysis is ever generated for a match that hasn't been finalized (Part 39), and no commentary
+architecture (Phase 12, still fully deterministic, still the only thing driving the live spectator
+feed) was touched.
+
+## 17. Advanced Cricket Analytics (Phase 17)
+
+### 17.1 The one non-negotiable rule
+
+```
+PostgreSQL (authoritative cricket truth: matches, innings, deliveries, wickets — all UNCHANGED)
+        ↓
+Existing, UNMODIFIED services/domain (statistics.service.js / publicTeam.service.js /
+matchSummary.service.js / tournamentStats.service.js / scoring.service.js#getInningsState /
+domain/scoring/selectors.js / domain/scoring/matchResult.js)
+        ↓
+domain/analytics — pure, dependency-free derivation functions (never a second replay/scoring rule)
+        ↓
+repositories/analytics.repository.js — a handful of cheap, batch SQL aggregates over the SAME
+innings-table replay-written cache columns scoring.service.js already trusts (no new replay for
+most metrics)
+        ↓
+services/{player,team,match,tournament,comparison}Analytics.service.js
+        ↓
+Public GET APIs (routes/analytics.routes.js, mounted onto existing /players, /teams, /matches,
+/tournaments prefixes)
+        ↓
+New Analytics tabs/sections + /players/compare + /teams/compare
+```
+
+This phase is explicitly NOT AI (Part 84 — Phase 16's AI Insight continues to consume the same
+existing statistics it always has; nothing here makes AI mandatory, and AI being unconfigured has
+zero effect on any analytics endpoint). Every number is mathematically reproducible from
+PostgreSQL — no LLM, no fuzzy inference, no invented metric.
+
+### 17.2 Audit-first: what already existed, what's genuinely new
+
+Audited before writing any code (grep sweep across both `server/` and `client/` for
+`analytics|trend|comparison|runRate|dotBall|boundary|powerplay|phase|headToHead|partnership`):
+already-correct primitives were found and reused verbatim, never reimplemented —
+`domain/scoring/selectors.js#calculateRunRate/calculateRequiredRunRate/formatOvers` (the one legal-
+ball-based run-rate formula), `domain/scoring/replay.js`'s enriched `state.deliveries` array
+(`over`, `batRuns`, `illegal`, `wicket`, `isLegalDelivery`, `totalRuns` — everything phase/dot-ball/
+progression analytics need), `state.bowlers[id].dots` (already computed by the replay engine's
+`updateBowler`, just never previously exposed past `bowlingStats.js`), `domain/statistics/
+battingStats.js`/`bowlingStats.js` (`extractBattingPerformance`/`aggregateBatting`/etc.),
+`domain/team/teamRecord.js`/`teamTopPerformers.js`, and `matchSummary.service.js`'s already-built
+`partnerships`/`fallOfWickets`/`overs` arrays. No chart library exists anywhere in this repo
+(`client/package.json` audited in full) — see §17.16.
+
+Genuinely new: boundary-runs-percentage, dot-ball-percentage (batting side — the bowling side's
+dot count already existed, just unexposed), the three-phase Opening/Middle/Closing split, batting
+consistency (mean/median/threshold counts), score/run-rate progression reshaped for a chart,
+dismissal-type breakdown, batting-first-vs-chasing, team run-rate trend, and player/team comparison
+— none of these existed in any form before this phase.
+
+### 17.3 Official data eligibility
+
+Identical to Phase 7/10's rule, reused without modification: `matches.status = 'finalized'` only.
+`'completed'` (result decided, still correctable) is explicitly excluded everywhere — confirmed via
+`statistics.repository.js`'s existing `WHERE m.status = 'finalized'` clauses, reused as-is by every
+Phase 17 repository/service function. Match Analytics (a single match's own page) is the one
+deliberate exception: it renders for any match with at least one innings (including still-`live`),
+mirroring Match Summary's own live tolerance — the frontend only exposes the Analytics tab once a
+match has real deliveries, and no career/team-aggregate number is ever affected by a non-finalized
+match.
+
+### 17.4 Domain layer (`domain/analytics/`)
+
+Ten pure, zero-I/O files, each with 100% unit coverage (39 tests): `matchPhases.js` (phase
+boundary computation), `phaseMetrics.js` (per-phase runs/wickets/legalBalls/fours/sixes/dotBalls,
+reconciling exactly with the innings total — Part 56), `inningsProgression.js` (over-by-over
+cumulative score + run rate + required run rate), `scoreComparison.js` (two-innings worm-chart
+reshape), `battingAnalytics.js` (boundary %, batting dot count/%), `bowlingAnalytics.js` (bowling
+dot %), `consistency.js` (mean/median/threshold counts — deliberately no composite rating, Part 14),
+`dismissalBreakdown.js` (authoritative-dismissal-type grouping), `teamSplitAnalytics.js`
+(batting-first vs. chasing), `teamAverages.js` (mean innings score), `headToHead.js` (team vs. team
+record). Every function takes already-fetched data in, returns a plain DTO out — no `pg`/`fetch`
+import anywhere in this directory, exactly like every existing `domain/` file in this codebase.
+
+### 17.5 Legal-ball math, never decimal overs
+
+Non-negotiable, and never re-derived: every run-rate/required-run-rate number in this phase calls
+`domain/scoring/selectors.js#calculateRunRate`/`calculateRequiredRunRate` directly — the exact same
+functions Match Summary and the live scorer already trust — never a second formula, never a parse
+of a displayed "18.4" string. `inningsProgression.js`'s doc comment states this explicitly. Format
+awareness (`ballsPerOver` never hard-coded to 6) is threaded through every function signature,
+mirroring the established convention from `bowlingStats.js`'s `equivalentOvers`.
+
+### 17.6 Match phases — deliberately NOT hard-coded Powerplay/Death overs
+
+`selectors.js#getMatchPhase` already exists and is used for the LIVE scoring UI's phase label
+(`'Powerplay'`/`'Middle Overs'`/`'Death Overs'`, hard-coded to a T20-style "first 6 / last 5"
+convention) — left completely untouched, since it's a reasonable heuristic for that specific
+in-play UX. Phase 17's analytics feature deliberately does NOT reuse it: the brief itself warns
+against "blindly hard-coding T20 phase boundaries for every match" (LOC supports arbitrary
+overs-per-innings club matches, not just 20-over games). `domain/analytics/matchPhases.js` instead
+computes a generic, deterministic, proportional three-way split — Opening/Middle/Closing, each
+roughly a third of the innings (`third = round(oversPerInnings / 3)`) — named generically so
+nothing here claims an official Powerplay/Death-overs rule LOC does not actually store. Matches
+with fewer than 3 overs per innings, or no overs limit at all (`oversPerInnings === null` — LOC
+supports unlimited-overs matches), return `null`: phase analytics is simply "not available" for
+that innings, never a guessed fallback split. Verified by a unit test that every over from 1 to
+`oversPerInnings` lands in exactly one phase for a range of match lengths (3–50 overs) — no gaps,
+no double-counting.
+
+### 17.7 Player Analytics
+
+`services/playerAnalytics.service.js` — recent form/batting trend/bowling trend are a thin,
+chart-ready reshaping of `statistics.service.js#getPlayerCareerStats`'s `matchHistory.items`
+(Phase 7, completely unmodified) — zero new career derivation. Only the genuinely new metrics do
+their own bounded work: dot-ball analysis replays exactly the *recent-N* matches being requested
+(never the player's whole career) via `scoring.service.js#getInningsState` — the same trusted
+function Phase 7 itself uses — reading `state.bowlers[id].dots` directly (an already-computed
+field, zero new bowling math) and `domain/analytics/battingAnalytics.js#countBattingDots` against
+`state.deliveries` for the batting side. Dismissal breakdown queries `wickets.dismissal_type`
+directly (career-wide, cheap SQL, no replay — §17.4/17.11). Tournament breakdown (optional
+`?tournamentId=`) scopes the same `extractBattingPerformance`/`aggregateBattting` primitives to
+just that tournament's finalized matches for this player, via `tournamentRepo.
+listFinalizedTournamentParticipation` (Phase 15, unmodified).
+
+### 17.8 Boundary and dot-ball definitions (exact formulas)
+
+- **`boundaryRunsPercentage`** = `(fours×4 + sixes×6) / totalRuns × 100` — `null` (not `0`) when
+  `totalRuns === 0`, since 0/0 is undefined, not "0% boundary reliance."
+- **Batting dot ball** = a delivery this player faced, using the EXACT "ball faced" convention
+  `replay.js#updateBatsman` already uses (a wide never counts as faced, a no-ball does), on which
+  `batRuns === 0`. A bye/leg-bye scored on an otherwise-dot ball still counts as a batting dot — the
+  batter didn't score off their own shot, the standard cricket convention.
+- **Bowling dot ball** — the count itself is never recomputed; `state.bowlers[id].dots` (from
+  `replay.js#updateBowler`, predicate `totalRuns === 0 && !wicket`) is read directly. Both
+  percentages return `null` for zero balls faced/bowled (never `NaN`/`Infinity`), matching
+  `battingStrikeRate`/`bowlingEconomy`'s existing null-for-zero convention.
+
+### 17.9 Team Analytics
+
+`services/teamAnalytics.service.js` — `analytics.repository.js#listTeamInningsForFinalizedMatches`
+is ONE query returning both innings' cache columns (`innings.runs`/`.wickets`/`.legal_balls` — the
+same replay-written columns `scoring.service.js` already trusts as authoritative post-finalization)
+per finalized match this team played, joined to `matches` for opponent/result — no replay call
+needed for average score/conceded, batting-first-vs-chasing, or the run-rate trend; batting-first is
+determined by the REAL `innings.innings_number === 1` row, never assumed from `team_a_id`/
+`team_b_id` column order (Part 18). Top contributors reuses `publicTeam.service.js#
+buildTopPerformers` directly (exported additively for this purpose — see §17.13) rather than a
+second player-stat replay path. Tournament performance queries every tournament this team
+registered in (`analytics.repository.js#listTournamentsForTeam`, a new query — `tournament_teams`
+has no existing "by team" lookup) and reuses `tournamentStandings.service.js#
+getTournamentStandings` (Phase 15, unmodified) for each one's standings row, plus `tournaments.
+champion_team_id` for the champion flag.
+
+### 17.10 Match Analytics
+
+`services/matchAnalytics.service.js` reuses `matchSummary.service.js#getMatchSummary` (Phase 9,
+unmodified) for partnerships (picking the highest via a trivial `reduce`, since no such picker
+existed before) and makes its OWN bounded, single-match replay pass (`scoring.service.js#
+getInningsState` — at most 2 calls, one per innings) for the score/run-rate progression and phase
+breakdown, which need the raw delivery array Match Summary's own DTO doesn't expose. This is a
+deliberate, bounded exception to "never replay twice" — a single match detail page paying for its
+own innings' replay twice (once inside `getMatchSummary`, once here) is not the N+1-across-many-
+matches problem §17.14 guards against; it's the same "replay fresh, never cache" cost every existing
+Match Summary page load already pays. `available: false, reason: 'INSUFFICIENT_DATA'` (never an
+error) before any innings exists, exactly mirroring Phase 16's AI Insight response shape.
+
+### 17.11 Dismissal breakdown is honestly derivable
+
+`wickets.dismissal_type` is a CHECK-constrained, 1:1-FK'd-to-`deliveries` authoritative column
+(schema.sql) — `commentary_entries` is explicitly documented as "a projection of authoritative
+cricket history, never a second truth" (Phase 12). Dismissal-breakdown analytics therefore reads
+straight off `wickets`, never parses or infers from commentary text (Part 15's explicit
+requirement).
+
+### 17.12 Comparison — no composite winner, ever
+
+`services/comparisonAnalytics.service.js#comparePlayers`/`compareTeams` return two side-by-side DTOs
+built from existing, unmodified services (`statistics.service.js#getPlayerCareerStats`,
+`team.repository.js#listFinalizedMatchesForTeam` + `domain/team/teamRecord.js#buildTeamRecord`) —
+structurally, no field resembling a score/rating/winner exists anywhere in either response (Part
+33). Comparing an id to itself is a `400`, not a silently-degenerate result. `compareTeams`'
+`headToHead` uses each match's HISTORICAL `team_a_id`/`team_b_id` (a team's own identity is fixed at
+match time and never changes — unlike a player, a team is never "transferred" — so this is
+inherently transfer-safe with no extra bookkeeping needed, verified by an integration test that
+transfers a player mid-test and confirms zero effect on the head-to-head record).
+
+### 17.13 One additive export, zero behavior change
+
+`services/publicTeam.service.js#buildTopPerformers` was changed from an internal (unexported)
+function to an exported one — purely additive, no logic touched, every existing caller and test
+unaffected — specifically so Team Analytics' "Top Contributors" section reuses it directly instead
+of a second replay path (Part 23's explicit instruction).
+
+### 17.14 Performance — batch SQL, bounded replay
+
+Team/tournament aggregate metrics (averages, run-rate trend, batting-first split, tournament
+scoring totals) read `innings`' own replay-written cache columns via a handful of batch SQL queries
+(`repositories/analytics.repository.js`) — zero replay calls. Player/match analytics that genuinely
+need ball-level detail (dot-balls, phase breakdown) replay only the specific bounded set of matches
+being requested — recent-N for a player (clamped 1–20), one tournament's matches for a tournament
+breakdown, one match's own (at most 2) innings for Match Analytics — never a full career or an
+unbounded "everything" query. No new PostgreSQL index was added; none of the new queries showed a
+measurable latency problem at this club's data scale during testing (Part 47 — "only add indexes
+after measuring a real query problem").
+
+### 17.15 Database changes
+
+None. Zero new PostgreSQL tables, zero new columns, zero new Mongo collections. Every Phase 17
+endpoint is a pure read over existing schema (Part 47's explicit "prefer zero schema changes").
+
+### 17.16 Frontend: no chart library, hand-built SVG/CSS charts
+
+`client/package.json` was audited in full before writing any frontend code — no chart library
+(`recharts`/`chart.js`/`victory`/`d3`/etc.) exists anywhere in this repository, and the three simple
+chart types this phase needs (a line/worm chart, a bar chart) don't justify adding one (Part 39).
+`components/analytics/LineChart.jsx` is a small `viewBox`-based SVG line chart (scales to its
+container at any width, never a fixed pixel size) with a native `<title>` per point for hover
+tooltips, plus a visually-hidden (`sr-only`) plain-text summary of the same values for
+non-hover/screen-reader access (Part 41/42). `BarChart.jsx` is plain HTML/CSS (flexbox bars with
+always-visible text values, never a hover-only number) — deliberately not SVG, so every value is
+readable without interaction. Both follow the same hand-built-SVG precedent this codebase already
+established for the wagon wheel (`components/wagon-wheel/`).
+
+**Bug found and fixed by the mobile/tablet E2E sweep**: `LineChart.jsx`'s original accessibility
+fallback was a `<table className="sr-only">`. An HTML `<table>`'s default `table-layout: auto`
+computes its own intrinsic content width from its cells regardless of an explicit `width` — Tailwind
+`sr-only`'s `width: 1px` couldn't override this — and that oversized intrinsic width still
+contributed to the page's scrollable area even though the table itself was visually clipped,
+producing a real horizontal-scroll regression on Match Summary's new Analytics tab at 390×844 and
+768×1024 (a 424px/54px overflow, respectively — caught by the mobile/tablet checks, not by
+lint/build/unit/integration tests). Fixed by replacing the `<table>` with a single `sr-only` `<p>`
+containing the same data as a plain joined text string — a text node has no such auto-sizing
+behavior. Re-verified: 0px overflow at both breakpoints afterward.
+
+### 17.17 Frontend integration
+
+`hooks/useAnalytics.js` — a generic hook mirroring Phase 16's `useAIInsight.js` shape exactly
+(independently loading, never blocking the page's primary content, the same `window.setTimeout(fn,
+0)` deferred-load pattern required by this codebase's `react-hooks/set-state-in-effect` lint rule).
+New `ANALYTICS` tabs on Player Profile and Match Summary, a new "Analytics" section on Team Profile
+(always below the existing deterministic content, never replacing it — same rule Phase 16's AI
+Insight already established), and an analytics summary block added to Tournament's existing
+Statistics tab (not a new tab — Part 73's "enhance existing... rather than a disconnected
+duplicate page"). `/players/compare` and `/teams/compare` are new pages with a debounced
+name-search picker (reusing the existing `searchPlayers`/`fetchPublicTeams` public discovery
+endpoints, never a second search backend — Part 71/72) and URL-state persistence (`?p1=&p2=`/
+`?t1=&t2=`) so a shared/refreshed link keeps the same comparison. Both are linked from the Players/
+Teams discovery pages via a "Compare" button.
+
+## 18. Ground Operations & Management (Phase 18)
+
+### 18.1 Mission and scope
+
+This phase turns LOC from "a cricket scoring platform with a booking module bolted on" into a
+complete operations system for **one physical ground** — never a multi-ground platform (no `ground_id`
+column was added anywhere; every query implicitly means "the one ground this deployment manages").
+The mandate was explicit: reuse Phase 14's existing booking architecture, never redesign a working
+module, never touch scoring or the tournament engine. Every decision below follows directly from
+that constraint.
+
+### 18.2 Audit-first: what already existed
+
+Audited before writing any code: `ground_bookings` (Phase 14) already has a `tstzrange` `EXCLUDE`
+constraint (`ground_bookings_no_overlap`) proving booking-vs-booking AND booking-vs-staff-block
+mutual exclusion under real concurrent requests (`groundBooking.integration.test.js`'s CONCURRENCY
+and STAFF BLOCK tests, unmodified and still passing); a pure `domain/booking/availability.js`
+(`computeDayAvailability`) that already IS a small central availability engine, fed by
+`groundBooking.service.js#buildOccupiedRanges`; a service-account Google Calendar integration
+(`googleCalendar.service.js`) that syncs bookings/blocks post-commit, best-effort, never blocking;
+a read-only occupancy link from `matches` into booking availability
+(`groundBooking.repository.js#listMatchDatesInRange`) that already treats a friendly match and a
+tournament fixture's linked match identically. No audit log, no notification system, no
+report/utilization/dashboard/timeline surface, and no richer booking-status model existed anywhere.
+Full findings in the session record; the design decisions below cite the exact precedent each one
+reuses.
+
+### 18.3 The central rule — one availability engine, reused, not rebuilt
+
+```
+PostgreSQL: ground_bookings (Phase 14, UNCHANGED table + EXCLUDE constraint)
+  ├─ booking_type = 'CUSTOMER'    — a real reservation
+  └─ booking_type = 'STAFF_BLOCK' — maintenance/private-event/rain/emergency/... (Phase 18: + block_type)
+        ↓
+PostgreSQL: matches (read-only — status IN ('upcoming','live') already blocks booking, Phase 14)
+        ↓
+domain/booking/availability.js#computeDayAvailability (Phase 14, UNCHANGED — the one slot-grid engine)
+domain/booking/timeline.js#buildDailyTimeline (Phase 18 — the one daily-schedule reshaping)
+domain/booking/utilization.js#computeUtilization (Phase 18 — the one utilization formula)
+domain/booking/bookingStatus.js#deriveDisplayStatus (Phase 18 — the one status-display rule)
+        ↓
+groundBooking.service.js (Feature 1/2, extended) / groundTimeline.service.js / groundDashboard.service.js / groundReport.service.js
+        ↓
+GET /bookings/*, GET /ground/*
+        ↓
+Public homepage widget, Staff Ground Operations hub (Schedule/Timeline/Dashboard/History/Reports)
+```
+
+"Everything asks this service" (Feature 1) is satisfied structurally: bookings, blocks, and matches
+all live in exactly two tables (`ground_bookings`, `matches`), and every new Phase 18 read
+(timeline/dashboard/reports/utilization) is built by querying those same two tables through new,
+additive repository functions — never a duplicated "is this slot occupied" computation, never a
+cache table that could drift from the source of truth.
+
+### 18.4 Ground Blocks are NOT a new table
+
+The single most important architectural decision in this phase: Feature 3 asked for a richer,
+named block/maintenance taxonomy (grass/pitch/electrical/rolling/watering/private-event/festival/
+rain/emergency/other), but the existing `booking_type = 'STAFF_BLOCK'` row (Phase 14) already models
+"this occupies the ground and isn't a customer booking" — sharing the exact same `EXCLUDE`
+constraint, the exact same Google Calendar sync path, the exact same cancellation flow. Building a
+second `ground_blocks` table would have meant building a SECOND concurrency mechanism (Postgres
+`EXCLUDE` constraints can't span two tables) to keep two tables' occupancy mutually exclusive —
+solving, badly, a problem the existing schema already solves for free. Instead, one nullable,
+independently `CHECK`-constrained `block_type` column was added to `ground_bookings` (never required
+for a `CUSTOMER` row):
+
+```sql
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS block_type VARCHAR(30)
+  CHECK (block_type IN (
+    'GRASS_MAINTENANCE', 'PITCH_MAINTENANCE', 'CLEANING', 'ELECTRICAL_WORK', 'WATER_MAINTENANCE',
+    'PITCH_ROLLING', 'PITCH_WATERING', 'PRIVATE_EVENT', 'FESTIVAL', 'RAIN', 'EMERGENCY', 'OTHER'
+  ));
+```
+
+This is why Feature 2 (double-booking protection) required zero new code for blocks: a block IS a
+`ground_bookings` row, so it inherits the EXCLUDE constraint's non-negotiable guarantee automatically.
+`domain/booking/blockTypes.js` (`GROUND_BLOCK_TYPES`, `isValidBlockType`, `blockTypeLabel`) is the
+one place the taxonomy is defined; `groundBooking.service.js#createBooking`/`createStaffBlock`
+validate it before insert (an unknown type is a `400`, never silently stored). Omitting `blockType`
+entirely still works exactly as it did before this phase — fully backward compatible.
+
+### 18.5 Booking status — an honest, derived model (Feature 9)
+
+Feature 9 asked for `Pending/Approved/Rejected/Cancelled/Completed/Expired`. LOC's actual booking
+model (Phase 14, deliberate) has no manual approval step — every booking is either confirmed
+immediately or rejected by the EXCLUDE constraint at INSERT time. Rather than bolt on a fake
+approval workflow that would sit unused, `domain/booking/bookingStatus.js#deriveDisplayStatus`
+honestly derives exactly the states that exist in this system:
+
+- `CANCELLED` — the stored `status = 'CANCELLED'`.
+- `COMPLETED` — stored `CONFIRMED`, but `end_time` has already passed (a read-time computation, never
+  a separate stored state — nothing writes `COMPLETED` to the database).
+- `APPROVED` — stored `CONFIRMED`, still upcoming. Auto-confirm **is** the approval in this system.
+
+`PENDING`/`REJECTED`/`EXPIRED` never occur and are not displayed — documented here and in
+`docs/TECHNICAL_DEBT.md` as an intentional scope decision, not an oversight. `isValidStatusTransition`
+documents the one real transition (`CONFIRMED → CANCELLED`); `COMPLETED` is never a transition
+target, only ever a derived read.
+
+### 18.6 Double-booking protection (Feature 2)
+
+Unchanged from Phase 14, and re-verified: the `ground_bookings_no_overlap` EXCLUDE constraint is
+the actual, non-negotiable guarantee (`groundBooking.integration.test.js`'s CONCURRENCY test —
+two genuinely simultaneous requests, `Promise.allSettled`, exactly one succeeds). Because blocks
+share the table (§18.4), this guarantee now covers booking-vs-booking, booking-vs-block, AND
+block-vs-block automatically, with zero new code. Re-proven for the real, running server (not just
+`node:test`) during this phase's E2E pass: two genuinely simultaneous `POST /bookings` HTTP
+requests for the same slot returned exactly one `201` and one `409 BOOKING_CONFLICT`.
+
+### 18.7 Ground Timeline (Feature 8)
+
+`domain/booking/timeline.js#buildDailyTimeline(entries, dayStart, dayEnd)` — pure, zero I/O. Takes
+a flat list of `{startTime, endTime, type, label}` entries and returns an ordered, gap-free day
+schedule, inserting `FREE` segments for every uncovered interval. `groundTimeline.service.js`
+builds that entry list from exactly two existing repository reads: `listConfirmedInRange`
+(bookings + blocks, already existed, now also selects `block_type`) and the new
+`listMatchEntriesInRange` (matches joined to `teams`/`tournament_fixtures`/`tournaments` for a real
+label like "LOC Strikers vs Riverside Warriors (Summer Cup)" instead of a bare flag). A match is
+still rendered as one whole-operating-window segment — `matches.match_date` has no end time (Phase
+9's documented reason, unchanged), so this only enriches the LABEL, never fabricates a narrower
+time range the data doesn't actually support.
+
+### 18.8 Staff Dashboard (Feature 7)
+
+`groundDashboard.service.js#getStaffDashboard` — pure composition via `Promise.all` of already-
+existing reads (today's timeline, today's confirmed bookings/blocks, today's matches, blocks in the
+next 7 days, tournament-linked matches in the next 7 days). Zero new occupancy truth. `groundStatus`
+is a derived label (`MATCH_DAY` > `PARTIALLY_BLOCKED` > `BOOKED` > `OPEN`, first match wins).
+`pendingRequestsCount` is always `0`, reported honestly (§18.5 — there is no approval queue in this
+system) rather than omitted or faked.
+
+### 18.9 Booking History (Feature 10)
+
+`groundBooking.repository.js#searchBookings` — one parameterized query (`ILIKE` on
+customer_name/purpose, exact-match status/bookingType filters, a date range, `COUNT(*) OVER()` for
+pagination in a single round trip — the same pattern `team.repository.js#listPublicTeams` already
+established). `groundReport.service.js#searchBookingHistory` clamps limit/offset and attaches each
+row's derived `displayStatus`. Staff-only (`GET /bookings/history`).
+
+### 18.10 Deterministic Reports (Feature 11)
+
+`groundReport.service.js#getBookingReport` — three new, cheap, indexed aggregate queries
+(`countBookingsByStatus`, `countBookingsByDate` "busy days", `countBookingsByHour` "peak hours",
+grouped in ground-local time via Postgres's own `AT TIME ZONE` — not JS timezone math, since the
+existing `domain/booking/timezone.js` deliberately never depends on a tz-database library, and
+Postgres's own tz support handles the SQL-side grouping correctly). No revenue analytics — this app
+has no payment integration, so there is no revenue figure to report.
+
+### 18.11 Ground Utilization (Feature 12) — exact formula
+
+```
+utilizedPercentage = (bookedHours + blockedHours + matchHours) / totalHours × 100
+```
+
+`totalHours` = (number of ground-local calendar days in range) × (`GROUND_CLOSING_HOUR` −
+`GROUND_OPENING_HOUR`) — the ground's REAL daily operating window (Phase 14's existing policy
+constants), never a fabricated 24-hour day. `bookedHours`/`blockedHours` are the real, summed
+durations of `CONFIRMED` bookings/blocks (`SUM(EXTRACT(EPOCH FROM (end_time - start_time)))`) — safe
+to sum without double-counting because the EXCLUDE constraint already guarantees they never overlap
+each other, and the existing match-day pre-check (Phase 14) already guarantees neither can exist on
+a day `matches` occupies. `matchHours` uses the same whole-operating-window convention as the
+timeline (§18.7). `domain/booking/utilization.js#computeUtilization` is the one pure function that
+turns these four numbers into percentages — `null` (not a `NaN`/`Infinity`) when `totalHours` is 0.
+
+### 18.12 Tournament & Match Integration (Feature 13/14) — deliberately read-only
+
+The phase brief explicitly forbade touching the tournament engine or the scoring architecture.
+`tournamentFixture.service.js#scheduleFixture` calls the completely unmodified
+`match.service.js#createMatch`, which is how a fixture's linked match already existed. That match's
+`status IN ('upcoming','live')` has blocked ground bookings since Phase 14
+(`listMatchDatesInRange`) — this is the "reservation" Feature 13 asks for, and it already existed;
+Phase 18's contribution is exposing it PROPERLY everywhere staff actually look (§18.7's real
+per-match timeline label, §18.8's dashboard "Today's Matches"/"Upcoming Tournament Fixtures"
+sections, both driven by the new `listMatchEntriesInRange` join). "Deleting a fixture releases the
+reservation" is true automatically and for free: once a fixture's match is no longer
+`upcoming`/`live`, `listMatchDatesInRange`/`listMatchEntriesInRange` simply stop returning it — no
+separate release step was ever needed. **Deliberately NOT implemented**: a write-side check that
+would reject creating a match/fixture on top of an existing CONFIRMED booking. Adding that check
+inside `match.service.js#createMatch` — the one function both plain matches and every tournament
+fixture funnel through — was assessed as carrying real regression risk against the tournament
+engine and match-creation code path the brief explicitly said not to touch (many existing tests
+create matches at concurrent/overlapping real-world timestamps), for a scenario (staff scheduling a
+match on top of their own already-confirmed ground booking) that is a self-inflicted staff error,
+not a customer-facing double-booking risk. Documented honestly in `docs/TECHNICAL_DEBT.md` as a
+known, deliberate boundary rather than silently left undone.
+
+### 18.13 Google Calendar (Feature 4)
+
+Fully reused, unmodified authentication/config (`googleCalendar.service.js`'s service-account JWT —
+Feature 4 explicitly said not to build an OAuth UI if the existing integration already uses service
+credentials, and it does). The only change: `groundBooking.service.js#createBooking`'s calendar
+event summary now says "Ground Block: <reason>" instead of "Ground Booking — <name>" specifically
+for `STAFF_BLOCK` rows, so the ground's real Google Calendar reads correctly at a glance. No new
+sync function was needed — creation and cancellation already covered every Phase 18 occupancy type,
+since blocks are `ground_bookings` rows (§18.4). Matches/tournament fixtures are deliberately NOT
+synced to Google Calendar in this phase — they were never synced before Phase 18 either, and adding
+that is a genuinely new capability outside "reuse existing architecture," not a gap this phase
+introduced.
+
+### 18.14 Smart Slot Recommendation (Feature 5)
+
+Already existed (`domain/booking/recommendations.js#findNearbyAlternatives`, Phase 14) — every
+`BOOKING_CONFLICT` response already includes up to `MAX_RECOMMENDATIONS` (5) genuinely-available
+alternative slots, computed from the same `computeDayAvailability` the availability engine itself
+uses (never fabricated). Reused unmodified for both customer bookings and staff blocks.
+
+### 18.15 Public Availability (Feature 6)
+
+`GET /bookings/availability` already existed and already returns exactly `AVAILABLE`/`UNAVAILABLE`
+with no `reason` for an unauthenticated caller (Phase 14 Part 47). Phase 18's contribution is
+surfacing it where a visitor can actually see it without navigating into the booking modal:
+`components/booking/PublicAvailabilityPreview.jsx` on the homepage shows today's next few open
+slots, calling the exact same public endpoint. `GET /ground/timeline` is also public (same posture),
+for a staff-quality daily view without exposing any customer PII (names/phone/email are never part
+of a timeline segment's `label` for a `BOOKING`-type entry beyond its purpose string).
+
+### 18.16 Audit Log (Feature 16)
+
+`ground_audit_log` mirrors `score_corrections`' proven shape (Phase 4): append-only,
+`CREATED`/`CANCELLED`/`GOOGLE_SYNC` actions, full `previous_value`/`new_value` JSONB snapshots
+(never a diff), actor attribution via `actor_user_id` (`ON DELETE SET NULL` — the trail survives
+even if the actor's account is later deleted, matching `ground_bookings.user_id`'s own convention),
+indexed for reverse-chronological reads per entity. Written from `groundBooking.service.js` at
+every create/cancel, strictly after the triggering transaction has already committed — logging can
+never cause a booking/cancellation to fail (`groundAuditLog.service.js#logEvent` catches and logs
+its own failures rather than propagating them, the same "best-effort side effect" posture Google
+Calendar sync already established in Phase 14).
+
+### 18.17 Notifications (Feature 17)
+
+In-app only — no email/SMS integration, exactly as scoped. `ground_notifications`: one row per
+addressed notification, `is_read` tracked directly (no separate read-receipt table — a single
+ground, modest booking volume). Created from the same two places as the audit log
+(`groundBooking.service.js#createBooking`/`cancelBooking`), same best-effort posture. `BOOKING_
+APPROVED` fires the moment a `CUSTOMER` booking confirms (§18.5 — auto-confirm is the approval);
+`BOOKING_CANCELLED` fires on cancellation; a staff block never notifies anyone (no customer to
+notify). `BOOKING_REJECTED` was deliberately not implemented as a notification type — there is no
+rejection state to notify about (§18.5). `components/layout/NotificationBell.jsx` (previously a
+hardcoded, non-functional stub — confirmed by audit before this phase) now reads real data via
+`useNotifications.js`, with an unread-count badge and mark-read/mark-all-read actions.
+
+### 18.18 Security (Feature 18)
+
+Unchanged principle, re-affirmed: every new staff-only endpoint uses the exact same `requireAuth` +
+`requireRole('staff')` middleware every other staff feature in this app already uses; every mutation
+(`createBooking`/`createStaffBlock`/`cancelBooking`) re-validates server-side regardless of what the
+client's own availability check showed — the EXCLUDE constraint is the final word, not a UI
+convenience. `GET /ground/timeline` and `GET /bookings/availability` are the only intentionally
+public reads, and both are structurally incapable of leaking customer PII (a timeline `BOOKING`
+segment's label is the booking's `purpose` string, never `customerName`/`contactPhone`/
+`contactEmail`).
+
+### 18.19 Frontend
+
+`StaffBookingPage.jsx` became a tabbed "Ground Operations" hub (Schedule / Timeline / Dashboard /
+History / Reports), matching this codebase's existing tabbed-staff-dashboard convention (the
+canteen `StaffDashboardPage`) rather than five separate routes. `TimelineView.jsx` renders the day
+schedule as a proportional colored bar PLUS a readable list underneath (Part 41/42 — never
+color-only). New hooks (`useGroundOps.js`, `useNotifications.js`) all follow this codebase's
+established `window.setTimeout(load, 0)`-deferred-effect pattern. `NotificationBell.jsx` is wired to
+real data; `PublicAvailabilityPreview.jsx` adds the homepage widget.

@@ -23,3 +23,20 @@ export function addDaysToDateStr(dateStr, days) {
   const dt = new Date(y, m - 1, d + days)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
+
+// Phase 18 Feature 3/15 — mirrors server/src/domain/booking/blockTypes.js.
+// Display-only; the server independently validates every value.
+export const GROUND_BLOCK_TYPES = {
+  GRASS_MAINTENANCE: 'Grass Maintenance',
+  PITCH_MAINTENANCE: 'Pitch Maintenance',
+  CLEANING: 'Cleaning',
+  ELECTRICAL_WORK: 'Electrical Work',
+  WATER_MAINTENANCE: 'Water Maintenance',
+  PITCH_ROLLING: 'Pitch Rolling',
+  PITCH_WATERING: 'Pitch Watering',
+  PRIVATE_EVENT: 'Private Event',
+  FESTIVAL: 'Festival',
+  RAIN: 'Rain',
+  EMERGENCY: 'Emergency',
+  OTHER: 'Other',
+}

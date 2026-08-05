@@ -16,12 +16,16 @@ import OversPanel from '../../components/match-summary/OversPanel.jsx'
 import MatchTimelinePanel from '../../components/match-summary/MatchTimelinePanel.jsx'
 import MatchInfoPanel from '../../components/match-summary/MatchInfoPanel.jsx'
 import CommentaryPanel from '../../components/match-summary/CommentaryPanel.jsx'
+import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
+import { fetchMatchInsight } from '../../services/aiInsightApi.js'
+import MatchAnalyticsPanel from '../../components/match-summary/MatchAnalyticsPanel.jsx'
 
 const TABS = [
   { key: 'scorecard', label: 'Scorecard' },
   { key: 'overs', label: 'Overs' },
   { key: 'commentary', label: 'Commentary' },
   { key: 'timeline', label: 'Timeline' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'info', label: 'Info' },
 ]
 
@@ -168,11 +172,15 @@ export default function MatchSummaryPage() {
                   {tab === 'overs' && <OversPanel innings={activeInnings} />}
                   {tab === 'commentary' && <CommentaryPanel matchId={matchId} inningsId={activeInnings.inningsId} />}
                   {tab === 'timeline' && <MatchTimelinePanel innings={activeInnings} />}
+                  {tab === 'analytics' && <MatchAnalyticsPanel matchId={matchId} teams={summary.teams} />}
                   {tab === 'info' && <MatchInfoPanel summary={summary} />}
                 </div>
               )}
             </>
           )}
+
+          {/* Phase 16 — clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
+          <AIInsightSection title="AI Match Insight" fetchFn={fetchMatchInsight} id={matchId} kind="match" />
         </div>
       </div>
     </main>

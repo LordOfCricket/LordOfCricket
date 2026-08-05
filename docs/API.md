@@ -154,8 +154,30 @@ sync-only, never queried for availability.
 | `GET /my` | Auth | The caller's own bookings |
 | `POST /:publicBookingId/cancel` | Auth (owner or staff) | Releases the slot immediately (the DB exclusion constraint excludes `CANCELLED` rows) |
 | `GET /staff/schedule?from=&to=` | Staff | Every booking + staff block in range |
-| `POST /staff/block` | Staff | Same body shape as `POST /`, `bookingType` forced to `STAFF_BLOCK` |
+| `POST /staff/block` | Staff | Same body shape as `POST /`, `bookingType` forced to `STAFF_BLOCK`; body may include `blockType` (Phase 18 — one of `GRASS_MAINTENANCE`/`PITCH_MAINTENANCE`/`CLEANING`/`ELECTRICAL_WORK`/`WATER_MAINTENANCE`/`PITCH_ROLLING`/`PITCH_WATERING`/`PRIVATE_EVENT`/`FESTIVAL`/`RAIN`/`EMERGENCY`/`OTHER`), otherwise `null` |
 | `DELETE /staff/block/:publicBookingId` | Staff | `404` if that reference isn't actually a staff block |
+| `GET /history?q=&status=&bookingType=&from=&to=&limit=&offset=` | Staff | Phase 18 Feature 10 — search/filter/paginate every booking+block. `{pagination, items: [{..., displayStatus}]}` |
+
+Every booking/block response also carries `displayStatus` (Phase 18): `APPROVED` (confirmed, still
+upcoming), `COMPLETED` (confirmed, slot has passed), or `CANCELLED` — see docs/ARCHITECTURE.md §18.5
+for why LOC has no separate PENDING/REJECTED state.
+
+## Ground Operations (`/api/ground`) — Phase 18
+
+Every read here derives from the SAME `ground_bookings` table (+ the existing read-only LOC-match
+occupancy link) the booking endpoints above already use — no second occupancy source. `/timeline` is
+public (same posture as `GET /bookings/availability`); every other endpoint is staff-only.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /timeline?date=YYYY-MM-DD` | Public | `{date, segments: [{startTime, endTime, type: 'BOOKING'\|'BLOCK'\|'MATCH'\|'FREE', label}]}` — the day's full ordered schedule, gap-free (Feature 8) |
+| `GET /dashboard` | Staff | Today's snapshot: ground status, today's matches/bookings/blocks, upcoming maintenance (next 7 days), upcoming tournament fixtures, `pendingRequestsCount` (always 0 — no approval workflow exists), and the day's timeline (Feature 7) |
+| `GET /reports?from=&to=` | Staff | `{totalBookings, completed, cancelled, busyDays: [{date_str, count}], peakHours: [{hour, count}]}` (Feature 11) |
+| `GET /utilization?from=&to=` | Staff | `{totalHours, bookedHours, blockedHours, matchHours, freeHours, bookedPercentage, blockedPercentage, matchPercentage, utilizedPercentage}` — exact formula in docs/ARCHITECTURE.md §18.12 (Feature 12) |
+| `GET /audit-log?entityType=&entityId=` or `?limit=&offset=` | Staff | Every booking/block CREATED/CANCELLED/GOOGLE_SYNC event, full before/after snapshots (Feature 16) |
+| `GET /notifications?limit=&offset=` | Auth | `{notifications, total, unreadCount}` — the caller's own in-app notifications only |
+| `POST /notifications/:id/read` | Auth | Marks one notification read |
+| `POST /notifications/read-all` | Auth | Marks every notification read |
 
 ## Tournament Management (`/api/tournaments`) — Phase 15
 
@@ -188,6 +210,43 @@ Errors follow the same structured `{code, message, details}` shape as scoring/bo
 `SQUAD_FULL`, `TOURNAMENT_FULL`, `FIXTURES_ALREADY_GENERATED`, `INVALID_FIXTURE_STATE`,
 `FIXTURE_NOT_FOUND`, `KNOCKOUT_RESULT_UNRESOLVED`, `INVALID_TEAM_COUNT`, `VALIDATION_ERROR`,
 `FORBIDDEN`.
+
+## AI Insight (`/api/matches/:id/ai-insight`, `/api/players/:publicPlayerId/ai-insight`, `/api/teams/:id/ai-insight`) — Phase 16
+
+Every GET here returns HTTP 200 with `{available: boolean, ...}` — "no insight yet" is never an
+error. `available: false` carries a `reason`: `NOT_CONFIGURED` (no `AI_API_KEY`), `INSUFFICIENT_DATA`
+(match not finalized yet, or player/team has zero eligible matches), `PROVIDER_ERROR` (timeout/
+network/5xx), `DECLINED` (provider safety refusal), or `INVALID_OUTPUT` (malformed/out-of-schema
+provider response — never trusted). A genuine 404 only ever means the match/player/team itself
+doesn't exist.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /matches/:id/ai-insight` | Public | `{available, insight: {headline, summary, keyMoments[], standoutPerformers[]}, generatedAt, cached}` once available. Generated only for FINALIZED matches. |
+| `GET /players/:publicPlayerId/ai-insight` | Public | `{available, insight: {headline, summary, highlights[]}, ...}`. Scoped to official (finalized-only) career stats. |
+| `GET /teams/:id/ai-insight` | Public | Same shape as player insight, scoped to the official team record. |
+| `POST /matches/:id/ai-insight/regenerate` | Staff | Forces regeneration, bypassing the cache. Not a normal spectator control. |
+| `POST /players/:publicPlayerId/ai-insight/regenerate` | Staff | Same, for a player. |
+| `POST /teams/:id/ai-insight/regenerate` | Staff | Same, for a team. |
+
+See `docs/ARCHITECTURE.md`'s Phase 16 section for the full context-builder/fingerprint/caching/
+guardrail design.
+
+## Advanced Cricket Analytics (`/api/players/:publicPlayerId/analytics`, `/api/teams/:id/analytics`, `/api/matches/:id/analytics`, `/api/tournaments/:publicTournamentId/analytics`, `/api/players/compare`, `/api/teams/compare`) — Phase 17
+
+Every endpoint here is a public, unauthenticated GET — analytics are derived read-only views over
+already-public cricket data (same posture as Match Summary/Player/Team profiles). No AI involved;
+every number is deterministically computed from PostgreSQL. See `docs/ARCHITECTURE.md`'s Phase 17
+section for exact formulas (boundary %, dot-ball %, phase boundaries, etc.).
+
+| Method & Path | Notes |
+|---|---|
+| `GET /players/:publicPlayerId/analytics?recent=5&tournamentId=` | `{player, recentMatchesConsidered, recentForm[], battingTrend[], bowlingTrend[], consistency, boundaryAnalysis, dotBallAnalysis, dismissalBreakdown[], tournamentBreakdown}`. `recent` clamped 1–20 (default 5). `tournamentId` optional, scopes `tournamentBreakdown` to one tournament. 404 for an unknown player. |
+| `GET /teams/:id/analytics?recent=5` | `{team, recentMatchesConsidered, recentForm[], battingFirstVsChasing, averageScore, averageConceded, runRateTrend[], tournamentPerformance[], topContributors}`. 404 for an unknown/non-numeric team id. |
+| `GET /matches/:id/analytics` | `{available, match, teams, innings: [{inningsId, inningsNumber, progression[], phaseMetrics, highestPartnership}], scoreComparison}`. `available: false, reason: 'INSUFFICIENT_DATA'` before any innings exists (never an error). `phaseMetrics` is `null` for a match with fewer than 3 overs per innings. 404 for an unknown match. |
+| `GET /tournaments/:publicTournamentId/analytics` | `{tournament, totalFixtures, finalizedMatches, totalRuns, totalWickets, averageFirstInningsScore, highestTeamTotal, lowestTeamTotal, topRunScorers[], topWicketTakers[]}`. `topRunScorers`/`topWicketTakers` reuse Phase 15's `tournamentStats.service.js` unmodified. 404 for an unknown tournament. |
+| `GET /players/compare?p1=&p2=` | `{playerA: {player, career}, playerB: {player, career}}` — side-by-side official career stats, no composite winner ever computed. 400 if `p1 === p2`; 404 if either player is unknown. |
+| `GET /teams/compare?t1=&t2=` | `{teamA: {team, record, averageScore}, teamB: {...}, headToHead: {matchesPlayed, teamAWins, teamBWins, ties, noResults, recentMeetings[]}}`. `headToHead` uses each match's historical `team_a_id`/`team_b_id` — a player transfer after the match never affects it. 400 if `t1 === t2`; 404 if either team is unknown. |
 
 ## Ground/marketing content (`/api/ground-photos`, `/api/amenities`, `/api/advertisements`, `/api/partners`)
 

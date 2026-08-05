@@ -63,7 +63,10 @@ function mapPublicSquadPlayer(row) {
  * innings this team appeared in exactly once (cached by innings id), the
  * same N+1-avoidance shape Phase 7's getPlayerCareerStats already uses.
  */
-async function buildTopPerformers(teamId) {
+// Exported additively for Phase 17's Team Analytics "Top Contributors" section
+// to reuse (Part 23 — "do not create a second player-stat replay path
+// unnecessarily"). Behavior is completely unchanged for every existing caller.
+export async function buildTopPerformers(teamId) {
   const participation = await teamRepo.listFinalizedMatchParticipationForTeam(teamId)
   if (participation.length === 0) return { topRunScorer: null, topWicketTaker: null }
 

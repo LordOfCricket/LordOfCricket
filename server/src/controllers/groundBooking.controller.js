@@ -1,6 +1,8 @@
 import * as bookingService from '../services/groundBooking.service.js'
 import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
 import { utcToGroundLocalParts } from '../domain/booking/timezone.js'
+import { deriveDisplayStatus } from '../domain/booking/bookingStatus.js'
+import * as groundReportService from '../services/groundReport.service.js'
 
 // Phase 14 Part 3 — thin HTTP glue only, same convention as every other
 // controller in this codebase (scoring.controller.js, team.controller.js) —
@@ -24,9 +26,11 @@ function serializeBooking(row) {
   return {
     publicBookingId: row.public_booking_id,
     bookingType: row.booking_type,
+    blockType: row.block_type,
     startTime: row.start_time,
     endTime: row.end_time,
     status: row.status,
+    displayStatus: deriveDisplayStatus(row),
     purpose: row.purpose,
     expectedPlayers: row.expected_players,
     notes: row.notes,
@@ -109,17 +113,36 @@ export async function getStaffSchedule(req, res, next) {
 
 export async function createStaffBlock(req, res, next) {
   try {
-    const { purpose } = req.body
+    const { purpose, blockType } = req.body
     const { dateStr, hour, minute } = resolveSlotInput(req.body)
     const { booking } = await bookingService.createStaffBlock({
       dateStr,
       hour,
       minute,
       purpose: purpose || 'Ground Block',
+      blockType: blockType || null,
       createdByStaffId: req.user.id,
     })
     bookingService.notifyBookingDateChanged(req.io, dateStr)
     res.status(201).json({ booking: serializeBooking(booking) })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getBookingHistory(req, res, next) {
+  try {
+    const { q, status, bookingType, from, to, limit, offset } = req.query
+    const result = await groundReportService.searchBookingHistory({
+      q: q || undefined,
+      status: status || undefined,
+      bookingType: bookingType || undefined,
+      fromDate: from || undefined,
+      toDate: to || undefined,
+      limit: limit != null ? Number(limit) : undefined,
+      offset: offset != null ? Number(offset) : undefined,
+    })
+    res.json(result)
   } catch (err) {
     next(err)
   }

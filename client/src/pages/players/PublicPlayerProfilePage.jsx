@@ -11,8 +11,11 @@ import BowlingStatsPanel from '../../components/stats/BowlingStatsPanel.jsx'
 import FieldingStatsPanel from '../../components/stats/FieldingStatsPanel.jsx'
 import MatchHistoryPanel from '../../components/stats/MatchHistoryPanel.jsx'
 import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
+import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
+import { fetchPlayerInsight } from '../../services/aiInsightApi.js'
+import PlayerAnalyticsSection from '../../components/analytics/PlayerAnalyticsSection.jsx'
 
-const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES']
+const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ANALYTICS']
 
 function Field({ label, value }) {
   return (
@@ -162,8 +165,14 @@ export default function PublicPlayerProfilePage() {
                   {tab === 'BOWLING' && <BowlingStatsPanel bowling={stats.career.bowling} />}
                   {tab === 'FIELDING' && <FieldingStatsPanel fielding={stats.career.fielding} />}
                   {tab === 'MATCHES' && <MatchHistoryPanel matchHistory={stats.matchHistory} onLoadMore={loadMoreMatchHistory} />}
+                  {tab === 'ANALYTICS' && <PlayerAnalyticsSection publicPlayerId={publicPlayerId} />}
                 </>
               )}
+            </div>
+
+            {/* Phase 16 — bounded, independently-loading; career stats above remain primary. */}
+            <div className="mt-6">
+              <AIInsightSection title="AI Performance Insight" fetchFn={fetchPlayerInsight} id={publicPlayerId} kind="person" />
             </div>
           </>
         )}

@@ -8,6 +8,7 @@ import {
   getStaffSchedule,
   createStaffBlock,
   removeStaffBlock,
+  getBookingHistory,
 } from '../controllers/groundBooking.controller.js'
 
 const router = Router()
@@ -28,5 +29,8 @@ router.post('/:publicBookingId/cancel', requireAuth, cancelBooking)
 router.get('/staff/schedule', requireAuth, requireRole('staff'), getStaffSchedule)
 router.post('/staff/block', requireAuth, requireRole('staff'), createStaffBlock)
 router.delete('/staff/block/:publicBookingId', requireAuth, requireRole('staff'), removeStaffBlock)
+
+// Phase 18 Feature 10 — booking history (search/filter/sort/pagination), staff-only.
+router.get('/history', requireAuth, requireRole('staff'), getBookingHistory)
 
 export default router

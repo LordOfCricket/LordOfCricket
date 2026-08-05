@@ -11,6 +11,9 @@ import TeamSquadManager from '../../components/teams/TeamSquadManager.jsx'
 import TeamTopPerformers from '../../components/teams/TeamTopPerformers.jsx'
 import TeamMatchSection from '../../components/teams/TeamMatchSection.jsx'
 import MatchCard from '../../components/matches/MatchCard.jsx'
+import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
+import { fetchTeamInsight } from '../../services/aiInsightApi.js'
+import TeamAnalyticsSection from '../../components/analytics/TeamAnalyticsSection.jsx'
 
 function SectionHeading({ children }) {
   return <h2 className="text-lg font-bold text-white">{children}</h2>
@@ -106,6 +109,16 @@ export default function TeamProfilePage() {
             <TeamTopPerformers topPerformers={topPerformers} />
           </div>
         </div>
+
+        <div>
+          <SectionHeading>Analytics</SectionHeading>
+          <div className="mt-3">
+            <TeamAnalyticsSection teamId={team.id} />
+          </div>
+        </div>
+
+        {/* Phase 16 — bounded, independently-loading; record/recent matches/top performers above remain primary. */}
+        <AIInsightSection title="AI Team Insight" fetchFn={fetchTeamInsight} id={team.id} kind="person" />
       </div>
     </main>
   )

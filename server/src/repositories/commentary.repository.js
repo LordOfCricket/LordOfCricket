@@ -103,3 +103,20 @@ export async function countByInnings(inningsId) {
   const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM commentary_entries WHERE innings_id = $1', [inningsId])
   return rows[0].count
 }
+
+/** Phase 16 — every commentary entry for a WHOLE match (all innings),
+ * sequence order within each innings, oldest innings first. Used only as
+ * the deterministic candidate pool for AI key moments
+ * (domain/ai/buildMatchAIContext.js) — never re-queried per player/event,
+ * one call per match. */
+export async function listByMatch(matchId) {
+  const { rows } = await pool.query(
+    `SELECT ce.*, i.innings_number
+     FROM commentary_entries ce
+     JOIN innings i ON i.id = ce.innings_id
+     WHERE ce.match_id = $1
+     ORDER BY i.innings_number ASC, ce.sequence ASC`,
+    [matchId]
+  )
+  return rows
+}

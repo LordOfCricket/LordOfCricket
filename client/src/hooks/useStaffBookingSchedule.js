@@ -14,6 +14,7 @@ export function useStaffBookingSchedule() {
   const [blockDate, setBlockDate] = useState(todayDateInputValue())
   const [blockSlots, setBlockSlots] = useState([])
   const [blockPurpose, setBlockPurpose] = useState('')
+  const [blockType, setBlockType] = useState('')
   const [loadingBlockSlots, setLoadingBlockSlots] = useState(false)
 
   const load = useCallback(() => {
@@ -72,9 +73,10 @@ export function useStaffBookingSchedule() {
   const addBlock = async (startTime) => {
     setError('')
     try {
-      await createStaffBlock({ startTime, purpose: blockPurpose || 'Ground Block' })
+      await createStaffBlock({ startTime, purpose: blockPurpose || 'Ground Block', blockType: blockType || undefined })
       setBlockSlots([])
       setBlockPurpose('')
+      setBlockType('')
       await load()
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to create this block.')
@@ -99,6 +101,8 @@ export function useStaffBookingSchedule() {
     loadBlockSlots,
     blockPurpose,
     setBlockPurpose,
+    blockType,
+    setBlockType,
     addBlock,
   }
 }

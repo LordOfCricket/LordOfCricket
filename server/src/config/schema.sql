@@ -600,3 +600,77 @@ CREATE TABLE IF NOT EXISTS tournament_fixtures (
 );
 CREATE INDEX IF NOT EXISTS idx_tournament_fixtures_tournament ON tournament_fixtures(tournament_id);
 CREATE INDEX IF NOT EXISTS idx_tournament_fixtures_match ON tournament_fixtures(match_id);
+
+-- ============================================================================
+-- PHASE 18 — Ground Operations & Management
+-- ============================================================================
+--
+-- "Ground Blocks" (maintenance, pitch work, private events, rain, emergency,
+-- ...) are deliberately NOT a new table. `ground_bookings.booking_type =
+-- 'STAFF_BLOCK'` (Phase 14 Part 3) already models exactly this — a row in the
+-- SAME table, protected by the SAME `ground_bookings_no_overlap` EXCLUDE
+-- constraint, already synced by the SAME Google Calendar code path. A second,
+-- parallel table would mean a second concurrency mechanism (advisory locks,
+-- cross-table overlap checks) to safely coordinate two tables representing
+-- one physical ground's occupancy — solving a problem the existing schema
+-- already solves for free. `block_type` only adds the richer, named taxonomy
+-- Phase 18 needs (Feature 3/15) on top of the existing STAFF_BLOCK concept —
+-- reuse, not redesign. It is intentionally nullable and CHECK-constrained
+-- independently of `booking_type` (never required for a CUSTOMER row).
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS block_type VARCHAR(30)
+  CHECK (block_type IN (
+    'GRASS_MAINTENANCE', 'PITCH_MAINTENANCE', 'CLEANING', 'ELECTRICAL_WORK', 'WATER_MAINTENANCE',
+    'PITCH_ROLLING', 'PITCH_WATERING', 'PRIVATE_EVENT', 'FESTIVAL', 'RAIN', 'EMERGENCY', 'OTHER'
+  ));
+
+-- Append-only, immutable audit trail (Feature 16) — mirrors score_corrections'
+-- proven shape (schema.sql Phase 4): polymorphic target via a CHECK-
+-- constrained `entity_type` + plain `entity_id` (no FK — resolved by
+-- application code, same documented tradeoff match_events.event_type/
+-- score_corrections.target_type already accept), full before/after JSONB
+-- snapshots (never a diff), actor attribution, indexed for reverse-
+-- chronological reads per entity. Rows are never UPDATEd/DELETEd.
+CREATE TABLE IF NOT EXISTS ground_audit_log (
+  id SERIAL PRIMARY KEY,
+  entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('BOOKING', 'BLOCK')),
+  entity_id INTEGER NOT NULL,
+  action VARCHAR(30) NOT NULL CHECK (action IN ('CREATED', 'CANCELLED', 'GOOGLE_SYNC')),
+  -- SET NULL (not a plain REFERENCES, and never CASCADE): the audit trail
+  -- must survive even if the actor's account is later deleted — same
+  -- reasoning/convention as ground_bookings.user_id ON DELETE SET NULL above.
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  previous_value JSONB,
+  new_value JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ground_audit_log_entity ON ground_audit_log(entity_type, entity_id, created_at DESC);
+
+-- Migration safety: the table may already exist (from an earlier `db:migrate`
+-- run within this same phase) with the constraint's original plain
+-- REFERENCES (no ON DELETE clause) — this idempotently upgrades it to SET
+-- NULL without requiring a table drop.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_actor_user_id_fkey'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_actor_user_id_fkey;
+    ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+-- In-app only (Feature 17 explicitly excludes email/SMS). One row per
+-- addressed notification, read/unread tracked directly (no separate
+-- read-receipt table — a single ground, modest booking volume, no need).
+CREATE TABLE IF NOT EXISTS ground_notifications (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(30) NOT NULL CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED')),
+  title VARCHAR(150) NOT NULL,
+  body VARCHAR(500),
+  related_booking_id INTEGER REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  is_read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ground_notifications_user ON ground_notifications(user_id, created_at DESC);

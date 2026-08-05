@@ -8,6 +8,7 @@ import MatchActivitySection from '../../components/homepage/MatchActivitySection
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
+import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
 
 function SectionHeading({ eyebrow, title, subtitle }) {
@@ -131,6 +132,7 @@ export default function HomePage() {
             <p className="max-w-xl text-emerald-100/60">
               Check live availability and reserve a pitch, nets, or the full ground for your next match.
             </p>
+            <PublicAvailabilityPreview />
             <button
               type="button"
               onClick={() => setBookingOpen(true)}

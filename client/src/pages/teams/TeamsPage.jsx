@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, ArrowLeft } from 'lucide-react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { Search, ArrowLeft, Shield } from 'lucide-react'
 import { usePublicTeams } from '../../hooks/usePublicTeams.js'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import TeamCard from '../../components/teams/TeamCard.jsx'
@@ -52,8 +52,19 @@ export default function TeamsPage() {
           Back
         </button>
 
-        <h1 className="mt-4 text-3xl font-bold text-white">Teams</h1>
-        <p className="mt-1 text-sm text-slate-300">Discover cricket teams on Lord Of Cricket.</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Teams</h1>
+            <p className="mt-1 text-sm text-slate-300">Discover cricket teams on Lord Of Cricket.</p>
+          </div>
+          <Link
+            to="/teams/compare"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-200 transition-colors hover:bg-white/10"
+          >
+            <Shield className="h-4 w-4" />
+            Compare Teams
+          </Link>
+        </div>
 
         <div className="relative mt-6">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

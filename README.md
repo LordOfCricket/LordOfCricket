@@ -57,16 +57,41 @@ Short name: **LOC**. (Never "CricVerse" — that name is retired.)
   never a frontend calculation), a public tournament hub (`/tournaments`), and a staff organizer
   dashboard. See docs/ARCHITECTURE.md's Phase 15 section for the exact NRR formula and the
   no-fake-winner tie/no-result policy.
+- **AI Match/Player/Team Insight** — a short, clearly-labeled "✨ AI Insight" narrative on the Match Summary, Player Profile, and Team Profile pages, generated from a compact, bounded, deterministic projection of the same authoritative data those pages already show. AI never decides cricket truth — it only explains already-computed facts, its output is schema-validated before anything is shown, and it never writes to PostgreSQL. Optional infrastructure: with no API key configured the server boots and every page works exactly as before, just without the AI section. See docs/ARCHITECTURE.md's Phase 16 section.
+- **Advanced Cricket Analytics** — deterministic, server-computed analytics for players, teams,
+  matches, and tournaments: recent-form/batting/bowling trends, boundary and dot-ball analysis,
+  batting consistency, dismissal breakdown, batting-first-vs-chasing splits, scoring averages,
+  run-rate trends, match score/run-rate progression and format-aware phase breakdowns, player-vs-
+  player and team-vs-team comparison (no AI, no predictions, no composite "rating" — every number is
+  mathematically reproducible from PostgreSQL's authoritative cricket history). New Analytics
+  tabs/sections on Player Profile, Team Profile, and Match Summary, plus `/players/compare` and
+  `/teams/compare`. See docs/ARCHITECTURE.md's Phase 17 section for exact formulas.
+- **Ground Operations & Management** — turns Phase 14's ground booking into a complete single-ground
+  operations system, without redesigning it: one central availability engine (bookings + staff
+  blocks + LOC matches — the SAME `ground_bookings` table and EXCLUDE constraint Phase 14 already
+  proved, extended with a named `block_type` taxonomy for maintenance/private-events/rain/emergency,
+  never a second concurrency mechanism), a daily ground timeline, a staff operations dashboard
+  (today's matches/bookings/maintenance, upcoming tournament fixtures), booking history
+  (search/filter/pagination), deterministic reports (busy days, peak hours, ground utilization %),
+  an append-only audit log, and real in-app notifications (booking confirmed/cancelled — no email/
+  SMS). A public "Today's Availability" preview on the homepage needs no login. See
+  docs/ARCHITECTURE.md's Phase 18 section for the exact utilization formula and why blocks reuse
+  Phase 14's table instead of a new one.
 - **Umpire Requests** — a request/approval flow for umpire status.
 - **Practice / Umpire Testing sandbox** (`/testing`) — an intentionally separate, client-only
   scoring engine for practicing scoring without touching real match data.
 
 **Not implemented yet** (do not assume these exist): AI-enriched/AI-generated commentary wording
 (Phase 12's commentary is deterministic and template-based, never AI — see
-`docs/ARCHITECTURE.md` §12.10), fantasy cricket, an auction/draft system, guest (non-account)
-booking, custom-duration bookings (every booking is currently one fixed-length slot), tournament
-formats beyond League/Groups+Knockout/direct Knockout, and Super Over (a tied/no-result knockout
-match requires an explicit staff resolution — see `docs/TECHNICAL_DEBT.md`).
+`docs/ARCHITECTURE.md` §12.10), an AI chatbot/assistant or score predictions (Phase 16's AI Insight
+only narrates already-decided official facts, never predicts or chats), fantasy cricket, an
+auction/draft system, guest (non-account) booking, custom-duration bookings (every booking is
+currently one fixed-length slot), tournament formats beyond League/Groups+Knockout/direct
+Knockout, and Super Over (a tied/no-result knockout match requires an explicit staff resolution —
+see `docs/TECHNICAL_DEBT.md`), a manual booking approval workflow (Phase 14's auto-confirm design —
+every booking is either confirmed immediately or rejected by the EXCLUDE constraint; there is no
+PENDING queue for staff to review), payments, and multi-ground support (LOC manages exactly one
+physical ground, by design — see docs/ARCHITECTURE.md's Phase 18 section).
 
 ## Architecture overview
 
@@ -105,14 +130,16 @@ design, the realtime transport (Socket.IO + polling fallback) design, and the co
 ## Tech stack
 
 - **Backend**: Node.js (ESM), Express, `pg` (PostgreSQL driver, no ORM for cricket data), Mongoose
-  (MongoDB, canteen only), `jsonwebtoken`, `bcryptjs`, Socket.IO (canteen order/menu updates +
-  cricket spectator match rooms + booking availability refresh), Cloudinary (uploads), `googleapis`
-  (optional ground-booking Google Calendar sync, service-account auth), Node's built-in test runner
-  (`node --test`).
+  (MongoDB — canteen documents and, since Phase 16, the AI Insight narrative cache),
+  `jsonwebtoken`, `bcryptjs`, Socket.IO (canteen order/menu updates + cricket spectator
+  match rooms + booking availability refresh), Cloudinary (uploads), `googleapis` (optional
+  ground-booking Google Calendar sync, service-account auth), `@anthropic-ai/sdk` (optional AI
+  Insight narrative generation, server-only), Node's built-in test runner (`node --test`).
 - **Frontend**: React 19, React Router 7 (data router), Vite, Tailwind CSS 4, axios,
   `socket.io-client`, lucide-react icons, `eslint-plugin-react-hooks` with the React Compiler rule set.
 - **Database**: PostgreSQL (cricket truth, users, canteen relational bits, ground bookings,
-  tournaments), MongoDB (canteen documents).
+  tournaments — the sole source of everything AI Insight narrates), MongoDB (canteen documents,
+  AI Insight narrative cache — never cricket truth).
 
 ## Project structure
 
@@ -136,7 +163,11 @@ LordOfCricket/
 │       │                   match discovery/live-state DTOs, matchSummary, commentary generation,
 │       │                   ground-booking availability/overlap/recommendation rules (booking/),
 │       │                   tournament fixture generation/points/NRR/standings/qualification/
-│       │                   progression rules (tournament/). Zero PostgreSQL imports.
+│       │                   progression rules (tournament/), AI context builders/fingerprinting/
+│       │                   output validation (ai/). Zero PostgreSQL imports.
+│       ├── ai/             AI provider abstraction (aiProvider.js + providers/), centralized
+│       │                   system prompts, structured-output schemas — the ONLY place that
+│       │                   imports the Anthropic SDK (see docs/ARCHITECTURE.md's Phase 16 section)
 │       ├── realtime/       Socket.IO cricket room join/leave + authoritative state/commentary
 │       │                   publication, plus booking availability refresh rooms (transport only —
 │       │                   zero cricket/booking rules, see docs/ARCHITECTURE.md)
@@ -184,6 +215,7 @@ cp client/.env.example client/.env
 | `JWT_SECRET` | Session-signing secret. **Required in production** — the server refuses to start in production without it (see `server/src/utils/jwt.js`) |
 | `CRICAPI_KEY` | Optional — powers the homepage's external "India match" widget only; the widget degrades gracefully with no key |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Canteen menu-item image uploads |
+| `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` | Optional — AI Match/Player/Team Insight (Phase 16). With `AI_API_KEY` unset the server boots normally and every AI Insight endpoint returns `{available:false, reason:'NOT_CONFIGURED'}`; every other page is completely unaffected. Never exposed to the client. |
 
 `client/.env`:
 
@@ -221,7 +253,7 @@ npm test --prefix server              # pure domain/unit tests — no database n
 npm run test:integration --prefix server   # real-PostgreSQL integration tests
 ```
 
-Current verified baseline: **417 / 417** (219 unit + 198 integration). Two integration tests
+Current verified baseline: **459 / 459** (248 unit + 211 integration). Four integration tests
 require a reachable MongoDB and skip (not fail) when it's unavailable, consistent with MongoDB
 being an optional dependency everywhere else in this app.
 
@@ -266,6 +298,24 @@ npm run commentary:rebuild --prefix server   # regenerate commentary for every i
    other match uses. Standings/NRR/qualification/knockout progression only ever read a FINALIZED
    match's official result — never a second scoring engine, and never a fabricated winner for a
    tie/no-result LOC has no Super Over flow to resolve (see docs/ARCHITECTURE.md §15).
+9. **AI narrates cricket truth, it never decides it.** AI Insight (Phase 16) is fed a bounded,
+   pre-computed fact set built from the same public DTOs the page already renders — it cannot query
+   PostgreSQL, invent a score/player/delivery, or override an official result, and its output is
+   schema-validated before anything is shown. The only thing it ever writes is a MongoDB
+   cache document; PostgreSQL is untouched by every AI call (see docs/ARCHITECTURE.md §16).
+10. **Analytics derives, it never decides.** Advanced Cricket Analytics (Phase 17) is a pure-function
+    layer over already-authoritative data (career stats, team records, replayed innings state) — it
+    never recalculates a score/wicket/result differently than the existing scoring/statistics
+    engines, adds zero new PostgreSQL tables, and every shared metric is cross-checked in tests to
+    agree EXACTLY with the existing Phase 7/10 read models it derives from (see docs/ARCHITECTURE.md
+    §17).
+11. **One ground, one availability engine, one concurrency guarantee.** Ground Operations (Phase 18)
+    never introduces a second "is this slot occupied" computation or a second concurrency mechanism —
+    ground blocks/maintenance reuse the EXACT SAME `ground_bookings` table and `EXCLUDE` constraint
+    Phase 14 already proved correct under real concurrent requests, just with a richer `block_type`
+    taxonomy layered on top. Every new read (timeline, dashboard, reports, utilization) derives from
+    that one table plus the existing read-only match-occupancy link — never a duplicated truth (see
+    docs/ARCHITECTURE.md §18).
 
 See `docs/ARCHITECTURE.md` for the full data-flow diagram and the correction-engine/realtime/
 commentary walkthroughs.
