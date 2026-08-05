@@ -11,6 +11,7 @@ import * as googleCalendar from './googleCalendar.service.js'
 import * as auditLogService from './groundAuditLog.service.js'
 import * as notificationService from './groundNotification.service.js'
 import { publishBookingUpdate } from '../realtime/bookingRealtime.js'
+import { logger } from '../utils/logger.js'
 
 // Phase 14 Part 3 — orchestration. PostgreSQL is authoritative throughout;
 // Google Calendar sync only ever runs AFTER a booking row has already
@@ -163,6 +164,7 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     await client.query('ROLLBACK').catch(() => {})
     if (err.code === '23P01') {
       // THE non-negotiable guarantee firing: this request lost the race.
+      logger.warn('Booking conflict — exclusion constraint rejected an overlapping slot', { dateStr, hour, minute, bookingType })
       const alternatives = await buildRecommendations(dateStr, hour, minute)
       throw new BookingError(BOOKING_ERROR_CODES.BOOKING_CONFLICT, 'This time was just booked or is unavailable.', { alternatives })
     }
@@ -245,7 +247,7 @@ export async function cancelBooking(publicBookingId, { actingUserId, isStaff }) 
   // Best-effort calendar cleanup — never blocks the cancellation itself.
   if (booking.google_calendar_event_id) {
     const result = await googleCalendar.cancelCalendarEvent(booking.google_calendar_event_id)
-    if (!result.ok) console.error(`Google Calendar cancel failed for booking ${booking.public_booking_id}:`, result.error)
+    if (!result.ok) logger.error('Google Calendar cancel failed', { publicBookingId: booking.public_booking_id, error: result.error })
     await auditLogService.logEvent({ entityType, entityId: booking.id, action: 'GOOGLE_SYNC', newValue: { status: result.ok ? 'CANCELLED_SYNCED' : 'CANCEL_FAILED' } })
   }
 

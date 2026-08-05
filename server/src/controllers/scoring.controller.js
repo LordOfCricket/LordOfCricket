@@ -2,6 +2,7 @@ import * as scoringService from '../services/scoring.service.js'
 import * as commentaryService from '../services/commentary.service.js'
 import { selectWagonWheelShots, getTimeline, groupDeliveriesByOver, getLastWicket } from '../domain/scoring/selectors.js'
 import { publishMatchState, publishCommentary } from '../realtime/cricketRealtime.js'
+import { logger } from '../utils/logger.js'
 
 function serializeState({ innings, state, format }) {
   return {
@@ -156,7 +157,7 @@ async function maybePublishCommentary(req, result, inningsId) {
     const { entries, inningsVersion, matchId } = await commentaryService.appendCommentaryForInnings(inningsId)
     if (entries.length) publishCommentary(req.io, matchId, { inningsId, inningsVersion, mode: 'append', entries })
   } catch (err) {
-    console.error(`Commentary append failed for innings ${inningsId}:`, err.message)
+    logger.error('Commentary append failed', { inningsId, error: err.message })
   }
 }
 

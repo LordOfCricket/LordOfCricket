@@ -6,6 +6,8 @@
 // misses a realtime event, final server-side conflict checking must prevent
 // double booking"). This is a convenience refresh signal only.
 
+import { logger } from '../utils/logger.js'
+
 export function bookingDateRoom(dateStr) {
   return `booking:${dateStr}`
 }
@@ -30,6 +32,6 @@ export function publishBookingUpdate(io, dateStr) {
   try {
     io.to(bookingDateRoom(dateStr)).emit('booking:updated', { dateStr })
   } catch (err) {
-    console.error(`Booking realtime publish failed for ${dateStr}:`, err.message)
+    logger.error('Booking realtime publish failed', { dateStr, error: err.message })
   }
 }

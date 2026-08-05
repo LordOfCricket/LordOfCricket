@@ -1,7 +1,7 @@
 # LOC Technical Debt
 
 Originally produced by the pre-Phase-11 project-wide cleanup audit, kept up to date through Phase
-12 (Socket.IO cricket realtime, commentary projection). Classified by priority. Items marked
+20 (Production Release). Classified by priority. Items marked
 **RESOLVED** were found and fixed during the cleanup audit (see git history around this file's
 introduction for the exact diff).
 
@@ -11,6 +11,18 @@ be "fixed" by a future pass without a real product reason.
 ## P0 — Critical
 
 None open at the time of this audit.
+
+**RESOLVED (Phase 20) — both `package.json`s depended on a dead, self-referential `file:..` package
+that would break any containerized/isolated build.** `"lord-of-cricket": "file:.."` in both
+`server/package.json` and `client/package.json` linked back to the monorepo root's own
+`package.json`, which exports nothing real — zero actual imports from it existed anywhere. Harmless
+in this repo's own dev environment (npm just symlinks it), but a genuine deployment blocker: a Docker
+build using `server/` as its context (or any platform's isolated build environment) can't resolve
+`file:..` outside that context and fails. Removed from both; verified via a real `npm ci` from an
+isolated directory afterward (0 vulnerabilities, clean install, server boots correctly). Also removed
+`server/src/config/mongo.js`, a fully dead, unused, pre-`db.js`-refactor duplicate `connectMongo()`
+whose `process.exit(1)`-on-Mongo-failure behavior actively contradicted this app's established
+"MongoDB is optional" architecture — confirmed zero imports before deletion.
 
 **RESOLVED — five content-management route groups had NO server-side authorization at all.**
 `ground-photos`, `amenities`, `advertisements`, `partners` (POST/`/upload`/DELETE), and
@@ -24,6 +36,14 @@ canteen orders, and wrapping `/admin/photos`, `/admin/amenities`, `/admin/partne
 client-side role gate exists anywhere in this app, role enforcement is the backend's job by
 design). Verified via direct API calls: unauthenticated write now returns 401, staff-authenticated
 write still succeeds, public `GET` is unaffected.
+
+**RESOLVED (Phase 19) — no security headers, and unexpected errors leaked internal detail to the
+client.** Neither had been audited before. Fixed: `helmet()` now sets standard security headers
+(HSTS, `X-Content-Type-Options`, `X-Frame-Options`, a same-origin CSP) on every response;
+`middlewares/errorHandler.js` no longer forwards a raw, unvetted `err.message` for an error with no
+intentional `.statusCode` (previously this could be a raw Postgres driver error) — it logs the full
+detail server-side and returns a generic message. See `docs/ARCHITECTURE.md` §19.1/§19.4 for the full
+reasoning and the numeric-route-param / pagination validation gaps fixed alongside it (§19.3).
 
 **RESOLVED — JWT silently fell back to a hardcoded, public secret.**
 `server/src/utils/jwt.js` signed every session with `process.env.JWT_SECRET ||
@@ -50,20 +70,51 @@ index is now the actual source of correctness, verified by a real concurrent-ins
 authoritative at the database layer, matching this project's established idempotency approach.
 
 **`react-router-dom` has a HIGH severity advisory** (RSC Mode CSRF Bypass Allows Action Execution
-Before 400 Response — GHSA-qwww-vcr4-c8h2), reported by `npm audit` in `client/`. This app is a
-client-only SPA (`createBrowserRouter`/`RouterProvider`, no React Server Components / framework
-mode), so the specific RSC-mode attack surface is very likely not reachable here — but this has not
-been rigorously verified against the advisory's exact conditions, and `npm audit fix --force` was
-deliberately NOT run (it would downgrade `react-router-dom` — a breaking change requiring its own
-regression pass). **Recommendation:** address in a dedicated, tested dependency-upgrade task, not
-bundled into a cleanup pass.
+Before 400 Response — GHSA-qwww-vcr4-c8h2), reported by `npm audit` in `client/`, still open as of
+`react-router-dom@7.18.2` (the current `latest` in the 7.x line — there is no patched 7.x release;
+the fix lands only in `>=8.3.0`). Re-audited in Phase 19: this app is a client-only SPA
+(`createBrowserRouter`/`RouterProvider`, no React Server Components / framework mode / server
+actions), so the specific RSC-mode CSRF attack surface this advisory describes does not apply to how
+this app actually uses the library. `npm audit fix --force` was again deliberately NOT run — its only
+offer is a breaking downgrade to `7.11.0` (flagged `isSemVerMajor` by npm itself), and the non-breaking
+fix requires a major-version jump to React Router 8. Both are real regression risk for a routing
+library touching every page, unbudgeted in either cleanup pass. **Recommendation unchanged:** a
+dedicated, tested upgrade to React Router 8.3.0+ with its own full regression pass, not bundled into
+a hardening/cleanup pass.
 
-**No rate limiting on `/api/auth/login` or `/api/auth/signup`.** No brute-force/credential-stuffing
-protection currently exists on these endpoints. Not implemented in this cleanup (explicitly out of
-scope — "do not implement enterprise rate infrastructure"), but worth a small, targeted limiter on
-just these two routes in a future pass.
+**RESOLVED (Phase 19) — no rate limiting on `/api/auth/login` or `/api/auth/signup`.** Fixed:
+`middlewares/rateLimit.js#authLimiter` (20 requests / 15 min per IP) is now on both routes, plus five
+more limiters for the other endpoint classes flagged in the same audit (AI, booking writes, public
+search, commentary, analytics reads) — see `docs/ARCHITECTURE.md` §19.2. The in-memory store is
+correct for LOC's current single-instance deployment; see `docs/DEPLOYMENT.md`'s note on what a
+multi-instance deployment would need instead.
+
+**RESOLVED (Phase 20) — no health/readiness distinction, no response compression, no PostgreSQL
+pool tuning, and missing production env vars failed with an opaque downstream error instead of a
+clear one.** None of these had been audited before. Fixed: `GET /api/health` (liveness) +
+`GET /api/health/ready` (real Postgres check + informational optional-service state);
+`compression()` middleware (API responses were previously sent uncompressed entirely); `pg.Pool`'s
+`max`/`connectionTimeoutMillis` made explicit and configurable (previously pg's implicit defaults,
+including an unbounded connection timeout); `config/validateEnv.js` fails fast in production with a
+message naming exactly which required variable is missing (`JWT_SECRET`/`PG_*`/`CLIENT_ORIGIN`).
+See `docs/ARCHITECTURE.md` §20.2/20.3/20.6/20.7.
 
 ## P2 — Improvement
+
+**The canteen module (`canteenMenu.controller.js`, `canteenOrder.controller.js`) uses its own
+`res.status(500).json({ error: err.message })` pattern instead of `next(err)` + the central
+`errorHandler`.** Found during the Phase 19 error-handling audit — every other controller in this app
+consistently calls `next(err)` and lets `middlewares/errorHandler.js` shape the response (`{message}`
+for a plain error, `{code,message,details}` for a domain error). The canteen module predates that
+convention and is internally consistent with itself (every canteen response uses `{error}`, and the
+frontend canteen client code already expects that shape). Deliberately NOT rewritten in Phase 19 —
+the brief's own "do not rewrite working modules" applies directly here, and changing the response
+*shape* on a heavily-used, already-tested module is a real behavioral change for its frontend
+consumers, not a safe drive-by fix. The one thing Phase 19 did NOT need to fix here: these responses
+were never a raw stack-trace leak, only a plain `err.message` string — the same category of exposure
+the central `errorHandler` fix addresses elsewhere, just via a different (equally intentional, single
+codebase-wide) convention split. Worth unifying in a dedicated pass that also updates the matching
+frontend call sites, not bundled into a hardening pass.
 
 **`NO_RESULT` is a supported database value the app can never produce.**
 `matches.result_type` CHECK constraint allows `'NO_RESULT'`, but
@@ -118,8 +169,10 @@ priority.
 **`join-match` has no per-socket rate limiting.** A public, unauthenticated spectator can call
 `join-match` for any match id repeatedly; server-side validation (matchId must be a positive
 integer, match must exist) bounds the cost of each attempt to one indexed PK lookup, but there is no
-throttle on attempt *frequency*. Consistent with the project's existing no-rate-limiter stance
-(see the P1 auth-endpoints item above) — revisit together if a rate limiter is ever introduced.
+throttle on attempt *frequency*. Phase 19 added HTTP-layer rate limiting (`middlewares/rateLimit.js`)
+but deliberately did not extend it to Socket.IO events — `express-rate-limit` is HTTP-middleware-only,
+and a Socket.IO-specific limiter would be new infrastructure the audit didn't find evidence of actual
+abuse to justify. Revisit with real evidence.
 
 **OTP/Twilio is not implemented at all** — not even mocked. Auth is plain email + password +
 JWT. The `twilio` npm package was a dependency with zero actual usage anywhere in `server/src`;
@@ -256,7 +309,9 @@ fingerprint-based invalidation (§16.13) already covers the only case that matte
 so a manual staff regenerate button is a natural, bounded follow-up rather than a gap in the core
 mandate.
 
-**No token-usage/cost tracking or per-endpoint rate limiting on the AI Insight endpoints.** At
+**RESOLVED (Phase 19) — no per-endpoint rate limiting on the AI Insight endpoints.** Fixed:
+`middlewares/rateLimit.js#aiLimiter` (30 requests / 15 min per IP) is on every AI Insight route (get
++ regenerate, all three resource types). **No token-usage/cost tracking** remains unimplemented — at
 current club scale, single-flight de-dup (§16.16) plus the fingerprint cache already keep provider
 calls rare (one generation per finalized match/player/team per correction, not per page view).
 Worth adding real usage metering before this ever runs at a scale where that stops being true.
@@ -274,11 +329,12 @@ exact N+1-across-many-matches cost Part 46 warns against — for a metric this a
 career-stats page (Phase 7) has never needed at full scope either. A real need for a career-wide
 version would be a bounded, explicit "load full history" action, not the default page load.
 
-**No Redis/queue-backed rate limiting or caching layer on the new Analytics endpoints (Phase 17).**
-Same posture as every other read endpoint in this app (P3 item below) — each Analytics request
+**RESOLVED (Phase 19) — no rate limiting on the Analytics endpoints (Phase 17).** Fixed:
+`middlewares/rateLimit.js#analyticsLimiter` (120 requests / 5 min per IP) is on every analytics and
+compare route. **No caching layer** remains unimplemented and un-needed — each Analytics request
 either reads cheap SQL aggregates over `innings`' own cache columns or replays a small, bounded set
-of matches; nothing measured here justified a cache. Revisit only with real evidence at a larger
-scale.
+of matches; nothing measured in either audit pass justified a cache. Revisit only with real evidence
+at a larger scale.
 
 **Chart accessibility is "value always in a native tooltip or visible text," not full ARIA chart
 semantics (Phase 17).** `LineChart.jsx` exposes point values via SVG `<title>` (native hover
@@ -332,12 +388,50 @@ cache would add complexity without a measured problem to solve. Revisit only wit
 **No API versioning scheme** (`/api/...`, not `/api/v1/...`). Fine at current single-client scale;
 worth deciding before a second consumer (e.g. a mobile app) appears.
 
-**No code-splitting on the frontend build** — the production JS bundle is a single ~735KB
-(~196KB gzipped) chunk (Vite's build output warns on this). Not yet a measured user-facing problem;
-`import()`-based route-level splitting would be the natural first step if it becomes one.
+**RESOLVED (Phase 19) — no code-splitting on the frontend build.** The bundle had grown to ~870KB
+(over Vite's 500KB warning threshold) by Phase 18. Fixed: every route in `AppRoutes.jsx` is now
+`React.lazy`-loaded behind a shared `<Suspense>` fallback. Largest remaining chunk is 300KB (95KB
+gzipped); the build's size warning is gone.
 
 **No OpenAPI/Swagger spec** — `docs/API.md` is a hand-maintained markdown overview. Sufficient for
 the project's current size; consider generating a formal spec if the API surface keeps growing.
+
+**The integration test suite occasionally shows a single count/pagination-assertion flake on a full
+parallel run** (e.g. "total must be stable across pages" off by one) — observed across Phase 17, 18,
+19, and 20's baseline/regression runs, always in a different file each time (`leaderboard`,
+`publicMatch`, `publicTeam`), never reproducible when that one file is re-run in isolation immediately
+after.
+Root cause, confirmed in Phase 19: `node --test` runs the ~25 integration test files concurrently by
+default, and every file shares the same dev PostgreSQL database (no per-test schema/transaction
+isolation) — a count-based assertion in one file (e.g. "exactly N matches total") can observe rows a
+*different* file's fixture setup/teardown is creating or deleting at that exact moment. Confirmed by
+actually running `node --test --test-concurrency=1` (forces serial execution, so no file can
+interleave with another): 255 tests, 251 pass, 4 skipped, **0 failures** — vs. ~46s parallel, the
+serial run took 6m13s (≈8x slower). That trade is not worthwhile for the normal dev feedback loop.
+**Not fixed in Phase 19** — the real fix is per-test database
+isolation (a dedicated schema or transaction-per-test wrapper), which is a genuine test-infrastructure
+project of its own, not a safe drive-by change to dozens of existing, working test files across many
+phases. Recommendation: if CI ever needs a zero-flake signal, run `test:integration` with
+`--test-concurrency=1` there specifically (accepting the slower run), and keep the default parallel
+script for local dev.
+
+**Uploaded files under `server/uploads/` are on local disk, not object storage.** Most container
+platforms' filesystems are ephemeral — a redeploy wipes anything written to local disk. Cloudinary
+already exists and is the intended path for images that need to survive redeploys (canteen menu item
+photos); this only affects the subset of uploads that bypass it. Not addressed in Phase 20 (would be
+a real architecture change — picking and wiring an object-storage provider — not a hardening fix).
+Fine for a single, long-running host that isn't redeployed often; worth revisiting before deploying to
+a platform with an ephemeral filesystem if this upload path is actually used in practice.
+
+**`docker build` was never actually executed against `server/Dockerfile` (Phase 20)** — the audit
+environment has the Docker CLI installed but no running daemon. What WAS verified instead: a real
+`npm ci --omit=dev` run in an isolated directory containing exactly what the Dockerfile `COPY`s
+(this is what caught the `file:..` dead-dependency bug above), and a real server boot from that same
+isolated directory against the real dev database, with both health endpoints responding correctly.
+**Recommendation:** run `docker build .` once as a final check before the first real
+container-based deploy — everything the build itself would exercise beyond the isolated `npm ci`/boot
+already verified is Docker-layer mechanics (base image pull, layer caching), not application
+correctness.
 
 ## Explicitly NOT bugs (verified during this audit, noted so they aren't "rediscovered")
 

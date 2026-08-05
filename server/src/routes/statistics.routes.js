@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../middlewares/auth.js'
+import { searchLimiter } from '../middlewares/rateLimit.js'
 import { getPlayerStats, getMyStats, getLeaderboard, searchPlayersHandler, getPublicPlayerInfo } from '../controllers/statistics.controller.js'
 
 // Mounted at /api/players — all public (no auth), consistent with the
@@ -7,7 +8,7 @@ import { getPlayerStats, getMyStats, getLeaderboard, searchPlayersHandler, getPu
 // cricket profiles are intentionally readable by anyone; only the PRIVATE
 // self endpoints (/me/*) stay behind requireAuth.
 export const playerStatsRoutes = Router()
-playerStatsRoutes.get('/', searchPlayersHandler)
+playerStatsRoutes.get('/', searchLimiter, searchPlayersHandler)
 playerStatsRoutes.get('/:publicPlayerId', getPublicPlayerInfo)
 playerStatsRoutes.get('/:publicPlayerId/stats', getPlayerStats)
 

@@ -1,5 +1,6 @@
 import { pool } from '../config/db.js'
 import * as auditLogRepo from '../repositories/groundAuditLog.repository.js'
+import { logger } from '../utils/logger.js'
 
 // Phase 18 Feature 16 — thin orchestration. `logEvent` never throws past
 // itself in a way that could break the caller's own transaction/response —
@@ -10,7 +11,7 @@ export async function logEvent({ entityType, entityId, action, actorUserId = nul
   try {
     return await auditLogRepo.insertEntry(pool, { entityType, entityId, action, actorUserId, previousValue, newValue })
   } catch (err) {
-    console.error('Ground audit log write failed:', err.message)
+    logger.error('Ground audit log write failed', { entityType, entityId, action, error: err.message })
     return null
   }
 }

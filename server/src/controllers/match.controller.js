@@ -6,6 +6,7 @@ import * as liveMatchService from '../services/liveMatch.service.js'
 import * as commentaryService from '../services/commentary.service.js'
 import { publishMatchState } from '../realtime/cricketRealtime.js'
 import * as tournamentFixtureService from '../services/tournamentFixture.service.js'
+import { logger } from '../utils/logger.js'
 
 // Phase 10 Part 1 — public match discovery (no auth, same public-read
 // posture as GET /matches and GET /matches/:id/summary).
@@ -79,7 +80,7 @@ export async function startMatch(req, res, next) {
     // moment the tournament's first ball is actually bowled (never merely
     // because a date passed). A no-op for a non-tournament match; never
     // allowed to fail the match-start response itself.
-    tournamentFixtureService.onMatchStarted(match.id).catch((err) => console.error('Tournament onMatchStarted failed:', err.message))
+    tournamentFixtureService.onMatchStarted(match.id).catch((err) => logger.error('Tournament onMatchStarted failed', { matchId: match.id, error: err.message }))
   } catch (err) {
     next(err)
   }
@@ -95,7 +96,7 @@ export async function finalizeMatch(req, res, next) {
     // progression error must never fail the underlying finalize response —
     // finalize is a one-way lock, so it's always safe to retry progression
     // separately later if this ever throws.
-    tournamentFixtureService.onMatchFinalized(match.id).catch((err) => console.error('Tournament onMatchFinalized failed:', err.message))
+    tournamentFixtureService.onMatchFinalized(match.id).catch((err) => logger.error('Tournament onMatchFinalized failed', { matchId: match.id, error: err.message }))
   } catch (err) {
     next(err)
   }

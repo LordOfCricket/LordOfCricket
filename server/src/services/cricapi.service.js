@@ -1,4 +1,5 @@
 import { getCache, setCache } from '../utils/cache.js'
+import { logger } from '../utils/logger.js'
 
 const CRICAPI_BASE = 'https://api.cricapi.com/v1'
 const CACHE_KEY = 'india-featured-match'
@@ -97,7 +98,7 @@ export async function getIndiaFeaturedMatch() {
   try {
     result = await loadIndiaFeaturedMatch()
   } catch (err) {
-    console.error('India featured match unavailable (external CricAPI):', err.message)
+    logger.warn('India featured match unavailable (external CricAPI)', { error: err.message })
   }
   setCache(CACHE_KEY, result, CACHE_TTL_SECONDS)
   return result

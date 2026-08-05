@@ -53,8 +53,8 @@ export async function listPublicTournaments({ category = null, limit = 20, offse
   if (category && !['LIVE', 'UPCOMING', 'COMPLETED'].includes(category)) {
     badRequest("category must be one of 'LIVE', 'UPCOMING', 'COMPLETED'.")
   }
-  const clampedLimit = Math.max(1, Math.min(limit, 50))
-  const clampedOffset = Math.max(0, offset)
+  const clampedLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 20, 50))
+  const clampedOffset = Math.max(0, Number.isFinite(offset) ? offset : 0)
   const { rows, total } = await repo.listPublicTournaments({ category, limit: clampedLimit, offset: clampedOffset })
   return { pagination: { limit: clampedLimit, offset: clampedOffset, total }, items: rows }
 }

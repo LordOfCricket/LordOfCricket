@@ -15,6 +15,7 @@
 
 import { findMatchById } from '../models/match.model.js'
 import * as liveMatchService from '../services/liveMatch.service.js'
+import { logger } from '../utils/logger.js'
 
 export function matchRoom(matchId) {
   return `match:${matchId}`
@@ -44,7 +45,7 @@ export function registerCricketRealtime(io) {
         }
         socket.join(matchRoom(matchId))
       } catch (err) {
-        console.error('join-match failed:', err.message)
+        logger.error('join-match failed', { matchId, error: err.message })
         socket.emit('match:error', { message: 'Could not join match room.' })
       }
     })
@@ -84,7 +85,7 @@ export async function publishMatchState(io, matchId, reason) {
     // A publish failure must never surface to the scorer/HTTP caller — the
     // database write already committed successfully; realtime delivery is
     // best-effort (Part 78). Spectators recover via reconnect/HTTP resync.
-    console.error(`Realtime publish failed for match ${matchId} (reason=${reason}):`, err.message)
+    logger.error('Realtime publish failed', { matchId, reason, error: err.message })
   }
 }
 
@@ -122,6 +123,6 @@ export function publishCommentary(io, matchId, { inningsId, inningsVersion, mode
       })),
     })
   } catch (err) {
-    console.error(`Commentary publish failed for match ${matchId}:`, err.message)
+    logger.error('Commentary publish failed', { matchId, error: err.message })
   }
 }

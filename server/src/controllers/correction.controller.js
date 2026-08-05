@@ -1,6 +1,7 @@
 import * as correctionService from '../services/correction.service.js'
 import * as commentaryService from '../services/commentary.service.js'
 import { publishMatchState, publishCommentary } from '../realtime/cricketRealtime.js'
+import { logger } from '../utils/logger.js'
 
 // Phase 12: a correction can change MANY commentary entries at once (a
 // milestone that no longer exists, a wicket now attributed to someone else,
@@ -15,7 +16,7 @@ async function rebuildAndPublishCommentary(req, inningsId) {
     const result = await commentaryService.rebuildInningsCommentary(inningsId)
     if (result) publishCommentary(req.io, result.matchId, { inningsId: Number(inningsId), inningsVersion: result.inningsVersion, mode: 'resync' })
   } catch (err) {
-    console.error(`Commentary rebuild failed for innings ${inningsId}:`, err.message)
+    logger.error('Commentary rebuild failed', { inningsId, error: err.message })
   }
 }
 

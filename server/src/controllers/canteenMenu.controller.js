@@ -3,6 +3,7 @@ import MenuItem from '../models/canteenMenuItem.model.js'
 import TodayMenu from '../models/canteenTodayMenu.model.js'
 import { isMongoReady } from '../config/db.js'
 import { uploadImageFile } from '../utils/cloudinaryUpload.js'
+import { logger } from '../utils/logger.js'
 
 function formatImageUrl(req, image) {
   if (!image) return ''
@@ -145,7 +146,7 @@ export function updateTodaysMenu(req, res) {
         const dbItems = await MenuItem.find().lean()
         validIds = new Set(dbItems.map((m) => String(m._id)))
       } catch (err) {
-        console.error('Failed to load MenuItem for validation:', err.message)
+        logger.error('Failed to load MenuItem for validation', { error: err.message })
       }
     }
 
@@ -178,7 +179,7 @@ export function updateTodaysMenu(req, res) {
       try {
         await TodayMenu.findOneAndUpdate({}, { publishedAt, items }, { upsert: true, new: true })
       } catch (err) {
-        console.error('TodayMenu save error:', err.message)
+        logger.error('TodayMenu save error', { error: err.message })
       }
     }
 
@@ -195,7 +196,7 @@ export function updateTodaysMenu(req, res) {
   }
 
   applyUpdate().catch((err) => {
-    console.error('updateTodaysMenu error:', err.message)
+    logger.error('updateTodaysMenu error', { error: err.message })
     res.status(500).json({ error: err.message })
   })
 }
@@ -271,7 +272,7 @@ export async function deleteMenuItem(req, res) {
           await today.save()
         }
       } catch (err) {
-        console.error('Failed to update TodayMenu after delete:', err.message)
+        logger.error('Failed to update TodayMenu after delete', { error: err.message })
       }
 
       const payload = { publishedAt: new Date().toISOString() }

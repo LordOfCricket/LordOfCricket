@@ -1517,3 +1517,344 @@ schedule as a proportional colored bar PLUS a readable list underneath (Part 41/
 color-only). New hooks (`useGroundOps.js`, `useNotifications.js`) all follow this codebase's
 established `window.setTimeout(load, 0)`-deferred-effect pattern. `NotificationBell.jsx` is wired to
 real data; `PublicAvailabilityPreview.jsx` adds the homepage widget.
+
+## 19. Production Hardening (Phase 19)
+
+Mission: audit every subsystem for real production risk and close what's actually found — no new
+user-facing features, no architecture rewrites, no new frameworks beyond what a specific, named
+finding justified. Every change below traces back to something the audit actually observed (a
+missing header, an unguarded param, a single 870KB chunk in the build's own warning output), not a
+speculative "best practice" applied blind. See `docs/DEPLOYMENT.md` for the operational checklist
+this phase produces, and `docs/TECHNICAL_DEBT.md` for what was found but deliberately left alone.
+
+### 19.1 Security headers & CORS
+
+`helmet()` is now the first middleware in `app.js`, ahead of `cors()` — standard headers (HSTS,
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, a same-origin CSP) on every
+response. `crossOriginResourcePolicy` is relaxed to `cross-origin` so the client (a different origin)
+can still load images served from `/uploads`. CORS itself (`config/corsOrigins.js`) was already
+correct and unchanged: `allowedOrigins` comes only from `CLIENT_ORIGIN`, and an unset/empty env var
+produces an empty allow-list — fails closed, not open. Verified with a real request from a
+disallowed origin (`productionHardening.integration.test.js`): no `Access-Control-Allow-Origin`
+header comes back.
+
+### 19.2 Rate limiting
+
+New `middlewares/rateLimit.js` (`express-rate-limit`, in-memory store — correct for LOC's current
+single-instance deployment; a multi-instance deployment would need a shared store, see
+`docs/DEPLOYMENT.md`). Six named limiters, applied to exactly the endpoint classes the brief calls
+out: `authLimiter` (login/signup — brute-force protection), `aiLimiter` (every AI insight read and
+regenerate route — real per-call cost), `bookingWriteLimiter` (create booking/block, cancel),
+`searchLimiter` (player/team public search+discover, no-login so the main abuse surface),
+`commentaryLimiter` (generous — legitimate live-match polling must not be throttled, this blunts
+scripted scraping only), `analyticsLimiter` (compare + per-resource analytics reads). Every limiter
+logs a `warn` on trip (`logger.js`), not silently. `app.set('trust proxy', 1)` is gated behind
+`TRUST_PROXY=1` (unset by default) — trusting `X-Forwarded-For` with no real proxy in front would let
+a client spoof its own IP and bypass every limiter above for free.
+
+### 19.3 Input validation
+
+Audited every `:id`-shaped and pagination-shaped public parameter. Two real, reproducible gaps found
+and fixed:
+- Numeric route params (`teams.id`, `matches.id` — the internal serial ids, as opposed to the
+  `public_*_id` strings used everywhere a resource is meant to be referenced externally) were passed
+  straight into parameterized SQL with no shape check. A non-numeric value (`GET /teams/abc`) wasn't
+  rejected until Postgres itself refused the cast — an unhandled 500, not a clean 400. New
+  `middlewares/validateParams.js#requireIntParam(name)` (a regex shape check, not a lookup — "not
+  found" for a well-formed but nonexistent id is still each route's own job) is now on every
+  numeric-id route: `/teams/:id*`, `/matches/:id*`, and the Phase 16/17 routes mounted on the same
+  ids (`ai-insight`, `analytics`).
+- `tournament.service.js#listPublicTournaments`'s pagination clamp (`Math.max(1, Math.min(limit,
+  50))`) silently propagated `NaN` when `limit`/`offset` were non-numeric, because `Math.min(NaN, x)`
+  is `NaN`, not `x` — a malformed `?limit=abc` reached Postgres as `LIMIT NaN`. Fixed with an explicit
+  `Number.isFinite` guard before the clamp (one line, matches the pattern already correct everywhere
+  else in this codebase). Every other paginated public endpoint audited
+  (`publicMatch.service.js#listPublicMatches`, `publicTeam.service.js#listPublicTeams`,
+  `statistics.service.js#getLeaderboard`/`searchPlayers`, `groundReport.service.js
+  #searchBookingHistory`, `canteenOrder.controller.js`) was already correctly clamped against
+  negative/NaN/oversized values — verified line-by-line, not assumed.
+
+### 19.4 Error handling — never leak internals
+
+`middlewares/errorHandler.js` had one real gap: an error with no `.code` (domain-coded) and no
+`.statusCode` (an intentional, vetted service throw) fell through to `res.status(err.statusCode ||
+500).json({ message: err.message })` — meaning any genuinely unexpected error (a raw Postgres driver
+error, a programming bug) sent its raw `.message` straight to the client. Now split three ways: (1)
+domain-coded errors — unchanged, full structured shape; (2) an error that already carries an
+intentional `.statusCode` (every deliberate `err.statusCode = 4xx` throw already used throughout the
+services layer) — message passed through unchanged, since it was already vetted for the client; (3)
+anything else — logged server-side in full (`message` + `stack`), client gets a bare `{"message":
+"Internal Server Error"}`. Verified both via direct unit-style calls against `errorHandler` and a
+real HTTP request (`GET /teams/abc/profile` before its `requireIntParam` guard would have hit exactly
+this path). `config/db.js`'s `pool` now also has an `.on('error', ...)` listener — node-postgres
+emits this when an idle pooled client is dropped by the backend, and an unhandled listener there is
+an uncaught exception that kills the whole process; one flaky connection must never take the API
+down. `server.js` adds `process.on('uncaughtException'|'unhandledRejection', ...)` — logs full detail,
+then exits on an uncaught exception (a process manager's restart is safer than continuing in
+whatever state caused it) rather than crashing silently or hanging.
+
+### 19.5 Structured logging
+
+New `utils/logger.js` — one JSON line per call (`{ts, level, message, meta}`) to stdout/stderr, no
+dependency (pino/winston would be genuine overkill for this project's actual log volume; the brief's
+own "do not introduce unnecessary frameworks" applies here). Replaces `console.log`/`console.error`
+at every site the brief names by name: server startup/shutdown, Postgres/MongoDB connect
+success/failure, the pool's idle-client error, AI provider failures (invalid JSON output, schema
+mismatch, provider errors — previously silent, only ever surfaced as `{available:false}` to the
+caller with nothing logged), Google Calendar create/cancel failures, booking conflicts (the
+`23P01` exclusion-violation path — the actual concurrency guarantee firing), audit-log and
+notification write failures, and every rate-limit trip. Never logs a password, token, or secret —
+every call site above already only had a message string and identifying ids to hand it.
+
+### 19.6 Configuration & secrets
+
+Audited `.env.example` against every `process.env.*` read in the codebase — complete, no drift.
+Verified `.env`/`client/.env` are gitignored and were never committed (`git log` has no history for
+either path); `client/.env.production` IS tracked, correctly — it holds only the public
+`VITE_API_URL`/`VITE_SOCKET_URL` build-time values, which end up in the shipped bundle regardless, so
+there's nothing to protect by hiding them. No hardcoded credential literal found anywhere in
+`server/src` or `client/src` (grepped for common key/token shapes). Added `TRUST_PROXY` (§19.2) and
+`NODE_ENV=production` to `.env.example`. The pre-existing `JWT_SECRET` production guard
+(`utils/jwt.js` — refuses to boot with the known dev fallback secret when `NODE_ENV=production`) was
+already correct and predates this phase; re-verified, unchanged.
+
+### 19.7 Database
+
+Indexes audited against every hot lookup path: `users.email`, `players.public_player_id`,
+`ground_bookings.public_booking_id`, `tournaments.public_tournament_id` are all `UNIQUE` (Postgres
+backs every `UNIQUE` constraint with an index automatically) — no missing index found on any
+externally-looked-up column. No speculative index added — the brief says "only add indexes if
+measured," and nothing in this audit measured a slow query. Transaction safety re-verified: every
+multi-statement write already goes through `client.connect()` / `BEGIN` / `COMMIT` /
+`ROLLBACK`-on-catch / `client.release()`-in-`finally` (the booking service's pattern, unchanged) —
+the one new addition is the pool-level `.on('error', ...)` listener in §19.4. MongoDB is unchanged:
+still fully optional, `isMongoReady()` gates every call site, `connectMongo()` degrades to a warning
+log rather than a boot failure.
+
+### 19.8 Performance — bundle size (measured, not speculative)
+
+The production build's OWN output flagged this: one 870KB JS chunk, over Vite's 500KB warning
+threshold, because `AppRoutes.jsx` eagerly imported every page component regardless of which single
+route a visitor actually landed on. Converted every route (except the tiny structural `Layout`,
+`RequireAuth`, `CanteenEntryRedirect`) to `React.lazy(() => import(...))` behind a shared `<Suspense>`
+fallback (`RouteFallback` — a small centered spinner, styled consistently with this app's existing
+`role="status"` loading convention). Purely a build-time/network-time change — no component's own
+logic touched. Re-measured after: the largest remaining chunk is 300KB (95KB gzipped), every other
+page is its own small chunk fetched only when visited, and the build's size warning is gone.
+Verified live (not just via the build log) with a Playwright pass over 7 routes — zero console
+errors, no page stuck on the Suspense fallback.
+
+### 19.9 Caching
+
+Two caches exist, both audited, neither changed: `utils/cache.js` (a simple in-memory TTL map, used
+for the external CricAPI India-match lookup — single-instance-correct, same caveat as the rate
+limiter's store) and the AI insight Mongo cache (`AiInsight` model). The AI cache was already
+correction-safe by design before this phase:
+`domain/ai/computeSourceFingerprint.js` keys the cached insight on a hash of the exact authoritative
+facts (including `innings.version`, the existing optimistic-concurrency counter every scoring
+correction already bumps), so a correction that changes the underlying match state — even one that
+happens not to change final totals — can never silently serve a stale insight. Re-verified this
+reasoning against the current code; no change needed.
+
+### 19.10 Frontend hardening
+
+Two real gaps found and fixed: (1) no catch-all route — `AppRoutes.jsx` had no `path: '*'`, so an
+unmatched URL (stale bookmark, typo, dead link) rendered nothing inside `Layout`'s `<Outlet/>`, a
+blank page with no way back. New `pages/not-found/NotFoundPage.jsx` + a `path: '*'` route fixes this.
+(2) no `errorElement` — an uncaught render/loader error on any route fell through to React Router's
+own unstyled default error screen. New `routes/RouteErrorBoundary.jsx` (reload + back-to-home
+actions, dev-only error detail) is now the root route's `errorElement`. Every existing page's own
+loading/error/empty states (`StatsErrorState` and the per-page skeleton/empty-state components) were
+already present and consistent across the app — audited, not touched.
+
+### 19.11 Dependency audit
+
+`npm audit` on the server: 0 vulnerabilities. On the client: one HIGH-severity advisory
+(`GHSA-qwww-vcr4-c8h2`, "React Router RSC Mode CSRF Bypass") affecting the installed
+`react-router-dom@7.18.2`. Investigated rather than blindly patched: the vulnerability is specific to
+React Router's RSC/server-actions mode; LOC is a plain Vite SPA using `createBrowserRouter` with zero
+RSC or server actions, so this vulnerability class doesn't apply to how this app actually uses the
+library. The only available fix is patched in `>=8.3.0` (a major-version jump) or a breaking
+downgrade to `7.11.0` (`npm audit fix --force`'s own suggestion, flagged `isSemVerMajor`) — both carry
+real regression risk this phase's own "do not introduce unnecessary frameworks / rewrites" mandate
+argues against gambling on unbudgeted. Documented in `docs/TECHNICAL_DEBT.md` as a tracked,
+assessed-low-risk item for a dedicated future upgrade with its own regression pass, not silently
+absorbed here. No unused/deprecated dependency found in either `package.json` — both are lean, and
+every declared package is imported somewhere.
+
+### 19.12 Tests & load testing
+
+10 new integration tests (`productionHardening.integration.test.js`): errorHandler sanitization
+(direct calls, both the "leaks nothing" and "passes through intentional messages unchanged" cases),
+a malformed numeric param over real HTTP, the 404 shape, malformed-pagination degradation, security
+headers present on a real response, CORS fail-closed for a disallowed origin, an unauthenticated
+staff-only request, and the auth rate limiter actually tripping at 429 within 25 rapid real HTTP
+attempts. A local concurrent load test (40 simultaneous requests per burst) against public match
+discovery, player search, the leaderboard, and tournament listing — 0 failures, sub-200ms average
+latency, server fully responsive immediately after every burst.
+
+## 20. Production Release (Phase 20)
+
+Mission: take LOC from "hardened" (Phase 19) to "actually deployable" — infrastructure, deployment
+config, environment separation, and real verification that the whole stack boots and works from a
+fresh install. No new product features; every change here is either a genuine deployment blocker
+found during audit, or documentation. See `docs/DEPLOYMENT.md` for the operational guide this phase
+produces.
+
+### 20.1 Dead config found and removed
+
+Both `server/package.json` and `client/package.json` depended on `"lord-of-cricket": "file:.."` — a
+self-referential link back to the monorepo root's own `package.json` (which exports nothing;
+`grep`-confirmed zero real imports from it anywhere in either `src/` tree). Harmless in this
+repository's own dev environment (npm just symlinks it), but a genuine **deployment blocker**: any
+build process whose context doesn't include the parent directory — a Docker build using `server/` as
+its build context, most platforms' isolated build environments — fails to resolve `file:..` at all.
+Removed from both `package.json`s; verified with a real `npm ci` from a clean lockfile afterward (0
+vulnerabilities, clean install). Also removed `server/src/config/mongo.js` — a fully dead, unused,
+pre-`db.js`-refactor duplicate of `connectMongo()` whose own error path (`process.exit(1)` on Mongo
+failure) actively contradicted the established "Mongo is optional" architecture; confirmed zero
+imports before deletion.
+
+### 20.2 Environment configuration (Feature 1)
+
+New `config/validateEnv.js`, called at the top of `server.js`: in production, refuses to boot with a
+single clear error listing every missing required variable (`JWT_SECRET`, every `PG_*`,
+`CLIENT_ORIGIN`) instead of letting a missing var surface later as an opaque, unrelated failure
+several layers downstream (a missing `PG_HOST` previously showed up as a raw driver error like
+"getaddrinfo ENOTFOUND undefined"). Deliberately narrow — every optional integration (Mongo, Google
+Calendar, AI, Cloudinary, CricAPI) stays optional here too; this is not the place to make an optional
+feature mandatory. `JWT_SECRET`'s own pre-existing check (`utils/jwt.js`) is unchanged and unified
+conceptually, not merged in code — see the comment in `server.js` for why (ES module import
+hoisting means textual ordering between them doesn't actually control which fires first; both fail
+fast with a clear message regardless of order). `.env.example` audited against every `process.env.*`
+read in the codebase — complete, `TRUST_PROXY`/`NODE_ENV`/`PG_POOL_MAX` added.
+
+### 20.3 PostgreSQL production (Feature 2)
+
+Connection pooling made explicit and tunable: `max` (env `PG_POOL_MAX`, defaults to 10 — pg's own
+default, unchanged behavior unless explicitly set) and `connectionTimeoutMillis: 10000` (pg's own
+default is 0 — no timeout, i.e. a query can hang forever if Postgres is unreachable; a bounded
+timeout is the correct production default so an outage surfaces as a fast, clear error instead of a
+hung request). Migration process (`npm run db:migrate` → `schema.sql`) re-verified idempotent —
+every `CREATE TABLE`/`CREATE INDEX` is `IF NOT EXISTS`, every schema addition across every phase has
+used `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — safe to re-run against an already-migrated
+database, which the deployment dry run (§20.11) exercises for real. Indexes/constraints/transaction
+safety were already fully audited in Phase 19 §19.7 — not re-litigated, confirmed still accurate.
+
+### 20.4 MongoDB production (Feature 3)
+
+Confirmed unchanged and correct: `connectMongo()` degrades to a warning log on failure, never blocks
+startup; `isMongoReady()` gates every call site (canteen menu, AI insight cache). Indexes
+re-confirmed present on both collections that need them (`AiInsight`'s `{sourceType,sourceId}`
+unique compound index, `CanteenOrder`'s partial unique index on `{userId,hasActiveOrderFlag}` for the
+real concurrency guarantee behind "one active order per user"). New `/api/health/ready` (§20.6)
+surfaces live Mongo connection state for the first time — previously only visible in server logs.
+
+### 20.5 Google Calendar & AI configuration (Features 4/5)
+
+No credentials configured in this environment (no service account, no Anthropic key) — real
+provider integration could not be exercised end-to-end here. What WAS verified live: a real booking
+created via the running server correctly reports `googleSyncStatus: "NOT_CONFIGURED"` and still
+succeeds fully (calendar sync failure/absence never blocks or degrades the booking itself); a real
+`GET /matches/:id/ai-insight` against a real, freshly-created finalized match (not merely an empty
+DB) correctly returns `{"available":false,"reason":"NOT_CONFIGURED"}` — both are the exact
+already-established graceful-degradation contract (Phase 14/16), re-confirmed against the live
+server rather than only read from code. Concrete setup steps for both (service account creation,
+calendar sharing, API key acquisition) are now documented in `docs/DEPLOYMENT.md` — previously only
+implied by `.env.example` comments.
+
+### 20.6 Health checks (Feature 6)
+
+`GET /api/health` (liveness — checks nothing external, so a slow dependency can never make an
+orchestrator kill a healthy process) and new `GET /api/health/ready` (readiness — a real `SELECT 1`
+against Postgres; `503` if it fails, `200` if it succeeds, plus an informational `optional` block
+reporting live Mongo/Calendar/AI state that never itself affects the status code, since none of them
+are hard dependencies). `controllers/health.controller.js` reuses the exact existing
+`isMongoReady()`/`isCalendarConfigured()`/`isAIConfigured()` helpers each subsystem already exposed —
+no new state, no new truth.
+
+### 20.7 Deployment configuration (Feature 7)
+
+- **Compression**: `compression()` added to `app.js` — API responses were previously sent
+  uncompressed entirely (verified: no `Content-Encoding` header on any response before this).
+  Verified live: a 50-item player search response now comes back `Content-Encoding: gzip`.
+- **SPA routing**: `client/public/_redirects` (Netlify/Render Static Site) and `client/vercel.json`
+  (Vercel) both rewrite every path to `index.html` — without one of these, a direct browser visit to
+  any client-side route (`/matches`, `/players/:id`, etc.) 404s at the static host before React
+  Router ever loads. Verified the `_redirects` file survives into `client/dist` after `npm run build`.
+- **Containerization**: `server/Dockerfile` (+ `.dockerignore`) — optional (Railway/Render both also
+  auto-detect a plain Node app), included for platforms/workflows that want a container. `docker
+  build` itself could not be executed in this environment (no running Docker daemon) — see §20.11 for
+  what WAS verified instead.
+- **Cache headers**: every `/api/*` response now sets `Cache-Control: no-store` (§20.9) — nothing
+  under this API benefits from HTTP caching, and several routes return per-user data.
+- Build/start commands audited and documented in `docs/DEPLOYMENT.md` — `npm run build` → `dist/`
+  (frontend, static), `npm start` → `node src/server.js` (backend) — both already correct,
+  pre-existing.
+
+### 20.8 Logging (Feature 8)
+
+Completed Phase 19's structured-logging migration: every remaining `console.log`/`console.error` in
+code that runs as part of the live server process (controllers, realtime modules, `server.js`'s
+socket connect/disconnect logs) now goes through `utils/logger.js`. Deliberately left AS-IS: the
+one-off CLI scripts (`config/seed.js`, `config/seedPlayers.js`, `config/migrate.js`,
+`scripts/rebuildCommentary.js`) — these are read directly by a human operator running them in a
+terminal, and structured JSON-line output would make that *worse*, not more production-ready; "no
+debug spam" applies to the running server process, not an operator-invoked one-shot script.
+
+### 20.9 Security headers (Feature 9)
+
+Helmet/CORS/rate-limiting/JWT were fully audited in Phase 19 §19.1 — re-confirmed unchanged and
+correct. New this phase: `Cache-Control: no-store` on every `/api/*` response (Express's default
+auto-generated `ETag` combined with no explicit cache directive meant a shared proxy/cache in front
+of the API had no explicit instruction not to store a response containing per-user data). Cookies:
+confirmed, again, that this app uses none anywhere (`grep`-verified zero `document.cookie`/
+`res.cookie` usage) — auth is a bearer JWT in `localStorage`, so cookie-specific concerns
+(SameSite/Secure/HttpOnly) don't apply to this architecture.
+
+### 20.10 Error pages & performance (Features 10/11)
+
+404 and the render-error boundary were built in Phase 19 (§19.10), unchanged. New this phase: a
+global `OfflineBanner.jsx` — `navigator.onLine` plus the two native `online`/`offline` window events,
+no service worker, no offline caching (that would be new PWA infrastructure, out of scope) — verified
+live with Playwright's real browser network emulation (`context.setOffline(true/false)`): appears
+exactly when offline, disappears exactly when back online. "Maintenance mode" was deliberately NOT
+built as a new admin-toggle feature (out of scope per this phase's own "no new features"); the
+existing `RouteErrorBoundary` (Phase 19) already shows a friendly, branded message if the backend is
+genuinely unreachable, which is what a maintenance page needs to communicate.
+
+Performance: every measured API endpoint (Homepage discovery, Match Summary, Team/Player profile,
+Analytics, Ground Operations timeline, Booking availability, AI Insight, Commentary) responded in
+3–157ms against real data — no endpoint identified as measurably slow. The homepage's real
+first-contentful-paint is ~230ms; an initial `networkidle`-based measurement showed several seconds,
+traced to the homepage's embedded Google Maps iframe (already correctly marked `loading="lazy"` in
+existing code) continuing background network activity well after the page was already visually
+complete and interactive — a property of the `networkidle` metric being a pessimistic proxy, not an
+actual unaddressed slowness; no code change was needed once this was measured properly. Bundle
+splitting (Phase 19) re-confirmed still in effect.
+
+### 20.11 Production dry run (Feature 12)
+
+Real, not simulated: `npm ci --omit=dev` run in an isolated directory containing only what
+`Dockerfile` actually `COPY`s (`package.json`, `package-lock.json`, `src/`) — this is exactly what
+caught §20.1's `file:..` dead-dependency bug (a real fresh install from just those files, with no
+parent directory present, would have failed before that fix). The server was then booted from that
+same isolated directory against the real dev Postgres, on an alternate port, with no code or config
+outside what a container would actually have — both `/api/health` and `/api/health/ready` responded
+correctly. `docker build` itself could not be run (Docker Desktop's daemon is not running in this
+environment) — noted honestly as a real limitation, not glossed over; recommend running `docker
+build .` once as a final check before the first real container-based deploy.
+
+### 20.12 Full E2E (Feature 13)
+
+18/18 checks (Playwright + real HTTP) covering Authentication (valid/invalid login), Players
+(discovery, real profile, compare), Teams (discovery, compare), Match Summary against a REAL
+finalized match created through the actual scoring/finalize service pipeline (not an empty DB), 
+Matches discovery, Tournaments, Leaderboards, Booking (real create + cancel), the Ground Operations
+staff hub, Notifications (authenticated fetch), the homepage notification bell, and the new 404 page.
+Match Scoring/Replay/Commentary/corrections themselves are exhaustively covered by the 251-test
+integration suite (which exercises the identical real service layer this E2E's own fixture match was
+built through) — not re-proven by hand here, which would be strictly weaker evidence than what
+already exists. The fixture match, its teams, and its players were fully cleaned up after
+verification (mirroring `tests/integration/fixtures.js`'s own cleanup ordering) — nothing left behind
+in the dev database.

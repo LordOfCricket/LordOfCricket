@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { analyticsLimiter } from '../middlewares/rateLimit.js'
+import { requireIntParam } from '../middlewares/validateParams.js'
 import {
   getPlayerAnalytics,
   getTeamAnalytics,
@@ -25,15 +27,15 @@ import {
 // dynamic segment" convention already used for /teams/discover, /matches/discover, etc.
 
 export const playerAnalyticsRoutes = Router()
-playerAnalyticsRoutes.get('/compare', comparePlayers)
-playerAnalyticsRoutes.get('/:publicPlayerId/analytics', getPlayerAnalytics)
+playerAnalyticsRoutes.get('/compare', analyticsLimiter, comparePlayers)
+playerAnalyticsRoutes.get('/:publicPlayerId/analytics', analyticsLimiter, getPlayerAnalytics)
 
 export const teamAnalyticsRoutes = Router()
-teamAnalyticsRoutes.get('/compare', compareTeams)
-teamAnalyticsRoutes.get('/:id/analytics', getTeamAnalytics)
+teamAnalyticsRoutes.get('/compare', analyticsLimiter, compareTeams)
+teamAnalyticsRoutes.get('/:id/analytics', requireIntParam('id'), analyticsLimiter, getTeamAnalytics)
 
 export const matchAnalyticsRoutes = Router()
-matchAnalyticsRoutes.get('/:id/analytics', getMatchAnalytics)
+matchAnalyticsRoutes.get('/:id/analytics', requireIntParam('id'), analyticsLimiter, getMatchAnalytics)
 
 export const tournamentAnalyticsRoutes = Router()
-tournamentAnalyticsRoutes.get('/:publicTournamentId/analytics', getTournamentAnalytics)
+tournamentAnalyticsRoutes.get('/:publicTournamentId/analytics', analyticsLimiter, getTournamentAnalytics)

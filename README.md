@@ -77,6 +77,22 @@ Short name: **LOC**. (Never "CricVerse" — that name is retired.)
   SMS). A public "Today's Availability" preview on the homepage needs no login. See
   docs/ARCHITECTURE.md's Phase 18 section for the exact utilization formula and why blocks reuse
   Phase 14's table instead of a new one.
+- **Production Hardening** — a full-app audit (auth/authorization, input validation, error handling,
+  rate limiting, structured logging, security headers, CORS, secrets/config, database, caching,
+  frontend states, dependencies, bundle size) with every real, measured finding fixed: standard
+  security headers (`helmet`), rate limiting on login/AI/booking/search/commentary/analytics,
+  sanitized error responses (an unexpected server error never leaks its raw message), a 404 page and
+  a route-level error boundary (neither existed before), and route-based code-splitting (one 870KB JS
+  chunk became per-page chunks, largest now 300KB). No new user-facing features, no architecture
+  rewrites. See `docs/ARCHITECTURE.md` §19 and `docs/DEPLOYMENT.md`.
+- **Production Release** — deployment infrastructure and real verification that LOC boots from a
+  fresh install: `GET /api/health` (liveness) and `GET /api/health/ready` (real Postgres check +
+  Mongo/Calendar/AI state), fail-fast startup validation for missing required environment variables,
+  response compression, SPA-fallback routing config (Vercel + Netlify/Render), an optional backend
+  `Dockerfile`, a tunable PostgreSQL connection pool, and a real dry run (fresh `npm ci` + boot from
+  an isolated directory containing only what a container build would have) that caught and removed a
+  dead, self-referential `file:..` package dependency that would have broken any containerized build.
+  See `docs/ARCHITECTURE.md` §20 and `docs/DEPLOYMENT.md`.
 - **Umpire Requests** — a request/approval flow for umpire status.
 - **Practice / Umpire Testing sandbox** (`/testing`) — an intentionally separate, client-only
   scoring engine for practicing scoring without touching real match data.
@@ -209,13 +225,20 @@ cp client/.env.example client/.env
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port (default 5000) |
-| `PG_USER`, `PG_HOST`, `PG_DATABASE`, `PG_PASSWORD`, `PG_PORT` | PostgreSQL connection |
-| `MONGO_URI` | MongoDB connection (canteen only — the server still boots without it) |
-| `CLIENT_ORIGIN` | Comma-separated list of allowed CORS origins |
+| `NODE_ENV` | Set to `production` in production — gates the `JWT_SECRET`/env-validation startup checks below |
+| `PG_USER`, `PG_HOST`, `PG_DATABASE`, `PG_PASSWORD`, `PG_PORT` | PostgreSQL connection. **Required in production** — the server refuses to start with a clear error naming exactly which is missing (see `server/src/config/validateEnv.js`) |
+| `PG_POOL_MAX` | Optional — max pool connections (default 10, pg's own default) |
+| `MONGO_URI` | MongoDB connection (canteen + AI insight cache — the server still boots without it) |
+| `CLIENT_ORIGIN` | Comma-separated list of allowed CORS origins. **Required in production**, same fail-fast check as above |
+| `TRUST_PROXY` | Optional — set to `1` only when a real reverse proxy sits in front of this process (controls rate-limit/logging IP attribution) |
 | `JWT_SECRET` | Session-signing secret. **Required in production** — the server refuses to start in production without it (see `server/src/utils/jwt.js`) |
 | `CRICAPI_KEY` | Optional — powers the homepage's external "India match" widget only; the widget degrades gracefully with no key |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Canteen menu-item image uploads |
+| `GOOGLE_CALENDAR_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Optional — ground-calendar sync (Phase 14); booking works fully without it |
 | `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` | Optional — AI Match/Player/Team Insight (Phase 16). With `AI_API_KEY` unset the server boots normally and every AI Insight endpoint returns `{available:false, reason:'NOT_CONFIGURED'}`; every other page is completely unaffected. Never exposed to the client. |
+
+See `docs/DEPLOYMENT.md` for the full production checklist, health checks, Google Calendar/AI setup
+steps, and backup/disaster-recovery guidance.
 
 `client/.env`:
 
@@ -251,11 +274,15 @@ npm run dev --prefix client
 ```bash
 npm test --prefix server              # pure domain/unit tests — no database needed
 npm run test:integration --prefix server   # real-PostgreSQL integration tests
+npm test --prefix client              # the practice/umpire-testing sandbox's client-side scoring engine
 ```
 
-Current verified baseline: **459 / 459** (248 unit + 211 integration). Four integration tests
-require a reachable MongoDB and skip (not fail) when it's unavailable, consistent with MongoDB
-being an optional dependency everywhere else in this app.
+Current verified baseline: server **304 / 304** unit, **251 / 255** integration (4 skipped — see
+below), client **9 / 9**. Four integration tests require a reachable MongoDB and skip (not fail) when
+it's unavailable, consistent with MongoDB being an optional dependency everywhere else in this app.
+The integration suite occasionally shows a single non-reproducible count-assertion flake on a full
+parallel run (different file each time) — root-caused to `node --test`'s default concurrent file
+execution racing against the shared dev database, not a real regression; see `docs/TECHNICAL_DEBT.md`.
 
 ### Production build
 
@@ -316,6 +343,22 @@ npm run commentary:rebuild --prefix server   # regenerate commentary for every i
     taxonomy layered on top. Every new read (timeline, dashboard, reports, utilization) derives from
     that one table plus the existing read-only match-occupancy link — never a duplicated truth (see
     docs/ARCHITECTURE.md §18).
+12. **The backend is the only authority on validity and safety — the client is advisory only.**
+    Production Hardening (Phase 19) re-verified this rather than introduced it: every mutation
+    re-validates server-side regardless of what the client already checked, every unexpected server
+    error is sanitized before it reaches a response, every numeric route id and pagination parameter
+    is shape-checked before it reaches SQL, and the small set of endpoints worth rate-limiting
+    (login, AI, booking writes, public search, commentary, analytics) are — all without adding a new
+    framework or redesigning a single working module (see docs/ARCHITECTURE.md §19).
+13. **Every optional integration degrades, never blocks — and that's verified live, not just read
+    from code.** Production Release (Phase 20) confirmed this end-to-end against the real running
+    server: a booking created with no Google Calendar credentials configured still succeeds fully
+    (`googleSyncStatus: "NOT_CONFIGURED"`), and an AI Insight request against a real finalized match
+    with no AI key configured still returns a clean `200` (`{available:false,
+    reason:'NOT_CONFIGURED'}`) rather than an error. Readiness (`GET /api/health/ready`) reports
+    Mongo/Calendar/AI state for visibility, but PostgreSQL is the only dependency that can ever make
+    an instance report not-ready (see docs/ARCHITECTURE.md §20).
 
 See `docs/ARCHITECTURE.md` for the full data-flow diagram and the correction-engine/realtime/
-commentary walkthroughs.
+commentary walkthroughs. See `docs/DEPLOYMENT.md` for the production environment-variable and
+deployment checklist.

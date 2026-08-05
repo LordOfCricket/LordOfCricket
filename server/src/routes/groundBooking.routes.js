@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../middlewares/auth.js'
+import { bookingWriteLimiter } from '../middlewares/rateLimit.js'
 import {
   getAvailability,
   createBooking,
@@ -18,16 +19,16 @@ const router = Router()
 // booking. No guest-booking path — keeps this consistent with canteen
 // ordering, the only other "create something as this account" flow in the app.
 router.get('/availability', getAvailability)
-router.post('/', requireAuth, createBooking)
+router.post('/', bookingWriteLimiter, requireAuth, createBooking)
 router.get('/my', requireAuth, listMyBookings)
-router.post('/:publicBookingId/cancel', requireAuth, cancelBooking)
+router.post('/:publicBookingId/cancel', bookingWriteLimiter, requireAuth, cancelBooking)
 
 // Staff-only operational management. Registered before the public routes
 // above only matters for path-shape collisions — none exist here since
 // these are all under /staff, so ordering is not load-bearing, but kept
 // grouped for readability.
 router.get('/staff/schedule', requireAuth, requireRole('staff'), getStaffSchedule)
-router.post('/staff/block', requireAuth, requireRole('staff'), createStaffBlock)
+router.post('/staff/block', bookingWriteLimiter, requireAuth, requireRole('staff'), createStaffBlock)
 router.delete('/staff/block/:publicBookingId', requireAuth, requireRole('staff'), removeStaffBlock)
 
 // Phase 18 Feature 10 — booking history (search/filter/sort/pagination), staff-only.

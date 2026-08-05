@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import { GROUND_TIMEZONE } from '../domain/booking/policy.js'
+import { logger } from '../utils/logger.js'
 
 // Phase 14 Part 3 (28-32, 56-57) — a server-owned OPERATIONAL calendar (the
 // ground's own calendar), authenticated via a Google service account — never
@@ -65,7 +66,7 @@ export async function createCalendarEvent({ publicBookingId, customerName, start
     })
     return { ok: true, eventId: res.data.id }
   } catch (err) {
-    console.error('Google Calendar event creation failed:', err.message)
+    logger.error('Google Calendar event creation failed', { publicBookingId, error: err.message })
     return { ok: false, error: err.message }
   }
 }
@@ -81,7 +82,7 @@ export async function cancelCalendarEvent(eventId) {
   } catch (err) {
     // A 410/404 means it's already gone — treat as success, not a failure to retry forever.
     if (err.code === 410 || err.code === 404) return { ok: true }
-    console.error('Google Calendar event cancellation failed:', err.message)
+    logger.error('Google Calendar event cancellation failed', { eventId, error: err.message })
     return { ok: false, error: err.message }
   }
 }

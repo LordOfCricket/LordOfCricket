@@ -36,6 +36,7 @@ import * as commentaryRepo from '../repositories/commentary.repository.js'
 import * as statisticsService from './statistics.service.js'
 import * as publicTeamService from './publicTeam.service.js'
 import { findPlayerByPublicId } from '../models/player.model.js'
+import { logger } from '../utils/logger.js'
 
 // Part 29 — bounded, in-process single-flight de-dup: N spectators hitting
 // the same finalized Match Summary at once trigger exactly one provider
@@ -98,10 +99,14 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
       try {
         parsed = JSON.parse(raw.raw)
       } catch {
+        logger.warn('AI insight generation failed: model output was not valid JSON', { sourceType, sourceId })
         return { available: false, reason: 'INVALID_OUTPUT' }
       }
       const { valid } = validateStructuredOutput(parsed, schema)
-      if (!valid) return { available: false, reason: 'INVALID_OUTPUT' }
+      if (!valid) {
+        logger.warn('AI insight generation failed: model output did not match the expected schema', { sourceType, sourceId })
+        return { available: false, reason: 'INVALID_OUTPUT' }
+      }
 
       const cleaned = postProcess ? postProcess(parsed, facts) : parsed
       const generatedAt = new Date()
@@ -116,6 +121,9 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
       return { available: true, insight: cleaned, generatedAt, model: raw.model, stale: false, cached: false }
     } catch (err) {
       const reason = err.code === 'AI_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : err.code === 'AI_REFUSAL' ? 'DECLINED' : 'PROVIDER_ERROR'
+      if (reason === 'PROVIDER_ERROR') {
+        logger.error('AI provider request failed', { sourceType, sourceId, error: err.message })
+      }
       return { available: false, reason }
     } finally {
       inFlight.delete(key)

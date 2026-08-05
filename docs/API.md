@@ -8,6 +8,33 @@ Legend: **Public** = no auth required · **Auth** = any logged-in user · **Staf
 **Owner** = the authenticated user acting on their own resource (staff may act on behalf of others
 where noted).
 
+## Error responses (Phase 19)
+
+Every error response is JSON with at minimum a `message` field. A domain-coded error (scoring,
+booking, tournament) additionally carries `code` and, where relevant, `details`
+(e.g. `{ code: 'BOOKING_CONFLICT', message: '...', details: { alternatives: [...] } }`) — callers
+should branch on `code` when present, never parse `message`. An unexpected server error (a bug, an
+infra failure) always returns exactly `{ "message": "Internal Server Error" }` with HTTP 500 — the
+real error is logged server-side only and never appears in the response, regardless of what caused
+it. (The canteen endpoints under `/api/canteen/*` are the one exception — they return `{ "error":
+"..." }` instead of `{ "message": "..." }`, a pre-existing, internally-consistent convention from
+before the rest of this API standardized on `{ message }`; see `docs/TECHNICAL_DEBT.md`.)
+
+## Rate limiting (Phase 19)
+
+Applied per-IP via `express-rate-limit`; a limited response is `429` with `{ "message": "..." }`.
+Not applied to every route — only the classes below, chosen because they're either public/no-login
+(the main abuse surface) or expensive per call:
+
+| Class | Limit | Applies to |
+|---|---|---|
+| Auth | 20 / 15 min | `POST /auth/login`, `POST /auth/signup` |
+| AI | 30 / 15 min | every `GET/POST .../ai-insight*` route |
+| Booking writes | 30 / 10 min | `POST /bookings`, `POST /bookings/:id/cancel`, `POST /bookings/staff/block` |
+| Public search | 120 / 5 min | `GET /players` (search), `GET /teams/discover` |
+| Commentary | 300 / 5 min | `GET /matches/:id/commentary` |
+| Analytics | 120 / 5 min | every `.../analytics` and `/compare` route |
+
 ## Auth (`/api/auth`)
 
 | Method & Path | Access | Notes |
@@ -261,12 +288,13 @@ section for exact formulas (boundary %, dot-ball %, phase boundaries, etc.).
 |---|---|---|
 | `GET /featured` | Public | Proxies CricAPI for an unofficial "India match" homepage widget. Returns `null` (never a 500) if unconfigured/unavailable — this is NOT LOC's own cricket data. |
 
-## Health
+## Health (Phase 20)
 
-| Method & Path | Access |
-|---|---|
-| `GET /health` | Public |
-| `GET /canteen/health` | Public |
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /health` | Public | Liveness — checks nothing external, always `{"status":"ok"}` if the process is up. |
+| `GET /health/ready` | Public | Readiness — a real Postgres query. `200` + `{"status":"ready","postgres":"connected","optional":{"mongodb":...,"googleCalendar":...,"ai":...}}` if it succeeds, `503` + `{"status":"not_ready",...}` if it fails. The `optional` block is informational only — MongoDB/Calendar/AI state never affects the status code, since none of them are hard dependencies. |
+| `GET /canteen/health` | Public | Legacy canteen-specific health check, pre-dates the two above. |
 
 ---
 
