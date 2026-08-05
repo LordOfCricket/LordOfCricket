@@ -5,6 +5,7 @@ import * as publicMatchService from '../services/publicMatch.service.js'
 import * as liveMatchService from '../services/liveMatch.service.js'
 import * as commentaryService from '../services/commentary.service.js'
 import { publishMatchState } from '../realtime/cricketRealtime.js'
+import * as tournamentFixtureService from '../services/tournamentFixture.service.js'
 
 // Phase 10 Part 1 — public match discovery (no auth, same public-read
 // posture as GET /matches and GET /matches/:id/summary).
@@ -74,6 +75,11 @@ export async function startMatch(req, res, next) {
     // see the upcoming -> live transition immediately (Part 20 of the Phase
     // 10 readiness notes) instead of waiting for the next slow lifecycle poll.
     publishMatchState(req.io, match.id, 'lifecycle')
+    // Phase 15: if this match is a tournament fixture, SCHEDULED -> LIVE the
+    // moment the tournament's first ball is actually bowled (never merely
+    // because a date passed). A no-op for a non-tournament match; never
+    // allowed to fail the match-start response itself.
+    tournamentFixtureService.onMatchStarted(match.id).catch((err) => console.error('Tournament onMatchStarted failed:', err.message))
   } catch (err) {
     next(err)
   }
@@ -84,6 +90,12 @@ export async function finalizeMatch(req, res, next) {
     const match = await matchService.finalizeMatch(req.params.id)
     res.json({ match })
     publishMatchState(req.io, match.id, 'lifecycle')
+    // Phase 15: drives knockout progression/champion crowning for a
+    // tournament-linked match. A no-op for a non-tournament match; a
+    // progression error must never fail the underlying finalize response —
+    // finalize is a one-way lock, so it's always safe to retry progression
+    // separately later if this ever throws.
+    tournamentFixtureService.onMatchFinalized(match.id).catch((err) => console.error('Tournament onMatchFinalized failed:', err.message))
   } catch (err) {
     next(err)
   }

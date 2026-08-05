@@ -11,7 +11,19 @@
 import { findMatchByIdWithTeams } from '../models/match.model.js'
 import * as scoringService from './scoring.service.js'
 import * as matchPlayerRepo from '../repositories/matchPlayer.repository.js'
+import * as tournamentRepo from '../repositories/tournament.repository.js'
 import { buildInningsSummary } from '../domain/matchSummary/buildInningsSummary.js'
+
+// Phase 15 Part 55 — additive only: null for the vast majority of matches
+// (never tournament-linked), a small cross-nav pointer when it is. Never
+// touches scoring/replay — a plain lookup of the fixture this match belongs to.
+async function buildTournamentContext(matchId) {
+  const fixture = await tournamentRepo.findFixtureByMatchId(matchId)
+  if (!fixture) return null
+  const tournament = await tournamentRepo.findTournamentById(fixture.tournament_id)
+  if (!tournament) return null
+  return { publicTournamentId: tournament.public_tournament_id, name: tournament.name, stage: fixture.stage, groupName: fixture.group_name, round: fixture.round }
+}
 
 function notFound(message) {
   const err = new Error(message)
@@ -90,5 +102,6 @@ export async function getMatchSummary(matchId) {
     result: buildResult(match),
     innings: inningsSummaries,
     playingXi,
+    tournamentContext: await buildTournamentContext(matchId),
   }
 }

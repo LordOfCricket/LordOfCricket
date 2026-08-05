@@ -69,7 +69,7 @@ where noted).
 | `GET /` | Public | Unbounded match list (staff match-creation flows) |
 | `POST /` | Scorer | Create a match |
 | `GET /:id` | Public | Raw match + team names |
-| `GET /:id/summary` | Public | Full public Match Summary DTO |
+| `GET /:id/summary` | Public | Full public Match Summary DTO; `tournamentContext` is `null` unless the match is tournament-linked (Phase 15) |
 | `GET /:id/live-state` | Public | Lightweight spectator live-state DTO, meant to be polled |
 | `GET /:id/commentary` | Public | Deterministic commentary feed (Phase 12) — `inningsId` (default: latest), `before`/`limit` (pagination cursor, newest-first), `type` (one `COMMENTARY_TYPES` value) query params |
 | `PATCH /:id/toss` | Scorer | |
@@ -156,6 +156,38 @@ sync-only, never queried for availability.
 | `GET /staff/schedule?from=&to=` | Staff | Every booking + staff block in range |
 | `POST /staff/block` | Staff | Same body shape as `POST /`, `bookingType` forced to `STAFF_BLOCK` |
 | `DELETE /staff/block/:publicBookingId` | Staff | `404` if that reference isn't actually a staff block |
+
+## Tournament Management (`/api/tournaments`) — Phase 15
+
+Tournament fixtures link to real matches, scored through the unchanged `/api/matches` /
+`/api/innings` endpoints above. No tournament-specific scoring/replay endpoint exists.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /` | Public | Discovery; `category` = `LIVE`\|`UPCOMING`\|`COMPLETED` |
+| `GET /:publicTournamentId` | Public | Tournament identity/lifecycle/champion |
+| `GET /:publicTournamentId/teams` | Public | Registered teams (+ group, for Groups+Knockout) |
+| `GET /:publicTournamentId/squad` | Public | Historical squad — survives a later player transfer |
+| `GET /:publicTournamentId/fixtures` | Public | Every fixture, `awaitingResolution: true` on a finalized tie/no-result knockout match nobody has manually resolved yet |
+| `GET /:publicTournamentId/standings` | Public | `{overall}` for LEAGUE, `{groupA, groupB}` for GROUPS_KNOCKOUT, `null` for KNOCKOUT (the bracket is the standings) |
+| `GET /:publicTournamentId/statistics` | Public | Top run scorers / wicket takers, scoped to this tournament's finalized matches only |
+| `POST /` | Staff | Create (`name`, `format`, `startDate`, `endDate`, `oversPerInnings`, `maxTeams`, `maxSquadSize`) — starts `DRAFT` |
+| `POST /:publicTournamentId/open-registration` | Staff | `DRAFT` → `REGISTRATION` |
+| `POST /:publicTournamentId/teams` | Staff | Register an existing team (`teamId`, optional `groupName`); `409 TEAM_ALREADY_REGISTERED` / `409 TOURNAMENT_FULL` |
+| `DELETE /:publicTournamentId/teams/:teamId` | Staff | Only while `REGISTRATION` |
+| `POST /:publicTournamentId/squad` | Staff | Add a player to a registered team's squad; `409 PLAYER_ALREADY_REGISTERED` if already in this tournament (any team), `409 SQUAD_FULL` |
+| `DELETE /:publicTournamentId/squad/:teamId/:playerId` | Staff | Only while `REGISTRATION` |
+| `POST /:publicTournamentId/fixtures/generate` | Staff | Round-robin/groups/knockout generation; `REGISTRATION` → `SCHEDULED`; `409 FIXTURES_ALREADY_GENERATED` on a repeat call (idempotent) |
+| `PATCH /:publicTournamentId/fixtures/:fixtureId/schedule` | Staff | Creates the real LOC match (`matchDate`, `venue`), inheriting the tournament's overs/balls-per-over |
+| `POST /:publicTournamentId/fixtures/:fixtureId/resolve` | Staff | Manual `winnerTeamId` override for a finalized tie/no-result knockout match — LOC has no Super Over engine, so this is never automatic |
+| `POST /:publicTournamentId/complete` | Staff | LEAGUE only — champion = final standings winner; requires every league fixture finalized first |
+
+Errors follow the same structured `{code, message, details}` shape as scoring/booking
+(`domain/tournament/errors.js`): `TOURNAMENT_NOT_FOUND`, `INVALID_TOURNAMENT_STATE`,
+`TEAM_ALREADY_REGISTERED`, `TEAM_NOT_REGISTERED`, `PLAYER_ALREADY_REGISTERED`, `SQUAD_LOCKED`,
+`SQUAD_FULL`, `TOURNAMENT_FULL`, `FIXTURES_ALREADY_GENERATED`, `INVALID_FIXTURE_STATE`,
+`FIXTURE_NOT_FOUND`, `KNOCKOUT_RESULT_UNRESOLVED`, `INVALID_TEAM_COUNT`, `VALIDATION_ERROR`,
+`FORBIDDEN`.
 
 ## Ground/marketing content (`/api/ground-photos`, `/api/amenities`, `/api/advertisements`, `/api/partners`)
 

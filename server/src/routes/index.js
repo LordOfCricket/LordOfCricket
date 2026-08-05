@@ -16,6 +16,7 @@ import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
 import groundBookingRoutes from './groundBooking.routes.js'
 import matchAvailabilityRoutes, { meAvailabilityRoutes } from './matchAvailability.routes.js'
+import tournamentRoutes from './tournament.routes.js'
 
 const router = Router()
 
@@ -36,6 +37,9 @@ router.use('/me', meAvailabilityRoutes)
 
 // Phase 14 Part 3 — ground booking.
 router.use('/bookings', groundBookingRoutes)
+
+// Phase 15 — tournament management.
+router.use('/tournaments', tournamentRoutes)
 
 // Phase 7 — official career statistics, derived from finalized match history only.
 router.use('/players', playerStatsRoutes)

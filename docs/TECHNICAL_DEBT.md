@@ -159,6 +159,14 @@ organizer decides on a captain) cannot have captain/WK retrofitted through the U
 `PATCH /matches/:matchId/match-players/:id` endpoint would close this gap if it becomes a real
 friction point.
 
+**RESOLVED (Phase 15, found via real E2E) — `GET /tournaments/:publicTournamentId` omitted the
+champion's team name.** `tournament.repository.js#findTournamentByPublicId` returned
+`champion_team_id` but never joined the team's name, so a completed tournament's own detail page
+would never actually render its "Champion" badge (the discovery list's separate query already did
+this join correctly, masking the gap until a real browser test opened a specific tournament's page).
+Fixed by adding the same `LEFT JOIN teams` used by `listPublicTournaments` to
+`findTournamentByPublicId`.
+
 **RESOLVED (Phase 14 Part 3) — ground/facility booking was marketing-only.** Fixed: a real
 availability/reservation system (`ground_bookings`, PostgreSQL `EXCLUDE` constraint for the
 concurrency guarantee, homepage booking flow, My Bookings, staff schedule/blocking). See
@@ -202,6 +210,32 @@ implemented against the current `googleapis` service-account JWT flow and exerci
 *absence* (booking succeeds with `google_sync_status: 'NOT_CONFIGURED'`, never blocks/breaks
 anything) — but a real event actually appearing on a real calendar has not been manually confirmed.
 Do this once real credentials are provisioned, before relying on it operationally.
+
+**Tournament formats are deliberately bounded (Phase 15).** `GROUPS_KNOCKOUT` supports exactly two
+groups; `KNOCKOUT` supports exactly 2, 4, or 8 registered teams (a non-power-of-two count is a
+validation error, never a silently-wrong bracket). No double elimination, Swiss format, or
+auction/draft system. A real need for a 3-group or 16-team bracket would extend
+`domain/tournament/fixtures.js`'s bracket-size table and `qualification.js`'s cross-pairing rule, not
+require a redesign.
+
+**Tied/no-result knockout matches require explicit staff resolution (Phase 15).** LOC has no
+authoritative Super Over engine, so `domain/tournament/progression.js` never invents a winner for a
+finalized `TIE`/`NO_RESULT` — see `docs/ARCHITECTURE.md` §15.11. `POST
+/tournaments/:id/fixtures/:fixtureId/resolve` is the deliberate, honest way forward until a real
+Super Over flow exists in the scoring engine.
+
+**No permanent tournament-level captain/wicketkeeper.** Consistent with the existing per-match-only
+captain/wicketkeeper design (see the Phase 13 item above) — a tournament squad entry is just
+"this player represented this team in this tournament," nothing more.
+
+**Tournament organizer UI (team registration, squad management, scheduling, tie resolution) was
+verified via `npm run build`/`npm run lint` and a real-browser E2E pass for tournament
+creation/registration/fixture-generation, but the squad-management sub-panel specifically was
+exercised through its underlying API in the E2E run rather than clicked through in the browser
+end-to-end** (the rest of the flow — including the full GROUPS_KNOCKOUT competition down to a
+crowned champion — was driven through real browser clicks). The squad-management service/repository
+logic itself has full integration-test coverage (duplicate/cross-team rejection, squad-size limits,
+the transfer-safety test).
 
 ## P3 — Future
 

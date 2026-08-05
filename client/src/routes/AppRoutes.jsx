@@ -48,6 +48,11 @@ import CanteenStaffDashboardPage from '../pages/canteen/staff/dashboard.jsx'
 import MyBookingsPage from '../pages/booking/MyBookingsPage.jsx'
 import StaffBookingPage from '../pages/booking/StaffBookingPage.jsx'
 
+// Phase 15 — tournament management (public reads, staff-only mutations)
+import TournamentsPage from '../pages/tournaments/TournamentsPage.jsx'
+import TournamentPage from '../pages/tournaments/TournamentPage.jsx'
+import CreateTournamentPage from '../pages/tournaments/CreateTournamentPage.jsx'
+
 const router = createBrowserRouter([
   {
     element: <Layout />,
@@ -98,6 +103,11 @@ const router = createBrowserRouter([
       // Phase 14 Part 3 — ground booking
       { path: '/bookings', element: <RequireAuth><MyBookingsPage /></RequireAuth> },
       { path: '/bookings/staff', element: <RequireAuth><StaffBookingPage /></RequireAuth> },
+
+      // Phase 15 — tournament management (public reads, no auth wall)
+      { path: '/tournaments', element: <TournamentsPage /> },
+      { path: '/tournaments/new', element: <RequireAuth><CreateTournamentPage /></RequireAuth> },
+      { path: '/tournaments/:publicTournamentId', element: <TournamentPage /> },
     ],
   },
 ])

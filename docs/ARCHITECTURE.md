@@ -546,3 +546,251 @@ constraint is the only source of truth).
 `io.on('connection', ...)` registration, one room-per-date, one fire-and-forget broadcast) — a
 convenience refresh signal only. Exactly like cricket realtime, correctness never depends on it
 being delivered: every client still performs its own authoritative check when it presses Confirm.
+
+## 15. Tournament Management (Phase 15)
+
+### 15.1 The one non-negotiable architectural rule
+
+```
+Tournament
+    ↓
+Tournament Fixture  (tournament_fixtures — 1 row)
+    ↓
+Existing LOC Match  (matches — 1 row, UNIQUE(match_id) on the fixture)
+    ↓
+Existing Scoring Engine / Replay Engine / Match Lifecycle   ← completely unmodified
+    ↓
+Existing Authoritative Match Result  (matches.status = 'finalized')
+    ↓
+Tournament Competition Engine   (domain/tournament/*, tournamentStandings.service.js)
+    ↓
+Standings / Qualification / Knockout Progression
+    ↓
+Champion
+```
+
+`tournament_fixtures.match_id` is the ONLY coupling point. Nothing in `domain/tournament/` imports
+`domain/scoring/`; nothing in `domain/tournament/` re-derives a run rate, a wicket, an over, or a
+winner from raw deliveries — every fact this layer consumes (`innings.runs`/`wickets`/`legal_balls`,
+`matches.winner_team_id`/`result_type`) is read straight from the same cache columns the scoring
+replay engine already writes. The one intentional exception — `nrr.js` importing
+`allOutThreshold` from `domain/scoring/matchResult.js` — is a reuse of the one existing pure
+definition, not a second one.
+
+### 15.2 Database schema
+
+`tournaments`, `tournament_teams`, `tournament_squad_players`, `tournament_fixtures` (schema.sql's
+Phase 15 section has the full DDL + rationale comments). Deliberately does **not** include a
+`tournament_standings` or `tournament_groups` table — audited first, per the spec's "don't blindly
+create every table" instruction:
+
+- **No `tournament_standings`**: points/NRR are cheap to compute fresh from `tournament_fixtures` +
+  `matches` + `innings` on every read (a tournament has, at most, a few dozen fixtures) — the same
+  "replay, never accumulate" principle career stats/leaderboards already use (README principle #1).
+  A cache table would only add a staleness class of bug this design has zero need for.
+- **No `tournament_groups`**: V1's group format is fixed at exactly two groups (`'A'`/`'B'`), so
+  `group_name` is just a `CHAR(1)` column on `tournament_teams`/`tournament_fixtures`, not a registry
+  table with nothing to register beyond two literal values.
+
+`tournament_squad_players` mirrors `match_players`' documented historical-snapshot principle exactly
+(schema.sql's Phase 3 comment): `UNIQUE(tournament_id, player_id)` — not
+`(tournament_team_id, player_id)` — is what structurally guarantees a player can't represent two
+different teams in the same tournament, and nothing here ever reads `players.team_id` to answer "who
+did this player play for in this tournament" (Section 15.4).
+
+`tournament_fixtures.round`/`bracket_slot` drive deterministic knockout pairing (slot *i* and *i+1*
+feed the next round's slot ⌈*i*/2⌉) — no self-referencing "source fixture" FK needed anywhere.
+`manual_result_winner_team_id`/`manual_result_by`/`manual_result_at` are the persisted, authorized
+override for Section 15.9's tie/no-result policy.
+
+### 15.3 Lifecycle
+
+```
+DRAFT → REGISTRATION → SCHEDULED → LIVE → COMPLETED
+```
+
+Server-enforced only (`tournament.service.js`/`tournamentFixture.service.js`), never a frontend
+choice:
+
+- `DRAFT → REGISTRATION`: staff calls `POST /open-registration`.
+- `REGISTRATION → SCHEDULED`: staff calls `POST /fixtures/generate` — this is also the point
+  registration/squad edits lock (`SQUAD_LOCKED` past this point).
+- `SCHEDULED → LIVE`: automatic, the instant the FIRST fixture's linked match actually starts
+  (`matchService.startMatch` → `tournamentFixture.service.js#onMatchStarted`, hooked from
+  `match.controller.js`) — never merely because a date passed.
+- `→ COMPLETED`: automatic for `GROUPS_KNOCKOUT`/`KNOCKOUT` the instant the FINAL fixture's match is
+  finalized and resolved (Section 15.8); one explicit staff action (`POST /complete`) for `LEAGUE`,
+  since a pure league has no single "final match" to hook into (Section 15.10).
+
+Both lifecycle hooks in `match.controller.js` are wrapped in `.catch(console.error)` — a tournament-
+progression failure can never fail the underlying match start/finalize HTTP response, and since
+finalize is a one-way lock, progression can always be safely retried later if it ever does throw.
+
+### 15.4 Team registration & historical squads
+
+Tournament teams/squads always reference *existing* LOC teams/players — never a tournament-private
+copy. Registering a team: `TEAM_ALREADY_REGISTERED` (409) on a duplicate, `TOURNAMENT_FULL` (409)
+past `max_teams`, both DB-backed (`UNIQUE(tournament_id, team_id)`) as well as service-checked.
+
+**Transfer safety (the critical property, Part 78 of the spec):** a tournament squad entry captures
+`tournament_team_id` — a snapshot of which registered-team row a player belonged to — at add time. If
+`players.team_id` changes later (a real transfer), nothing in this table changes, because nothing
+here ever re-reads `players.team_id` to answer historical questions; `tournament.service.js#listSquad`
+always joins through `tournament_squad_players.tournament_team_id`, never through the player's
+current team. Verified directly by
+`tests/integration/tournament.integration.test.js`'s "CRITICAL TRANSFER TEST".
+
+### 15.5 Supported formats & fixture generation
+
+`domain/tournament/fixtures.js` — pure, deterministic, unit-tested for 2/3/4/5/6 teams:
+
+- **LEAGUE**: single round-robin via the standard "circle method" (`generateRoundRobinRounds`) — one
+  team held fixed, the rest rotate each round. An odd team count is padded with a `null` BYE seat
+  that never produces a real pair (Part 12's "odd-team bye behavior"), never randomness.
+- **GROUPS_KNOCKOUT**: exactly two groups, even team count (min 4). If the organizer hasn't assigned
+  `group_name` on every registered team, generation deterministically alternates by registration
+  order (`teams[0]→A, teams[1]→B, teams[2]→A, ...`) and **persists** that assignment — never
+  re-guessed per read. Round-robin runs independently within each group; SEMI_FINAL/FINAL fixtures
+  are generated *later*, once the group stage resolves (Section 15.8), not upfront.
+- **KNOCKOUT**: exact power-of-two sizes only — 2, 4, or 8 registered teams (`SUPPORTED_KNOCKOUT_SIZES`).
+  Any other count is a `INVALID_TEAM_COUNT` validation error, never a silently-wrong bracket. First
+  round uses standard "1 vs last" seeding (`generateKnockoutFirstRound`) to keep top seeds apart as
+  long as possible.
+
+**Idempotency**: `generateFixtures` locks the tournament row (`SELECT ... FOR UPDATE`) inside a
+transaction, re-checks `status === 'REGISTRATION'`, and transitions to `SCHEDULED` in the same
+transaction — a concurrent second call sees `SCHEDULED` and gets `FIXTURES_ALREADY_GENERATED` (409),
+backstopped by `UNIQUE(tournament_id, fixture_number)` /
+`UNIQUE(tournament_id, stage, bracket_slot)` at the database level. Verified with a real
+`Promise.allSettled` concurrent-call integration test.
+
+### 15.6 Match integration & format inheritance
+
+`tournamentFixture.service.js#scheduleFixture` is the ONLY place a tournament fixture gets a real
+match: it calls `matchService.createMatch` (completely unmodified) with `oversPerInnings`/
+`ballsPerOver` copied from the tournament row — the frontend never supplies cricket rules for a
+tournament match. From that point on, toss/roster/innings/scoring/corrections/finalize all go
+through the existing, untouched match endpoints — `GET /matches/:id/summary` for a tournament match
+returns the identical DTO shape as any other match, plus one additive field (`tournamentContext`,
+Section 15.13).
+
+### 15.7 Points policy
+
+Centralized in `domain/tournament/points.js`, never duplicated: **WIN = 2, TIE = 1, NO_RESULT = 1,
+LOSS = 0**. Not user-configurable in V1 (deliberate scope decision under the deadline-execution
+directive). `NO_RESULT` is defined in the schema/domain but is never actually produced by the current
+scoring engine (no rain-abandonment flow exists) — documented as a real limitation in
+`docs/TECHNICAL_DEBT.md`, not a guess.
+
+### 15.8 Net Run Rate — the non-negotiable formula
+
+`domain/tournament/nrr.js`:
+
+```
+NRR = (runs scored / overs faced) − (runs conceded / overs bowled)
+```
+
+"Overs" is **never** a decimal parse of a displayed score (`18.4` ≠ `18.4` mathematically) — always
+`legalBalls / ballsPerOver`, expressed as "runs per `ballsPerOver`-ball over" without the value ever
+passing through a wrong decimal-overs number. `inningsBallsForNrr()` computes the legal-ball
+denominator per innings from `innings.legal_balls`/`wickets` (the same replay-written cache columns
+scoring.service.js maintains).
+
+**All-out exception** (the standard tournament convention): if the batting side is bowled out before
+facing its full allocated quota, BOTH that innings' terms — the batting side's "faced" balls *and*
+the bowling side's "bowled" balls, for that same innings — are taken as the FULL allocated quota, not
+the actual legal balls delivered. A successful chase in fewer overs gets **no** such adjustment — the
+exception is specifically "bowled out early," never "finished early." `allOutThreshold()` is imported
+from `domain/scoring/matchResult.js`, never redefined.
+
+9 dedicated unit tests (`nrr.test.js`) cover: normal completed innings, the 18.4-overs proof, all-out
+early (both sides of the same innings), a successful chase (no adjustment), batting-second
+attribution, multi-match aggregation, a tied innings, and zero-matches (neutral `0`, never NaN).
+`tournamentStandings.service.js`'s own integration test additionally cross-checks a REAL scored
+match's NRR against an independent recomputation from the raw committed `innings` rows — never a
+seeded/fabricated value.
+
+### 15.9 Standings sorting & qualification
+
+`domain/tournament/standings.js`: **Points DESC → NRR DESC → Wins DESC → team id ASC** (the
+deterministic final tie-break; no head-to-head rule in V1). `tournamentStandings.service.js` computes
+this fresh from `tournament_fixtures` + `matches` + `innings` scoped to whichever stage/group is
+being asked about — `getTournamentStandings()` decides what "standings" even means per format:
+`{overall}` for LEAGUE, `{groupA, groupB}` for GROUPS_KNOCKOUT, `null` for pure KNOCKOUT (the bracket
+IS the standings, Part 44).
+
+`domain/tournament/qualification.js#crossGroupSemiFinalPairing` implements the spec's exact worked
+example — Group A/B's top two, seeded **A1 vs B2** and **B1 vs A2** — the only qualification rule V1
+supports, centralized in one pure function.
+
+### 15.10 Knockout progression & champion
+
+`tournamentFixture.service.js#advanceTournament` is the single, idempotent orchestrator (locks the
+tournament row, safe to call repeatedly):
+
+1. **GROUPS_KNOCKOUT**: once every GROUP fixture is resolved (Section 15.11) and no SEMI_FINAL exists
+   yet, computes both groups' standings and inserts the two semi-finals via the qualification
+   pairing above.
+2. **KNOCKOUT/GROUPS_KNOCKOUT**: once a round's fixtures are all resolved and the next round doesn't
+   exist yet, `domain/tournament/fixtures.js#nextRoundSlotPairing` derives which two bracket slots
+   feed the next round's slot — pure adjacent-slot arithmetic, reused identically for
+   QUARTER_FINAL→SEMI_FINAL, SEMI_FINAL→FINAL, and GROUPS_KNOCKOUT's SEMI_FINAL→FINAL.
+3. Once exactly one FINAL fixture exists and is resolved, `tournaments.champion_team_id` and
+   `status = 'COMPLETED'` are set in the same transaction.
+
+Champion for a pure **LEAGUE** tournament is standings position 1 (Section 15.9's tie-break),
+assigned only by the explicit `POST /complete` staff action once every league fixture is finalized
+(Part 37 — never merely because dates passed).
+
+### 15.11 Tie / no-result — never a fabricated winner
+
+`domain/tournament/progression.js#isFixtureResolved`: a finalized `TIE` or `NO_RESULT` (or a
+still-live/completed-not-finalized match) is **never** resolved automatically — LOC has no
+authoritative Super Over/tie-break engine, so no code path here ever invents a winner. Such a fixture
+blocks its round's progression and is surfaced via `awaitingResolution: true`
+(`tournament.controller.js#serializeFixture`) — the organizer dashboard's "Tie-Break Resolution
+Required" panel. `POST /fixtures/:id/resolve` is the one honest way forward: a staff member records
+who actually won (e.g. after a real, off-app Super Over bowled at the ground) via
+`manual_result_winner_team_id` — explicit, authorized (staff-only), and persisted. Progression only
+ever *reads* this override; it is never written by anything except that one staff-authorized action.
+
+### 15.12 Correction/finalization safety
+
+Standings/progression only ever read `matches.status = 'finalized'` results — and finalize is a
+one-way lock (`match.service.js#finalizeMatch`'s existing comment: "no un-finalize path"; corrections
+are rejected once finalized, `MATCH_LOCKED`). This makes "the bracket goes stale after a correction"
+structurally impossible: a correction can only ever happen *before* finalization
+(`recomputeMatchResultIfDecided` already keeps the *pre-finalize* `completed` result in sync), and
+once finalized, the result — and therefore anything tournament progression derives from it — can
+never change again. Verified directly: `tests/integration/tournament.integration.test.js`'s
+"CORRECTION SAFETY" test scores a match, applies a real correction that flips the winner, finalizes,
+and asserts standings reflect the corrected (not the original) result.
+
+### 15.13 Cross-navigation & statistics
+
+`matchSummary.service.js` gained one additive field — `tournamentContext` (`null` for the vast
+majority of matches; `{publicTournamentId, name, stage, groupName, round}` for a tournament-linked
+one) — a plain lookup via `tournament.repository.js#findFixtureByMatchId`, never touching
+scoring/replay. The public Match Summary page shows a small badge linking back to the tournament only
+when this is non-null (Part 55 — "never clutters a non-tournament match").
+
+`tournamentStats.service.js` reuses the EXACT SAME replay-derived batting/bowling domain functions
+(`extractBattingPerformance`/`extractBowlingPerformance`/`aggregateBatting`/`aggregateBowling`)
+career stats/leaderboards already trust — scoped to this tournament's finalized fixtures only, with
+each innings replayed via `scoringService.getInningsState` exactly ONCE regardless of how many
+players appeared in it (a shared per-innings cache, avoiding the N+1 replay Part 67 warns against).
+
+### 15.14 Ground booking interaction
+
+No booking code was touched. `groundBooking.repository.js#listMatchDatesInRange` already blocks a
+whole calendar day for any match with `status IN ('upcoming', 'live')` — a tournament fixture's
+scheduled match is a completely ordinary row in `matches`, so it automatically participates in the
+existing Phase 14 whole-day blocking policy with zero additional code (Section 14.2).
+
+### 15.15 Privacy & authorization
+
+Public tournament endpoints (`tournament.controller.js`'s serializers) never select
+`email`/`password_hash`/`user_id` — verified directly by a repository-level integration test that
+inspects every returned row's keys. All mutating endpoints require `requireAuth` +
+`requireRole('staff')` (the exact same middleware every other staff-only feature in this app already
+uses — no new authorization mechanism introduced).

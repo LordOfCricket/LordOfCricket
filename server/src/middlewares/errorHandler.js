@@ -1,5 +1,6 @@
 import { SCORING_ERROR_HTTP_STATUS } from '../domain/scoring/errors.js'
 import { BOOKING_ERROR_HTTP_STATUS } from '../domain/booking/errors.js'
+import { TOURNAMENT_ERROR_HTTP_STATUS } from '../domain/tournament/errors.js'
 
 export function notFound(req, res, next) {
   res.status(404).json({ message: `Route not found: ${req.originalUrl}` })
@@ -10,7 +11,7 @@ export function notFound(req, res, next) {
 // on it instead of parsing message strings. Each domain owns its own
 // code -> HTTP status map; this stays a thin dispatcher, not a place to add
 // per-domain logic.
-const DOMAIN_ERROR_HTTP_STATUS_MAPS = [SCORING_ERROR_HTTP_STATUS, BOOKING_ERROR_HTTP_STATUS]
+const DOMAIN_ERROR_HTTP_STATUS_MAPS = [SCORING_ERROR_HTTP_STATUS, BOOKING_ERROR_HTTP_STATUS, TOURNAMENT_ERROR_HTTP_STATUS]
 
 export function errorHandler(err, req, res, next) {
   if (err.code) {

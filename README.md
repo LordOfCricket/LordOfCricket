@@ -49,15 +49,24 @@ Short name: **LOC**. (Never "CricVerse" — that name is retired.)
   overlapping confirmed reservations impossible at the database level — see docs/ARCHITECTURE.md's
   Phase 14 section for the exact guarantee), with optional, best-effort Google Calendar
   synchronization that can never cause a double-booking even if it's misconfigured or down.
+- **Tournament Management** — League/Round-Robin, Groups + Knockout, and Direct Knockout
+  competitions built entirely ABOVE the existing match system: a tournament fixture links to one
+  real LOC match, which is scored/replayed/finalized through the unchanged scoring engine.
+  Server-authoritative points/Net Run Rate/standings/qualification/knockout progression (a
+  finalized match automatically advances a bracket winner and, eventually, crowns a champion —
+  never a frontend calculation), a public tournament hub (`/tournaments`), and a staff organizer
+  dashboard. See docs/ARCHITECTURE.md's Phase 15 section for the exact NRR formula and the
+  no-fake-winner tie/no-result policy.
 - **Umpire Requests** — a request/approval flow for umpire status.
 - **Practice / Umpire Testing sandbox** (`/testing`) — an intentionally separate, client-only
   scoring engine for practicing scoring without touching real match data.
 
 **Not implemented yet** (do not assume these exist): AI-enriched/AI-generated commentary wording
 (Phase 12's commentary is deterministic and template-based, never AI — see
-`docs/ARCHITECTURE.md` §12.10), tournament/points-table engine, fantasy cricket, guest (non-account)
-booking, and custom-duration bookings (every booking is currently one fixed-length slot — see
-`docs/TECHNICAL_DEBT.md`).
+`docs/ARCHITECTURE.md` §12.10), fantasy cricket, an auction/draft system, guest (non-account)
+booking, custom-duration bookings (every booking is currently one fixed-length slot), tournament
+formats beyond League/Groups+Knockout/direct Knockout, and Super Over (a tied/no-result knockout
+match requires an explicit staff resolution — see `docs/TECHNICAL_DEBT.md`).
 
 ## Architecture overview
 
@@ -102,8 +111,8 @@ design, the realtime transport (Socket.IO + polling fallback) design, and the co
   (`node --test`).
 - **Frontend**: React 19, React Router 7 (data router), Vite, Tailwind CSS 4, axios,
   `socket.io-client`, lucide-react icons, `eslint-plugin-react-hooks` with the React Compiler rule set.
-- **Database**: PostgreSQL (cricket truth, users, canteen relational bits, ground bookings), MongoDB
-  (canteen documents).
+- **Database**: PostgreSQL (cricket truth, users, canteen relational bits, ground bookings,
+  tournaments), MongoDB (canteen documents).
 
 ## Project structure
 
@@ -125,12 +134,14 @@ LordOfCricket/
 │       ├── services/       orchestration, transactions, cross-cutting rules
 │       ├── domain/         pure cricket logic — scoring replay, statistics, corrections,
 │       │                   match discovery/live-state DTOs, matchSummary, commentary generation,
-│       │                   ground-booking availability/overlap/recommendation rules (booking/).
-│       │                   Zero PostgreSQL imports.
+│       │                   ground-booking availability/overlap/recommendation rules (booking/),
+│       │                   tournament fixture generation/points/NRR/standings/qualification/
+│       │                   progression rules (tournament/). Zero PostgreSQL imports.
 │       ├── realtime/       Socket.IO cricket room join/leave + authoritative state/commentary
 │       │                   publication, plus booking availability refresh rooms (transport only —
 │       │                   zero cricket/booking rules, see docs/ARCHITECTURE.md)
-│       ├── repositories/   parameterized SQL for the scoring/correction/commentary/booking domain
+│       ├── repositories/   parameterized SQL for the scoring/correction/commentary/booking/
+│       │                   tournament domain
 │       ├── scripts/        one-off maintenance scripts (e.g. commentary backfill/rebuild)
 │       ├── models/         parameterized SQL for teams/players/matches/users (pre-Phase-3 naming;
 │       │                   same role as repositories/)
@@ -210,7 +221,7 @@ npm test --prefix server              # pure domain/unit tests — no database n
 npm run test:integration --prefix server   # real-PostgreSQL integration tests
 ```
 
-Current verified baseline: **361 / 361** (180 unit + 181 integration). Two integration tests
+Current verified baseline: **417 / 417** (219 unit + 198 integration). Two integration tests
 require a reachable MongoDB and skip (not fail) when it's unavailable, consistent with MongoDB
 being an optional dependency everywhere else in this app.
 
@@ -250,6 +261,11 @@ npm run commentary:rebuild --prefix server   # regenerate commentary for every i
    (`commentary_entries`) is generated purely from `replayInnings()` output — no shot type, ball
    line/length, or fielder is ever invented beyond what's authoritatively recorded — and if it ever
    disagrees with the replay engine, the projection is regenerated, never the cricket truth.
+8. **Tournament logic sits ABOVE match truth, never beside it.** A tournament fixture links to one
+   real `matches` row, scored through the same unmodified scoring/replay/finalize pipeline every
+   other match uses. Standings/NRR/qualification/knockout progression only ever read a FINALIZED
+   match's official result — never a second scoring engine, and never a fabricated winner for a
+   tie/no-result LOC has no Super Over flow to resolve (see docs/ARCHITECTURE.md §15).
 
 See `docs/ARCHITECTURE.md` for the full data-flow diagram and the correction-engine/realtime/
 commentary walkthroughs.

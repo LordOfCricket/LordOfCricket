@@ -493,3 +493,110 @@ CREATE TABLE IF NOT EXISTS ground_bookings (
 CREATE INDEX IF NOT EXISTS idx_ground_bookings_start_time ON ground_bookings(start_time);
 CREATE INDEX IF NOT EXISTS idx_ground_bookings_user_id ON ground_bookings(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ground_bookings_client_action_id ON ground_bookings(client_action_id) WHERE client_action_id IS NOT NULL;
+
+-- ============================================================================
+-- PHASE 15 — Tournament Management
+-- ============================================================================
+--
+-- Tournament logic sits ABOVE the existing match system: a tournament_fixture
+-- links to at most one real `matches` row (UNIQUE(match_id) below), and that
+-- match is scored/replayed/finalized through the existing, unmodified
+-- scoring/replay/correction/finalize pipeline. Nothing here duplicates score
+-- state, result derivation, or player statistics — see
+-- docs/ARCHITECTURE.md's Phase 15 section.
+--
+-- No tournament_standings/tournament_groups tables (audited first): standings
+-- (points/NRR) are cheap to derive on every read from fixtures+matches+innings
+-- — the same "replay, never accumulate" principle career stats/leaderboards
+-- already use (README principle #1) — and V1's group format is fixed at
+-- exactly two groups, so `group_name` is just a column, not a registry table.
+
+CREATE TABLE IF NOT EXISTS tournaments (
+  id SERIAL PRIMARY KEY,
+  public_tournament_id VARCHAR(20) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL,
+  description VARCHAR(500),
+  format VARCHAR(20) NOT NULL CHECK (format IN ('LEAGUE', 'GROUPS_KNOCKOUT', 'KNOCKOUT')),
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'REGISTRATION', 'SCHEDULED', 'LIVE', 'COMPLETED')),
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  overs_per_innings SMALLINT NOT NULL CHECK (overs_per_innings > 0),
+  balls_per_over SMALLINT NOT NULL DEFAULT 6 CHECK (balls_per_over > 0),
+  max_teams SMALLINT NOT NULL CHECK (max_teams >= 2),
+  max_squad_size SMALLINT NOT NULL DEFAULT 15 CHECK (max_squad_size >= 2),
+  champion_team_id INTEGER REFERENCES teams(id),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT tournaments_end_after_start CHECK (end_date >= start_date)
+);
+
+-- References an EXISTING team (never a tournament-private copy). group_name
+-- ('A'/'B') is only meaningful for format = 'GROUPS_KNOCKOUT'.
+CREATE TABLE IF NOT EXISTS tournament_teams (
+  id SERIAL PRIMARY KEY,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  group_name VARCHAR(1) CHECK (group_name IN ('A', 'B')),
+  registered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (tournament_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_teams_tournament ON tournament_teams(tournament_id);
+
+-- Historical squad snapshot — mirrors match_players' documented principle
+-- (schema.sql Phase 3 comment): a later players.team_id transfer must never
+-- rewrite which team a player represented in a tournament that already
+-- happened. UNIQUE(tournament_id, player_id) — not (tournament_team_id,
+-- player_id) — is what structurally guarantees a player can't represent two
+-- different teams in the same tournament.
+CREATE TABLE IF NOT EXISTS tournament_squad_players (
+  id SERIAL PRIMARY KEY,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_team_id INTEGER NOT NULL REFERENCES tournament_teams(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (tournament_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_squad_players_team ON tournament_squad_players(tournament_team_id);
+
+-- One row per competition fixture. `round`/`bracket_slot` drive deterministic
+-- knockout pairing (slot i & i+1 feed the next round's slot ceil(i/2)/2) —
+-- no self-referencing "source fixture" FK needed. `match_id` is set only once
+-- an organizer schedules the fixture (creates the real LOC match via the
+-- existing match.service.js) — UNTIL then the fixture has no date/venue of
+-- its own (never a duplicate of matches.match_date). UNIQUE(match_id) keeps
+-- one match mapped to at most one fixture; UNIQUE(tournament_id, stage,
+-- bracket_slot) is the DB-level backstop against duplicate knockout-round
+-- generation (GROUP/LEAGUE fixtures all have bracket_slot NULL, and multiple
+-- NULLs never collide under a unique index, so round-robin rows are
+-- unaffected by this constraint).
+--
+-- manual_result_winner_team_id: Part 35/36 — LOC has no authoritative
+-- Super Over/tie-break engine, so a tied or no-result knockout match must
+-- NEVER auto-advance a fabricated winner. This column is the explicit,
+-- authorized, persisted override a staff member records after resolving a
+-- tie off-app (e.g. a real Super Over bowled at the ground) — progression
+-- only ever reads it, never invents it.
+CREATE TABLE IF NOT EXISTS tournament_fixtures (
+  id SERIAL PRIMARY KEY,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  stage VARCHAR(20) NOT NULL CHECK (stage IN ('LEAGUE', 'GROUP', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL')),
+  group_name VARCHAR(1) CHECK (group_name IN ('A', 'B')),
+  round SMALLINT NOT NULL DEFAULT 1,
+  bracket_slot SMALLINT,
+  fixture_number SMALLINT NOT NULL,
+  team_a_id INTEGER NOT NULL REFERENCES teams(id),
+  team_b_id INTEGER NOT NULL REFERENCES teams(id),
+  match_id INTEGER REFERENCES matches(id),
+  manual_result_winner_team_id INTEGER REFERENCES teams(id),
+  manual_result_by INTEGER REFERENCES users(id),
+  manual_result_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (tournament_id, fixture_number),
+  UNIQUE (tournament_id, stage, bracket_slot),
+  UNIQUE (match_id),
+  CONSTRAINT tournament_fixtures_teams_differ CHECK (team_a_id <> team_b_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_fixtures_tournament ON tournament_fixtures(tournament_id);
+CREATE INDEX IF NOT EXISTS idx_tournament_fixtures_match ON tournament_fixtures(match_id);

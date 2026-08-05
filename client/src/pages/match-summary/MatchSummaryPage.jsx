@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
+import { ArrowLeft, Trophy } from 'lucide-react'
 import { useMatchSummary } from '../../hooks/useMatchSummary.js'
 import { useLiveMatch } from '../../hooks/useLiveMatch.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -109,6 +109,18 @@ export default function MatchSummaryPage() {
         </button>
 
         <div className="mt-4 space-y-4">
+          {/* Phase 15 Part 55 — only present for a tournament-linked match; never clutters a normal match. */}
+          {summary.tournamentContext && (
+            <Link
+              to={`/tournaments/${summary.tournamentContext.publicTournamentId}`}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/20"
+            >
+              <Trophy className="h-3.5 w-3.5" />
+              {summary.tournamentContext.name}
+              {summary.tournamentContext.stage && <span className="text-emerald-300/70">· {summary.tournamentContext.stage.replace('_', ' ')}</span>}
+            </Link>
+          )}
+
           <MatchHero summary={summary} liveScore={liveScoreForHero} />
 
           {summary.match.status === 'live' && (

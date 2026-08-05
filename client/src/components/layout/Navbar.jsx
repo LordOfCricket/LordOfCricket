@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, Users, Search, Trophy, CalendarClock } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, Users, Search, Trophy, CalendarClock, ShieldCheck } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 import Avatar from '../ui/Avatar.jsx'
@@ -14,7 +14,6 @@ const NAV_LINKS = [
   { label: 'Gallery', href: '#gallery' },
   { label: 'Live Score', href: '#live-score' },
   { label: 'About', href: '#about' },
-  { label: 'Tournament', href: '#tournament' },
   { label: 'Booking', href: '#booking' },
   { label: 'Team', href: '#team' },
 ]
@@ -26,6 +25,7 @@ const NAV_LINKS = [
 // public discovery destinations.
 const PUBLIC_ROUTE_LINKS = [
   { label: 'Matches', to: '/matches', icon: CalendarClock },
+  { label: 'Tournaments', to: '/tournaments', icon: ShieldCheck },
   { label: 'Players', to: '/players', icon: Search },
   { label: 'Teams', to: '/teams', icon: Users },
   { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
