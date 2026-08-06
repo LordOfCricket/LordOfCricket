@@ -13,6 +13,7 @@ import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
 // visited — a build-time change only, no page's own logic is touched.
 const HomePage = lazy(() => import('../pages/homepage/HomePage.jsx'))
 const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
+const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
 const AdminAmenitiesPage = lazy(() => import('../pages/admin-amenities/AdminAmenitiesPage.jsx'))
 const AdminPartnersPage = lazy(() => import('../pages/admin-partners/AdminPartnersPage.jsx'))
 
@@ -85,6 +86,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: withSuspense(<HomePage />) },
       { path: '/admin/photos', element: <RequireAuth>{withSuspense(<AdminPhotosPage />)}</RequireAuth> },
+      { path: '/admin/gallery', element: <RequireAuth>{withSuspense(<AdminGalleryPage />)}</RequireAuth> },
       { path: '/admin/amenities', element: <RequireAuth>{withSuspense(<AdminAmenitiesPage />)}</RequireAuth> },
       { path: '/admin/partners', element: <RequireAuth>{withSuspense(<AdminPartnersPage />)}</RequireAuth> },
 

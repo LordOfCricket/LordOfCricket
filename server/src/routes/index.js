@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import healthRoutes from './health.routes.js'
 import groundPhotoRoutes from './groundPhoto.routes.js'
+import galleryImageRoutes from './galleryImage.routes.js'
 import amenityRoutes from './amenity.routes.js'
 import advertisementRoutes from './advertisement.routes.js'
 import matchRoutes from './match.routes.js'
@@ -25,6 +26,7 @@ const router = Router()
 
 router.use('/health', healthRoutes)
 router.use('/ground-photos', groundPhotoRoutes)
+router.use('/gallery', galleryImageRoutes)
 router.use('/amenities', amenityRoutes)
 router.use('/advertisements', advertisementRoutes)
 router.use('/matches', matchRoutes)

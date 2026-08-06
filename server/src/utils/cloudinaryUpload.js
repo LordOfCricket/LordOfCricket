@@ -45,3 +45,67 @@ export async function uploadImageFile(file, folder = 'canteen-menu') {
     stream.end(file.buffer)
   })
 }
+
+// Same upload_stream approach as uploadImageFile above, but returns the
+// metadata the Gallery model needs (publicId for future transforms/deletes,
+// width/height/format/bytes) instead of just a URL string. A sibling
+// export, not a replacement — uploadImageFile's canteen callers are
+// untouched.
+export async function uploadImageFileDetailed(file, folder) {
+  if (!file) throw new Error('No file provided for upload.')
+
+  if (!isCloudinaryConfigured) {
+    throw new Error('Cloudinary configuration is incomplete.')
+  }
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: 'image',
+        public_id: `${Date.now()}-${file.originalname.replace(/\.[^.]+$/, '')}`,
+      },
+      (error, result) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          bytes: result.bytes,
+        })
+      },
+    )
+
+    stream.end(file.buffer)
+  })
+}
+
+// Best-effort cleanup — used both for the explicit delete flow and for
+// rolling back a Cloudinary upload when the follow-up MongoDB write fails,
+// so a failed request never leaves an orphaned asset behind. Callers decide
+// how to react to a `false` return (e.g. log and keep the DB record rather
+// than pretend the asset is gone).
+export async function deleteImageByPublicId(publicId) {
+  if (!publicId) return false
+  if (!isCloudinaryConfigured) {
+    throw new Error('Cloudinary configuration is incomplete.')
+  }
+
+  const result = await cloudinary.uploader.destroy(publicId, { resource_type: 'image' })
+  return result?.result === 'ok' || result?.result === 'not found'
+}
+
+// Delivery URL for the SAME asset, transformed on the fly by Cloudinary
+// (f_auto/q_auto pick the best format/quality per requesting browser; width
+// caps how large a file anyone downloads) rather than a second stored copy.
+export function getOptimizedImageUrl(publicId, { width } = {}) {
+  if (!publicId) return ''
+  const transformation = [{ fetch_format: 'auto', quality: 'auto' }]
+  if (width) transformation.push({ width, crop: 'limit' })
+  return cloudinary.url(publicId, { secure: true, transformation })
+}

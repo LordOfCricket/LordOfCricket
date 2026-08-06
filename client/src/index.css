@@ -124,3 +124,23 @@ body,
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
+
+/* LOC Design System v1 — brand tokens for the new Homepage Navbar/Hero.
+   Additive only: does not touch the shadcn tokens above, which the rest
+   of the app doesn't currently consume anyway (existing pages hardcode
+   Tailwind's emerald-* palette directly). */
+@theme {
+  --color-loc-stadium: #0e3b2e;
+  --color-loc-stadium-hover: #145a41;
+  --color-loc-charcoal: #14171a;
+  --color-loc-grass: #3f8f5f;
+  --color-loc-gold: #c6a15b;
+  --color-loc-dark: #0e1210;
+  --color-loc-card-dark: #1a211d;
+  --color-loc-warmwhite: #f3f1e7;
+  --color-loc-text2-dark: #a9b2a7;
+  --color-loc-muted-dark: #7c877e;
+
+  --font-loc-display: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;
+  --font-loc-body: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+}

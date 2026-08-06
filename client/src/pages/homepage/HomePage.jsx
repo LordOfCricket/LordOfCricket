@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Mail, MapPin, Phone } from 'lucide-react'
 import logo from '../../assets/logo.png'
-import Navbar from '../../components/layout/Navbar.jsx'
+import Navbar from '../../components/home/Navbar.jsx'
+import Hero from '../../components/home/Hero.jsx'
 import ImageSlider from '../../components/common/ImageSlider.jsx'
-import IndiaMatchCard from '../../components/common/IndiaMatchCard.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
@@ -42,17 +42,16 @@ export default function HomePage() {
       </div>
 
       <Navbar />
+      <Hero />
 
-      <div className="relative flex flex-col items-center gap-16 pt-28 pb-16">
-        {/* Gallery / slider + India live score */}
+      <div className="relative flex flex-col items-center gap-16 pb-16">
+        {/* Full gallery — the hero above shows a compact rotating preview of
+            these same ground photos; this is the expanded view its "View
+            Gallery" link scrolls to. India's score now lives in the hero,
+            so this row is gallery-only (no more duplicate India card). */}
         <div id="gallery" className="w-full scroll-mt-24 px-6 lg:px-10">
-          <div className="flex flex-col gap-6 lg:h-128 lg:flex-row">
-            <div className="h-64 w-full sm:h-80 md:h-112 lg:h-full lg:w-2/3">
-              <ImageSlider />
-            </div>
-            <div id="live-score" className="w-full scroll-mt-24 lg:h-full lg:w-1/3">
-              <IndiaMatchCard />
-            </div>
+          <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
+            <ImageSlider />
           </div>
         </div>
 
@@ -148,7 +147,12 @@ export default function HomePage() {
       <footer className="relative border-t border-emerald-400/10 bg-emerald-950/60 px-6 py-10 lg:px-10">
         <div className="flex w-full flex-col items-center justify-between gap-6 lg:flex-row">
           <div className="flex items-center">
-            <img src={logo} alt="LOC - Lord Of Cricket" className="h-16 w-auto" />
+            <img
+              src={logo}
+              alt="LOC - Lord Of Cricket"
+              className="h-16 w-auto"
+              style={{ filter: 'drop-shadow(0 0 1.2px rgba(243,241,231,0.9)) drop-shadow(0 0 1.2px rgba(243,241,231,0.9))' }}
+            />
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-sm text-emerald-100/60">
