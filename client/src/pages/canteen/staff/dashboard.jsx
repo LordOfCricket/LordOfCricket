@@ -4,6 +4,7 @@ import { useStaffDashboard } from '../../../hooks/useCanteenStaffDashboard.js'
 
 export default function StaffDashboardPage() {
   const {
+    isCanteenStaffOnly,
     tab,
     setTab,
     todayItems,
@@ -21,8 +22,6 @@ export default function StaffDashboardPage() {
     setStatusFilter,
     isRefreshing,
     refreshDashboard,
-    umpireRequests,
-    handleDecideUmpireRequest,
     statusIndex,
     handleStatusUpdate,
     handleToggleAvailability,
@@ -94,14 +93,17 @@ export default function StaffDashboardPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 
             <div className="flex flex-wrap gap-3">
-              <Button className={`h-12 px-4 ${tab === 'manage' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('manage')}>Manage Today</Button>
-              <Button className={`h-12 px-4 ${tab === 'all' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('all')}>All Food</Button>
+              {!isCanteenStaffOnly && (
+                <Button className={`h-12 px-4 ${tab === 'manage' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('manage')}>Manage Today</Button>
+              )}
+              {!isCanteenStaffOnly && (
+                <Button className={`h-12 px-4 ${tab === 'all' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('all')}>All Food</Button>
+              )}
               <Button className={`h-12 px-4 ${tab === 'orders' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('orders')}>Orders</Button>
               <Button className={`h-12 px-4 ${tab === 'history' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('history')}>Order History</Button>
-              <Button className={`h-12 px-4 ${tab === 'add' ? 'bg-emerald-600' : 'bg-emerald-200 text-slate-900'}`} onClick={() => setTab('add')}>Add Food</Button>
-              <Button className={`h-12 px-4 ${tab === 'umpires' ? 'bg-green-600' : 'bg-slate-200 text-slate-900'}`} onClick={() => setTab('umpires')}>
-                Umpire Requests{umpireRequests.length > 0 ? ` (${umpireRequests.length})` : ''}
-              </Button>
+              {!isCanteenStaffOnly && (
+                <Button className={`h-12 px-4 ${tab === 'add' ? 'bg-emerald-600' : 'bg-emerald-200 text-slate-900'}`} onClick={() => setTab('add')}>Add Food</Button>
+              )}
               <Button className="h-12 bg-white/10 px-4 text-sm text-white" onClick={() => void refreshDashboard()}>
                 {isRefreshing ? 'Refreshing…' : 'Refresh Live'}
               </Button>
@@ -400,32 +402,6 @@ export default function StaffDashboardPage() {
               <div className="mt-4">
                 <Button onClick={handleCreateFood}>Add Food</Button>
               </div>
-            </div>
-          )}
-
-          {tab === 'umpires' && (
-            <div className="mt-6 space-y-4">
-              {umpireRequests.length === 0 ? (
-                <p className="rounded-2xl bg-white/10 p-5 text-slate-300">No pending umpire requests.</p>
-              ) : (
-                umpireRequests.map((request) => (
-                  <article
-                    key={request.id}
-                    className="flex flex-col gap-4 rounded-[24px] border border-white/10 bg-white/10 p-5 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">{request.name}</h3>
-                      <p className="text-sm text-slate-300">{request.email}</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <Button onClick={() => handleDecideUmpireRequest(request.id, 'approved')}>Approve</Button>
-                      <Button className="bg-red-600" onClick={() => handleDecideUmpireRequest(request.id, 'rejected')}>
-                        Reject
-                      </Button>
-                    </div>
-                  </article>
-                ))
-              )}
             </div>
           )}
 

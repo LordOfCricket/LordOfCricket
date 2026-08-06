@@ -22,13 +22,11 @@ export function useRoleSelect() {
   }
 
   const choosePlayer = () => finish('player')
-  const chooseStaff = () => finish('staff')
 
   return {
     name: user?.name,
     submitting,
     error,
     choosePlayer,
-    chooseStaff,
   }
 }

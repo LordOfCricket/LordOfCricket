@@ -19,11 +19,12 @@ import {
 // context's user (role/player_type), not the player profile.
 export function getAccountLinks(user) {
   const isStaff = user?.role === 'staff'
-  const isScorer = isStaff || user?.player_type === 'umpire'
+  const isSuperAdminOrAdmin = isStaff && ['super_admin', 'admin'].includes(user?.staff_role)
+  const isScorer = (isStaff && user?.staff_role === 'super_admin') || user?.player_type === 'umpire'
 
   const links = [
     isStaff
-      ? { label: 'Staff Dashboard', to: '/canteen/staff', icon: LayoutDashboard }
+      ? { label: 'Staff Dashboard', to: isSuperAdminOrAdmin ? '/admin/dashboard' : '/canteen/staff', icon: LayoutDashboard }
       : { label: 'View Dashboard', to: '/player/dashboard', icon: LayoutDashboard },
   ]
 

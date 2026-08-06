@@ -1,7 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import { listImages, getImage, uploadImage, updateImage, deleteImage } from '../controllers/galleryImage.controller.js'
-import { requireAuth, requireRole } from '../middlewares/auth.js'
+import { requireAuth, requireStaffRole } from '../middlewares/auth.js'
 
 // Memory storage, not disk — the buffer goes straight to Cloudinary
 // (uploadImageFileDetailed) and is never written to this server's
@@ -38,8 +38,8 @@ const router = express.Router()
 
 router.get('/', listImages)
 router.get('/:id', getImage)
-router.post('/', requireAuth, requireRole('staff'), uploadSingleImage, uploadImage)
-router.patch('/:id', requireAuth, requireRole('staff'), updateImage)
-router.delete('/:id', requireAuth, requireRole('staff'), deleteImage)
+router.post('/', requireAuth, requireStaffRole('super_admin'), uploadSingleImage, uploadImage)
+router.patch('/:id', requireAuth, requireStaffRole('super_admin'), updateImage)
+router.delete('/:id', requireAuth, requireStaffRole('super_admin'), deleteImage)
 
 export default router

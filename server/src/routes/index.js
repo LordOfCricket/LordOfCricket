@@ -11,6 +11,7 @@ import canteenMenuRoutes from './canteenMenu.routes.js'
 import canteenOrderRoutes from './canteenOrder.routes.js'
 import authRoutes from './auth.routes.js'
 import umpireRequestRoutes from './umpireRequest.routes.js'
+import staffRoutes from './staff.routes.js'
 import meRoutes from './me.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
@@ -78,6 +79,7 @@ router.use('/stats', leaderboardRoutes)
 // Site-wide auth (single login for players, staff, umpires)
 router.use('/auth', authRoutes)
 router.use('/umpire-requests', umpireRequestRoutes)
+router.use('/staff', staffRoutes)
 router.use('/me', meRoutes)
 
 // Canteen (merged into the main LOC API, namespaced under /canteen)

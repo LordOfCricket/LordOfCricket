@@ -13,12 +13,14 @@ export default function UmpireStatusPage() {
   const [matches, setMatches] = useState([])
 
   const isStaff = user?.role === 'staff'
+  // Only super_admin staff carry "Scorer" access server-side (requireScorer
+  // accepts staff_role='super_admin' OR an approved umpire) — admin/
+  // canteen_staff are staff but must not see match-operations links they'd
+  // just get a 403 from.
+  const isSuperAdminStaff = isStaff && user?.staff_role === 'super_admin'
   const status = request?.status
   const copy = status ? STATUS_COPY[status] : null
-  // Staff already carries "Scorer" access server-side (requireScorer accepts
-  // role='staff' OR an approved umpire) — they never need to file/wait on an
-  // umpire request to reach match operations.
-  const canOperate = isStaff || status === 'approved'
+  const canOperate = isSuperAdminStaff || status === 'approved'
 
   useEffect(() => {
     if (!canOperate) return
@@ -45,7 +47,7 @@ export default function UmpireStatusPage() {
     >
       <section className="mx-auto flex min-h-screen max-w-7xl items-center px-8 lg:px-16">
         <div className="w-full max-w-2xl">
-          <h1 className="text-5xl font-extrabold text-white">{isStaff ? 'Match Operations' : 'Umpire Access'}</h1>
+          <h1 className="text-5xl font-extrabold text-white">{isSuperAdminStaff ? 'Match Operations' : 'Umpire Access'}</h1>
 
           <div className="mt-10 rounded-[36px] border border-white/15 bg-slate-900/35 p-10 shadow-2xl backdrop-blur-2xl">
             {loading ? (

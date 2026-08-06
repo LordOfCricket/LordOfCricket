@@ -1,7 +1,7 @@
 import { useRoleSelect } from '../../hooks/useRoleSelect.js'
 
 export default function RoleSelectPage() {
-  const { name, submitting, error, choosePlayer, chooseStaff } = useRoleSelect()
+  const { name, submitting, error, choosePlayer } = useRoleSelect()
 
   return (
     <main
@@ -30,7 +30,7 @@ export default function RoleSelectPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               <button
                 type="button"
                 disabled={submitting}
@@ -38,15 +38,6 @@ export default function RoleSelectPage() {
                 className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
               >
                 <h3 className="text-3xl font-bold">👤 Player</h3>
-              </button>
-
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={chooseStaff}
-                className="rounded-3xl border border-white/10 bg-white/5 p-8 text-left transition-all duration-300 hover:border-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
-              >
-                <h3 className="text-3xl font-bold">🧑‍🍳 Staff</h3>
               </button>
             </div>
           </div>

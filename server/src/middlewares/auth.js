@@ -31,12 +31,28 @@ export function requireRole(role) {
   }
 }
 
-// Scoring endpoints: staff (admins running the match) or an approved umpire
-// (role='player', player_type='umpire' — set once umpire_requests is accepted).
+// Finer-grained than requireRole('staff'): also checks the user's staff_role
+// (super_admin | admin | canteen_staff, resolved via requireAuth's
+// findUserById JOIN — see user.model.js). A staff row with no staff_role_id
+// assigned resolves staff_role = null, which never matches any allowedNames
+// list, so it is safely denied rather than crashing.
+export function requireStaffRole(...allowedNames) {
+  return (req, res, next) => {
+    if (req.user?.role !== 'staff' || !allowedNames.includes(req.user?.staff_role)) {
+      return res.status(403).json({ error: 'You do not have permission to perform this action.' })
+    }
+    next()
+  }
+}
+
+// Scoring endpoints: super_admin staff (the LOC-authorized scorer role) or an
+// approved umpire (role='player', player_type='umpire' — set once
+// umpire_requests is accepted). Plain 'staff' (admin/canteen_staff) is
+// deliberately excluded — score editing is a super_admin-only capability.
 export function requireScorer(req, res, next) {
-  const isStaff = req.user?.role === 'staff'
+  const isSuperAdmin = req.user?.role === 'staff' && req.user?.staff_role === 'super_admin'
   const isUmpire = req.user?.role === 'player' && req.user?.player_type === 'umpire'
-  if (!isStaff && !isUmpire) {
+  if (!isSuperAdmin && !isUmpire) {
     return res.status(403).json({ error: 'Scorer or staff access required.' })
   }
   next()

@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import Layout from '../components/layout/Layout.jsx'
 import RequireAuth from './RequireAuth.jsx'
+import RequireStaffRole from './RequireStaffRole.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
 import RouteErrorBoundary from './RouteErrorBoundary.jsx'
 import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
@@ -16,6 +17,12 @@ const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage
 const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
 const AdminAmenitiesPage = lazy(() => import('../pages/admin-amenities/AdminAmenitiesPage.jsx'))
 const AdminPartnersPage = lazy(() => import('../pages/admin-partners/AdminPartnersPage.jsx'))
+
+// Super Admin Staff Dashboard
+const AdminDashboardPage = lazy(() => import('../pages/admin-dashboard/AdminDashboardPage.jsx'))
+const AdminUmpireRequestsPage = lazy(() => import('../pages/admin-umpire-requests/AdminUmpireRequestsPage.jsx'))
+const AdminPhotosHubPage = lazy(() => import('../pages/admin-photos-hub/AdminPhotosHubPage.jsx'))
+const CreateStaffPage = lazy(() => import('../pages/admin-staff/CreateStaffPage.jsx'))
 
 // Site-wide auth
 const AuthPage = lazy(() => import('../pages/auth/AuthPage.jsx'))
@@ -85,10 +92,16 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/', element: withSuspense(<HomePage />) },
-      { path: '/admin/photos', element: <RequireAuth>{withSuspense(<AdminPhotosPage />)}</RequireAuth> },
-      { path: '/admin/gallery', element: <RequireAuth>{withSuspense(<AdminGalleryPage />)}</RequireAuth> },
-      { path: '/admin/amenities', element: <RequireAuth>{withSuspense(<AdminAmenitiesPage />)}</RequireAuth> },
-      { path: '/admin/partners', element: <RequireAuth>{withSuspense(<AdminPartnersPage />)}</RequireAuth> },
+      { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosPage />)}</RequireStaffRole> },
+      { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGalleryPage />)}</RequireStaffRole> },
+      { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminAmenitiesPage />)}</RequireStaffRole> },
+      { path: '/admin/partners', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPartnersPage />)}</RequireStaffRole> },
+
+      // Super Admin Staff Dashboard
+      { path: '/admin/dashboard', element: <RequireStaffRole allow={['super_admin', 'admin']}>{withSuspense(<AdminDashboardPage />)}</RequireStaffRole> },
+      { path: '/admin/umpire-requests', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminUmpireRequestsPage />)}</RequireStaffRole> },
+      { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosHubPage />)}</RequireStaffRole> },
+      { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<CreateStaffPage />)}</RequireStaffRole> },
 
       // Auth
       { path: '/login', element: withSuspense(<AuthPage />) },

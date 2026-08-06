@@ -15,10 +15,15 @@ import {
   emptyNewFood,
   emptyEditFood,
 } from '../models/canteenDashboard.model.js'
-import { fetchPendingUmpireRequests, decideUmpireRequest } from '../services/umpireApi.js'
+import { useAuth } from './useAuth.js'
 
 export function useStaffDashboard() {
-  const [tab, setTab] = useState('manage')
+  const { user } = useAuth()
+  // canteen_staff only has Orders access (view/update order status) — no
+  // menu/stock/price management. Everyone else (super_admin/admin) lands on
+  // Manage Today, matching the existing default.
+  const isCanteenStaffOnly = user?.role === 'staff' && user?.staff_role === 'canteen_staff'
+  const [tab, setTab] = useState(isCanteenStaffOnly ? 'orders' : 'manage')
   const [orders, setOrders] = useState([])
   const [todayItems, setTodayItems] = useState([])
   const [masterItems, setMasterItems] = useState([])
@@ -31,7 +36,6 @@ export function useStaffDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [umpireRequests, setUmpireRequests] = useState([])
 
   // Phase 13 — order history. The live "Orders" tab/queue above is
   // deliberately active-only (fetchOrders(..., 'active')); staff previously
@@ -84,33 +88,14 @@ export function useStaffDashboard() {
     }
   }, [])
 
-  const loadUmpireRequests = useCallback(async () => {
-    try {
-      const requests = await fetchPendingUmpireRequests()
-      setUmpireRequests(requests)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Unable to load umpire requests.')
-    }
-  }, [])
-
   const refreshDashboard = useCallback(async () => {
     setIsRefreshing(true)
     try {
-      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster(), loadUmpireRequests(), loadHistory(historyPage)])
+      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster(), loadHistory(historyPage)])
     } finally {
       setIsRefreshing(false)
     }
-  }, [page, historyPage, loadOrders, loadMenuConfig, loadMaster, loadUmpireRequests, loadHistory])
-
-  const handleDecideUmpireRequest = async (id, status) => {
-    setError('')
-    try {
-      await decideUmpireRequest(id, status)
-      await loadUmpireRequests()
-    } catch (err) {
-      setError(err.response?.data?.message || 'Unable to update umpire request.')
-    }
-  }
+  }, [page, historyPage, loadOrders, loadMenuConfig, loadMaster, loadHistory])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -293,6 +278,7 @@ export function useStaffDashboard() {
   }, [historyOrders, historyStatusFilter])
 
   return {
+    isCanteenStaffOnly,
     tab,
     setTab,
     orders,
@@ -312,8 +298,6 @@ export function useStaffDashboard() {
     setStatusFilter,
     isRefreshing,
     refreshDashboard,
-    umpireRequests,
-    handleDecideUmpireRequest,
     statusIndex,
     handleStatusUpdate,
     handleToggleAvailability,

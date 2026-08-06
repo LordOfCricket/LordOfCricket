@@ -674,3 +674,31 @@ CREATE TABLE IF NOT EXISTS ground_notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ground_notifications_user ON ground_notifications(user_id, created_at DESC);
+
+-- ============================================================================
+-- PHASE 20 — Super Admin Staff Dashboard: staff sub-roles
+-- ============================================================================
+--
+-- `role = 'staff'` alone (existing since Phase 1) is too coarse for the new
+-- Super Admin dashboard, which needs to distinguish super_admin/admin/
+-- canteen_staff permission levels. Rather than repurposing `role` (checked
+-- verbatim as `requireRole('staff')` across ~30 route files today — changing
+-- its meaning would ripple everywhere), staff_role_id is a NEW, separate
+-- qualifier column, exactly mirroring how `player_type` already qualifies
+-- `role = 'player'` above.
+CREATE TABLE IF NOT EXISTS staff_roles (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(20) UNIQUE NOT NULL
+);
+INSERT INTO staff_roles (name) VALUES ('super_admin'), ('admin'), ('canteen_staff')
+  ON CONFLICT (name) DO NOTHING;
+
+-- Meaningful only when role = 'staff'. NULL for every non-staff user, and
+-- NULL for any pre-existing staff row until explicitly assigned.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_role_id INTEGER REFERENCES staff_roles(id);
+
+-- Human-facing reference/display ID shown on the Create Staff screen and
+-- staff lists — NOT a login credential (login stays email + password,
+-- unchanged). Unique at the DB level; duplicates are caught and translated
+-- to a clean validation error in staff.controller.js.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;

@@ -64,8 +64,10 @@ export async function me(req, res) {
 export async function selectRole(req, res, next) {
   try {
     const { role } = req.body
-    if (!['player', 'staff'].includes(role)) {
-      return res.status(400).json({ message: "role must be 'player' or 'staff'" })
+    // 'staff' is deliberately not selectable here — staff accounts are only
+    // ever created via the Super Admin "Create Staff" flow (staff.controller.js).
+    if (role !== 'player') {
+      return res.status(400).json({ message: "role must be 'player'" })
     }
 
     const user = await updateUser(req.user.id, { role })
