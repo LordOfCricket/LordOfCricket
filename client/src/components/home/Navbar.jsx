@@ -6,6 +6,7 @@ import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 import NotificationBell from '../layout/NotificationBell.jsx'
 import AccountMenu from '../layout/AccountMenu.jsx'
+import { EASE, SPRING } from '../../lib/motion.js'
 
 // LOC Design System v1 — Section 03/05: nav links use Barlow (body), an
 // active route gets a small gold underline rather than a filled "tab".
@@ -16,8 +17,6 @@ const NAV_LINKS = [
   { label: 'Teams', to: '/teams' },
   { label: 'Tournaments', to: '/tournaments' },
 ]
-
-const EASE = [0.16, 1, 0.3, 1]
 
 function NavItem({ link, onClick, className = '', activeClassName = '', underline = true }) {
   return (
@@ -38,7 +37,7 @@ function NavItem({ link, onClick, className = '', activeClassName = '', underlin
             <motion.span
               layoutId="loc-nav-underline"
               className="absolute inset-x-0 -bottom-1.5 h-[2px] rounded-full bg-loc-gold"
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              transition={SPRING}
             />
           )}
         </>

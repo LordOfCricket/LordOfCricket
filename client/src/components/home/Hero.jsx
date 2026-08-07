@@ -2,21 +2,12 @@ import { motion, useReducedMotion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
-
-const EASE = [0.16, 1, 0.3, 1]
+import { reveal } from '../../lib/motion.js'
 
 // Entrance sequence: background (instant) → gallery → LOC panel → India
 // panel, a short cascade rather than a marketing reveal — the hero's job now
 // is "show the ground and the scores fast", not stage a headline moment.
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
-
-function reveal(delay) {
-  return {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.5, delay, ease: EASE },
-  }
-}
 
 export default function Hero() {
   const reduceMotion = useReducedMotion()

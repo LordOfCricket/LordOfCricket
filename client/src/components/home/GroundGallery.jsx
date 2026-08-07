@@ -3,9 +3,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronLeft, ChevronRight, ImageIcon, ArrowRight } from 'lucide-react'
 import { useGroundGallery } from '../../hooks/useGroundGallery.js'
 import { GROUND_ADDRESS } from '../../models/homepage.model.js'
+import { EASE } from '../../lib/motion.js'
 
 const AUTO_ADVANCE_MS = 5500
-const EASE = [0.16, 1, 0.3, 1]
 
 function GalleryFrame({ children, className = '' }) {
   return (
