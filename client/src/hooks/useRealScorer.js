@@ -1,0 +1,190 @@
+import { useCallback, useEffect, useState } from 'react'
+import * as scoringApi from '../services/scoringApi.js'
+import { fetchMatch } from '../services/matchApi.js'
+
+// Backend-authoritative real scorer state. This hook NEVER computes cricket
+// state itself (strike rotation, over completion, wicket effects, ...) — it
+// only calls scoringApi.js and stores exactly what the server returns. See
+// Phase 5 Part 18: the server is the only source of truth for official
+// matches (the practice /testing sandbox is the one place a client engine is
+// still allowed to own that logic).
+export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
+  const [match, setMatch] = useState(null)
+  const [matchPlayers, setMatchPlayers] = useState([])
+  const [state, setState] = useState(null) // serializeState() shape from GET /innings/:id/state
+  const [timeline, setTimeline] = useState({ timeline: [], byOver: [] })
+  const [wagonWheelShots, setWagonWheelShots] = useState([])
+  const [corrections, setCorrections] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [conflictNotice, setConflictNotice] = useState('')
+  const [pending, setPending] = useState(false)
+  // Phase 6 Part 1 fix: bowler selection is tracked as "chosen id, FOR which
+  // over" rather than just an id, and re-derived from authoritative state on
+  // every load/refresh — never assumed from the URL alone. Opening over (0)
+  // is seeded from the setup flow's URL param; every other over is either
+  // resolved unambiguously (mid-over resume: only one bowler could have
+  // bowled the balls already on record) or genuinely requires the scorer to
+  // pick, which needsBowlerSelection below surfaces.
+  const [pendingBowlerId, setPendingBowlerId] = useState(initialOpeningBowlerId ? Number(initialOpeningBowlerId) : null)
+  const [pendingBowlerOverNumber, setPendingBowlerOverNumber] = useState(initialOpeningBowlerId ? 0 : null)
+
+  const playersById = new Map(matchPlayers.map((mp) => [mp.id, mp]))
+
+  // Adjust state during render (not in an Effect), per
+  // https://react.dev/learn/you-might-not-need-an-effect — resolves the
+  // bowler for the current over the instant `state` changes, without an
+  // extra render pass. Mid-over (including a fresh page load/resume) is
+  // unambiguous: only one bowler could have bowled the balls already on
+  // record. At an over boundary with nothing chosen yet, this intentionally
+  // does nothing, leaving needsBowlerSelection true so the scorer is prompted.
+  if (state && pendingBowlerOverNumber !== state.score.overNumber && state.score.ballInOver > 0 && state.bowler) {
+    setPendingBowlerId(state.bowler)
+    setPendingBowlerOverNumber(state.score.overNumber)
+  }
+
+  const needsBowlerSelection = Boolean(state) && !state.isAllOut && !state.isOversComplete && pendingBowlerOverNumber !== state?.score?.overNumber
+
+  const refresh = useCallback(async () => {
+    const [nextState, nextTimeline, nextShots, nextCorrections] = await Promise.all([
+      scoringApi.getInningsState(inningsId),
+      scoringApi.getInningsTimeline(inningsId),
+      scoringApi.getWagonWheel(inningsId),
+      scoringApi.getCorrectionHistory(inningsId),
+    ])
+    setState(nextState)
+    setTimeline(nextTimeline)
+    setWagonWheelShots(nextShots)
+    setCorrections(nextCorrections)
+    return nextState
+  }, [inningsId])
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const [m, mps] = await Promise.all([fetchMatch(matchId), scoringApi.listMatchPlayers(matchId)])
+        if (cancelled) return
+        setMatch(m)
+        setMatchPlayers(mps)
+        await refresh()
+      } catch (err) {
+        if (!cancelled) setLoadError(err.response?.data?.message || 'Unable to load this match.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId, inningsId])
+
+  const withWriteHandling = useCallback(
+    async (action) => {
+      setPending(true)
+      setActionError('')
+      try {
+        await action()
+        setConflictNotice('')
+      } catch (err) {
+        if (err.response?.data?.code === 'VERSION_CONFLICT') {
+          setConflictNotice('The score changed on another device. Latest state has been loaded.')
+          await refresh().catch(() => {})
+        } else {
+          setActionError(err.response?.data?.message || 'That action was not recorded. Please try again.')
+        }
+      } finally {
+        setPending(false)
+      }
+    },
+    [refresh]
+  )
+
+  const recordDelivery = useCallback(
+    (input) =>
+      withWriteHandling(async () => {
+        const clientActionId = scoringApi.generateClientActionId()
+        await scoringApi.recordDelivery(inningsId, {
+          expectedVersion: state.innings.version,
+          clientActionId,
+          bowlerMatchPlayerId: pendingBowlerId,
+          ...input,
+        })
+        await refresh()
+      }),
+    [withWriteHandling, inningsId, state, pendingBowlerId, refresh]
+  )
+
+  const recordEvent = useCallback(
+    (eventType, payload = {}) =>
+      withWriteHandling(async () => {
+        const clientActionId = scoringApi.generateClientActionId()
+        await scoringApi.recordEvent(inningsId, { expectedVersion: state.innings.version, clientActionId, eventType, payload })
+        await refresh()
+      }),
+    [withWriteHandling, inningsId, state, refresh]
+  )
+
+  const selectNextBatsman = useCallback(
+    (end, matchPlayerId) => recordEvent('batsman-in', { end, matchPlayerId }),
+    [recordEvent]
+  )
+
+  const changeBowler = useCallback(
+    (matchPlayerId) => {
+      setPendingBowlerId(matchPlayerId)
+      setPendingBowlerOverNumber(state?.score?.overNumber ?? 0)
+    },
+    [state]
+  )
+
+  const previewCorrection = useCallback((targetType, targetId, patch) => scoringApi.previewCorrection(inningsId, { targetType, targetId, patch }), [inningsId])
+
+  const applyCorrection = useCallback(
+    (targetType, targetId, patch, reasonCode, note) =>
+      withWriteHandling(async () => {
+        const clientActionId = scoringApi.generateClientActionId()
+        await scoringApi.applyCorrection(inningsId, { targetType, targetId, patch, reasonCode, note, expectedVersion: state.innings.version, clientActionId })
+        await refresh()
+      }),
+    [withWriteHandling, inningsId, state, refresh]
+  )
+
+  const undoCorrection = useCallback(
+    (correctionId) =>
+      withWriteHandling(async () => {
+        const clientActionId = scoringApi.generateClientActionId()
+        await scoringApi.undoCorrection(inningsId, correctionId, { expectedVersion: state.innings.version, clientActionId })
+        await refresh()
+      }),
+    [withWriteHandling, inningsId, state, refresh]
+  )
+
+  return {
+    match,
+    matchPlayers,
+    playersById,
+    state,
+    timeline,
+    wagonWheelShots,
+    corrections,
+    loading,
+    loadError,
+    actionError,
+    conflictNotice,
+    pending,
+    pendingBowlerId,
+    needsBowlerSelection,
+    changeBowler,
+    recordDelivery,
+    recordEvent,
+    selectNextBatsman,
+    previewCorrection,
+    applyCorrection,
+    undoCorrection,
+    refresh,
+  }
+}

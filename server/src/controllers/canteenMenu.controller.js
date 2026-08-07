@@ -2,7 +2,8 @@ import { masterMenu, todaysMenu } from '../models/canteenStore.model.js'
 import MenuItem from '../models/canteenMenuItem.model.js'
 import TodayMenu from '../models/canteenTodayMenu.model.js'
 import { isMongoReady } from '../config/db.js'
-import { uploadImageFile } from '../utils/cloudinaryUpload.js'
+import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { logger } from '../utils/logger.js'
 
 function formatImageUrl(req, image) {
   if (!image) return ''
@@ -145,7 +146,7 @@ export function updateTodaysMenu(req, res) {
         const dbItems = await MenuItem.find().lean()
         validIds = new Set(dbItems.map((m) => String(m._id)))
       } catch (err) {
-        console.error('Failed to load MenuItem for validation:', err.message)
+        logger.error('Failed to load MenuItem for validation', { error: err.message })
       }
     }
 
@@ -178,7 +179,7 @@ export function updateTodaysMenu(req, res) {
       try {
         await TodayMenu.findOneAndUpdate({}, { publishedAt, items }, { upsert: true, new: true })
       } catch (err) {
-        console.error('TodayMenu save error:', err.message)
+        logger.error('TodayMenu save error', { error: err.message })
       }
     }
 
@@ -195,7 +196,7 @@ export function updateTodaysMenu(req, res) {
   }
 
   applyUpdate().catch((err) => {
-    console.error('updateTodaysMenu error:', err.message)
+    logger.error('updateTodaysMenu error', { error: err.message })
     res.status(500).json({ error: err.message })
   })
 }
@@ -204,8 +205,11 @@ export async function createMenuItem(req, res) {
   try {
     const { name, category, description, price, defaultStock } = req.body
     let image = req.body.image || ''
+    let imagePublicId = ''
     if (req.file) {
-      image = await uploadImageFile(req.file)
+      const uploaded = await uploadImageFileDetailed(req.file, 'canteen-menu')
+      image = uploaded.url
+      imagePublicId = uploaded.publicId
     }
 
     const numericPrice = Number(price)
@@ -213,7 +217,7 @@ export async function createMenuItem(req, res) {
       return res.status(400).json({ error: 'Invalid menu item payload.' })
     }
 
-    const item = await MenuItem.create({ name, category, description: description || '', price: numericPrice, image, defaultStock: Number(defaultStock) || 0 })
+    const item = await MenuItem.create({ name, category, description: description || '', price: numericPrice, image, imagePublicId, defaultStock: Number(defaultStock) || 0 })
     return res.status(201).json({ item: { id: String(item._id), name: item.name, category: item.category, description: item.description, price: item.price, image: formatImageUrl(req, item.image), defaultStock: item.defaultStock } })
   } catch (error) {
     return res.status(500).json({ error: error.message })
@@ -225,8 +229,11 @@ export async function updateMenuItem(req, res) {
     const { id } = req.params
     const { name, category, description, price } = req.body
     let image = req.body.image || ''
+    let imagePublicId = ''
     if (req.file) {
-      image = await uploadImageFile(req.file)
+      const uploaded = await uploadImageFileDetailed(req.file, 'canteen-menu')
+      image = uploaded.url
+      imagePublicId = uploaded.publicId
     }
 
     const update = {}
@@ -241,6 +248,7 @@ export async function updateMenuItem(req, res) {
       update.price = numericPrice
     }
     if (image) update.image = image
+    if (imagePublicId) update.imagePublicId = imagePublicId
 
     const item = await MenuItem.findByIdAndUpdate(id, update, { new: true, runValidators: true }).lean()
     if (!item) {
@@ -264,6 +272,14 @@ export async function deleteMenuItem(req, res) {
         return res.status(404).json({ error: 'Menu item not found.' })
       }
 
+      if (item.imagePublicId) {
+        try {
+          await deleteImageByPublicId(item.imagePublicId)
+        } catch (err) {
+          logger.error('Failed to delete canteen menu image from Cloudinary', { error: err.message, publicId: item.imagePublicId })
+        }
+      }
+
       try {
         const today = await TodayMenu.findOne({})
         if (today && Array.isArray(today.items)) {
@@ -271,7 +287,7 @@ export async function deleteMenuItem(req, res) {
           await today.save()
         }
       } catch (err) {
-        console.error('Failed to update TodayMenu after delete:', err.message)
+        logger.error('Failed to update TodayMenu after delete', { error: err.message })
       }
 
       const payload = { publishedAt: new Date().toISOString() }

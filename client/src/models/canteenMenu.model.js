@@ -15,7 +15,6 @@ export const defaultCart = {
 
 export const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000'
 export const activeStatuses = ['Pending', 'Accepted', 'Preparing', 'Ready']
-export const CANTEEN_MOBILE_STORAGE_KEY = 'canteenMobile'
 export const CANTEEN_LATEST_ORDER_STORAGE_KEY = 'canteenLatestOrder'
 
 export function formatOrderDate(value) {

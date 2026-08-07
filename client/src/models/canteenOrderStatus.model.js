@@ -1,8 +1,7 @@
 import { fetchActiveOrder, fetchOrder } from '../services/canteenApi.js'
+import { socketUrl } from '../services/socket.js'
 
-export { fetchActiveOrder, fetchOrder }
-
-export const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000'
+export { fetchActiveOrder, fetchOrder, socketUrl }
 export const CANTEEN_LATEST_ORDER_STORAGE_KEY = 'canteenLatestOrder'
 
 export const STATUS_STEPS = [
