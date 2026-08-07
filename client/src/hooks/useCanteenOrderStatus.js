@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
+import { useAuth } from './useAuth.js'
 import {
   fetchActiveOrder,
   fetchOrder,
@@ -12,6 +13,7 @@ import {
 export function useOrderStatus() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
   const storedOrder = useMemo(
     () => (typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(CANTEEN_LATEST_ORDER_STORAGE_KEY) || 'null') : null),
     [],
@@ -23,20 +25,21 @@ export function useOrderStatus() {
 
   useEffect(() => {
     if (!orderId) {
-      if (storedOrder?.mobile) {
-        fetchActiveOrder(storedOrder.mobile)
+      const userId = storedOrder?.userId || user?.id
+      if (userId) {
+        fetchActiveOrder(userId)
           .then((found) => {
             if (found) {
               setOrder(found)
               setOrderId(found.id)
-              localStorage.setItem(CANTEEN_LATEST_ORDER_STORAGE_KEY, JSON.stringify({ orderId: found.id, mobile: found.mobile, seatId: found.seatId }))
+              localStorage.setItem(CANTEEN_LATEST_ORDER_STORAGE_KEY, JSON.stringify({ orderId: found.id, userId: found.userId, seatId: found.seatId }))
               return
             }
-            navigate('/canteen/login')
+            navigate('/canteen/menu')
           })
-          .catch(() => navigate('/canteen/login'))
+          .catch(() => navigate('/canteen/menu'))
       } else {
-        navigate('/canteen/login')
+        navigate('/login')
       }
       return
     }
@@ -44,15 +47,12 @@ export function useOrderStatus() {
     fetchOrder(orderId)
       .then(setOrder)
       .catch((err) => setError(err.response?.data?.error || 'Unable to load order.'))
-  }, [navigate, orderId, storedOrder])
+  }, [navigate, orderId, storedOrder, user?.id])
 
   useEffect(() => {
     if (!orderId) return
     const socket = io(socketUrl)
-    socket.emit('join-order-room', orderId)
-    if (order?.mobile) {
-      socket.emit('join-mobile-room', order.mobile)
-    }
+    let hasConnectedBefore = false
 
     const updateOrder = (updated) => {
       if (updated.id === orderId) {
@@ -60,10 +60,24 @@ export function useOrderStatus() {
       }
     }
 
+    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // auto-rejoins an app-level room on its own reconnect; re-emit the joins
+    // every time, and resync the order via HTTP on any reconnect (not the
+    // first connect) since a status update published while disconnected would
+    // otherwise never arrive.
+    socket.on('connect', () => {
+      socket.emit('join-order-room', orderId)
+      if (order?.userId) socket.emit('join-user-room', order.userId)
+      if (hasConnectedBefore) {
+        fetchOrder(orderId).then(setOrder).catch(() => {})
+      }
+      hasConnectedBefore = true
+    })
+
     socket.on('order-status-updated', updateOrder)
     socket.on('order-completed', updateOrder)
     return () => socket.disconnect()
-  }, [orderId, order?.mobile])
+  }, [orderId, order?.userId])
 
   const activeIndex = useMemo(() => {
     if (order?.status === 'Cancelled') return -1
@@ -78,6 +92,6 @@ export function useOrderStatus() {
     steps: STATUS_STEPS,
     activeIndex,
     currentStep,
-    handleBackToMenu: () => navigate('/canteen/menu', { state: { mobile: order?.mobile, seatId: order?.seatId } }),
+    handleBackToMenu: () => navigate('/canteen/menu'),
   }
 }
