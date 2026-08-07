@@ -1,4 +1,6 @@
 import GradientLayer from './GradientLayer.jsx'
+import FogLayer from './FogLayer.jsx'
+import FloodLightRays from './FloodLightRays.jsx'
 import AmbientLighting from './AmbientLighting.jsx'
 import GlowLayer from './GlowLayer.jsx'
 import FloatingParticles from './FloatingParticles.jsx'
@@ -14,10 +16,17 @@ import FloatingParticles from './FloatingParticles.jsx'
  * Phase 3 doesn't modify Hero.jsx) — both use the same loc-dark/grass/gold
  * palette, so the handoff between them reads as continuous.
  *
- * Four GPU-cheap layers (gradient, drifting light, glow orbs, floating
- * dust) — all transform/opacity only, all frozen under
+ * Six GPU-cheap layers (gradient, fog, floodlight rays, drifting light,
+ * glow orbs, floating dust) — all transform/opacity only, all frozen under
  * `prefers-reduced-motion` via CSS (index.css), none of it driven by
  * per-frame React work.
+ *
+ * FogLayer and FloodLightRays are new (stadium-atmosphere pass): fog sits
+ * right above the base gradient so it reads as haze the rest of the scene
+ * sits behind, and the floodlight rays sit above that so they read as
+ * cutting through it — both land before the existing AmbientLighting/
+ * GlowLayer/FloatingParticles, which keep their exact original relative
+ * order and implementation.
  *
  * `-z-10` + `pointer-events-none` + `aria-hidden` keeps this strictly
  * decorative: never intercepts a click or scroll gesture, never announced
@@ -29,6 +38,8 @@ export default function BackgroundSystem() {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
       <GradientLayer />
+      <FogLayer />
+      <FloodLightRays />
       <AmbientLighting />
       <GlowLayer />
       <FloatingParticles />

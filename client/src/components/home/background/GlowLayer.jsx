@@ -10,6 +10,10 @@ const NIGHT_BLUE = '#16303d'
  * gold, one cool night-blue — so the page doesn't read as "all emerald."
  * The third orb is desktop-only (mobile keeps two, see index.css note on
  * the general "fewer/lighter on mobile" approach).
+ *
+ * NEW — a fourth, cool-white orb (top-right, also desktop-only) rounds out
+ * the requested grass/gold/blue/white blend; existing three orbs are
+ * unchanged.
  */
 export default function GlowLayer() {
   return (
@@ -25,6 +29,10 @@ export default function GlowLayer() {
       <div
         className="loc-bg-glow-orb loc-bg-glow-orb--delay-2 absolute bottom-0 left-1/4 hidden h-96 w-96 rounded-full blur-3xl sm:block"
         style={{ background: `color-mix(in srgb, ${NIGHT_BLUE} 55%, transparent)` }}
+      />
+      <div
+        className="loc-bg-glow-orb loc-bg-glow-orb--delay-3 absolute top-0 right-1/4 hidden h-64 w-64 rounded-full blur-3xl sm:block"
+        style={{ background: 'color-mix(in srgb, white 26%, transparent)' }}
       />
     </>
   )

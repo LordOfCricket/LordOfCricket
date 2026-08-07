@@ -192,6 +192,57 @@ body,
   will-change: transform, opacity;
 }
 
+/* NEW — atmospheric fog (FogLayer.jsx). Neutral cool-grey, deliberately
+   not tinted grass/gold, so it reads as depth/haze rather than another
+   colored glow. */
+.loc-bg-fog {
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(210, 220, 228, 0.18), transparent 70%);
+  will-change: transform;
+}
+
+.loc-bg-fog--1 {
+  animation: loc-bg-fog-drift-a 46s ease-in-out infinite;
+}
+
+.loc-bg-fog--2 {
+  animation: loc-bg-fog-drift-b 55s ease-in-out infinite;
+  animation-delay: -20s;
+}
+
+.loc-bg-fog--3 {
+  animation: loc-bg-fog-drift-a 50s ease-in-out infinite;
+  animation-delay: -10s;
+}
+
+/* NEW — stadium floodlight beams (FloodLightRays.jsx). clip-path cones,
+   narrow at the "light source" end, wide at the ground, then blurred hard
+   enough that the straight cone edges dissolve into a soft diffused glow
+   rather than a visible wedge. Cool white core fading through a faint
+   warm-gold mid-tone into transparent — a real floodlight's white beam
+   with a hint of the site's warm accent, not a solid color wash. */
+.loc-bg-flood-ray {
+  clip-path: polygon(46% 0%, 54% 0%, 100% 100%, 0% 100%);
+  transform-origin: 50% 0%;
+}
+
+.loc-bg-flood-ray--left {
+  background: linear-gradient(180deg, rgba(224, 236, 244, 0.4) 0%, rgba(198, 161, 91, 0.14) 55%, transparent 85%);
+  transform: rotate(12deg);
+  animation: loc-bg-ray-sweep-left 36s ease-in-out infinite;
+  will-change: transform;
+}
+
+.loc-bg-flood-ray--right {
+  background: linear-gradient(180deg, rgba(224, 236, 244, 0.34) 0%, rgba(198, 161, 91, 0.11) 55%, transparent 85%);
+  transform: rotate(-12deg);
+  animation: loc-bg-ray-sweep-right 42s ease-in-out infinite;
+  will-change: transform;
+}
+
+.loc-bg-glow-orb--delay-3 {
+  animation-delay: -9s;
+}
+
 @keyframes loc-bg-drift {
   0%,
   100% {
@@ -241,10 +292,55 @@ body,
   }
 }
 
+@keyframes loc-bg-fog-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(4%, -2%, 0);
+  }
+}
+
+@keyframes loc-bg-fog-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-5%, 2%, 0);
+  }
+}
+
+/* Extremely subtle — the beam's own rotation only drifts ~1.5deg either
+   side of its base angle. "Gentle sweeping light movement," per spec,
+   should be almost unnoticeable, not a visible swing. */
+@keyframes loc-bg-ray-sweep-left {
+  0%,
+  100% {
+    transform: rotate(12deg);
+  }
+  50% {
+    transform: rotate(10.5deg);
+  }
+}
+
+@keyframes loc-bg-ray-sweep-right {
+  0%,
+  100% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(-10.5deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .loc-bg-gradient-layer,
   .loc-bg-light-sweep,
-  .loc-bg-glow-orb {
+  .loc-bg-glow-orb,
+  .loc-bg-fog,
+  .loc-bg-flood-ray {
     animation: none;
   }
 
