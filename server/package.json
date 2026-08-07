@@ -3,22 +3,37 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "db:migrate": "node src/config/migrate.js"
+    "db:migrate": "node src/config/migrate.js",
+    "db:seed": "node src/config/seed.js",
+    "db:seed:players": "node src/config/seedPlayers.js",
+    "commentary:rebuild": "node src/scripts/rebuildCommentary.js",
+    "test": "node --test src/domain/**/*.test.js src/utils/**/*.test.js",
+    "test:integration": "node --test src/tests/integration/**/*.test.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.10.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.1",
-    "lord-of-cricket": "file:..",
+    "express-rate-limit": "^8.6.2",
+    "googleapis": "^174.0.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.24.2",
     "multer": "^2.2.0",
     "pg": "^8.22.0",
-    "socket.io": "^4.7.2",
-    "twilio": "^6.0.2"
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

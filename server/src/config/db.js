@@ -1,6 +1,7 @@
 import pg from 'pg'
 import mongoose from 'mongoose'
 import dotenv from 'dotenv'
+import { logger } from '../utils/logger.js'
 
 dotenv.config()
 
@@ -12,14 +13,30 @@ export const pool = new Pool({
   database: process.env.PG_DATABASE,
   password: process.env.PG_PASSWORD,
   port: process.env.PG_PORT,
+  // Tunable without a code change (pg's own default is 10 — same value,
+  // just made explicit and configurable). connectionTimeoutMillis bounds
+  // how long a query can hang waiting for a pool client if Postgres is
+  // unreachable — pg's own default there is 0 (no timeout, i.e. hang
+  // forever), which is the wrong default for a production health check or
+  // request path.
+  max: Number(process.env.PG_POOL_MAX) || 10,
+  connectionTimeoutMillis: 10000,
+})
+
+// node-postgres emits 'error' on the pool when an already-connected, idle
+// client is dropped by the backend (network blip, DB restart, etc). Without
+// a listener here, that becomes an uncaught exception that kills the whole
+// process — a single flaky connection should never take the API down.
+pool.on('error', (err) => {
+  logger.error('Unexpected Postgres pool error (idle client)', { error: err.message })
 })
 
 export async function connectPostgres() {
   try {
     const res = await pool.query('SELECT NOW()')
-    console.log('✅ Postgres connected:', res.rows[0].now)
+    logger.info('Postgres connected', { serverTime: res.rows[0].now })
   } catch (err) {
-    console.error('❌ Postgres connection failed:', err.message)
+    logger.error('Postgres connection failed — exiting', { error: err.message })
     process.exit(1)
   }
 }
@@ -27,9 +44,9 @@ export async function connectPostgres() {
 export async function connectMongo() {
   try {
     await mongoose.connect(process.env.MONGO_URI)
-    console.log('✅ MongoDB connected')
+    logger.info('MongoDB connected')
   } catch (err) {
-    console.error('⚠️  MongoDB connection failed (continuing without it):', err.message)
+    logger.warn('MongoDB connection failed (continuing without it)', { error: err.message })
   }
 }
 

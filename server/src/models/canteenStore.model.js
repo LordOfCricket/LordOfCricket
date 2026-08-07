@@ -1,15 +1,3 @@
-const staffId = process.env.STAFF_USER_ID || 'staff001'
-const staffPassword = process.env.STAFF_LOGIN_PASSWORD || ''
-const staffName = process.env.STAFF_USER_NAME || 'Canteen Staff'
-
-const staffUsers = [
-  {
-    id: staffId,
-    password: staffPassword,
-    name: staffName,
-  },
-]
-
 const masterMenu = [
   {
     id: 'burger',
@@ -78,4 +66,4 @@ const todaysMenu = {
 
 const orders = []
 
-export { staffUsers, masterMenu, todaysMenu, orders }
+export { masterMenu, todaysMenu, orders }

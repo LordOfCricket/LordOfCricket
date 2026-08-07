@@ -37,7 +37,7 @@ export default function OrderStatusPage() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-wide text-slate-300">Customer</p>
-                  <p className="mt-2 text-2xl font-bold text-white">{order?.mobile || '—'}</p>
+                  <p className="mt-2 text-2xl font-bold text-white">{order?.customerName || '—'}</p>
                 </div>
                 <div className="rounded-2xl bg-slate-950/70 px-4 py-3 text-right text-white ring-1 ring-white/10">
                   <div className="text-xs uppercase tracking-wide text-slate-300">Order ID</div>
