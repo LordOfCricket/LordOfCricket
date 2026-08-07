@@ -9,6 +9,7 @@ import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
+import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
 
 function SectionHeading({ eyebrow, title, subtitle }) {
@@ -33,13 +34,8 @@ export default function HomePage() {
   const [bookingOpen, setBookingOpen] = useState(false)
 
   return (
-    <div id="home" className="relative min-h-screen overflow-x-hidden bg-emerald-950">
-      {/* Ambient glow blobs */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl" />
-        <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 h-96 w-96 rounded-full bg-emerald-600/10 blur-3xl" />
-      </div>
+    <div id="home" className="relative min-h-screen overflow-x-hidden bg-loc-dark">
+      <BackgroundSystem />
 
       <Navbar />
       <Hero />
@@ -144,7 +140,7 @@ export default function HomePage() {
       </div>
 
       {/* Footer */}
-      <footer className="relative border-t border-emerald-400/10 bg-emerald-950/60 px-6 py-10 lg:px-10">
+      <footer className="relative border-t border-emerald-400/10 bg-loc-dark/60 px-6 py-10 lg:px-10">
         <div className="flex w-full flex-col items-center justify-between gap-6 lg:flex-row">
           <div className="flex items-center">
             <img
