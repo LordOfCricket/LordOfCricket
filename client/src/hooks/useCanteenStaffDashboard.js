@@ -15,9 +15,15 @@ import {
   emptyNewFood,
   emptyEditFood,
 } from '../models/canteenDashboard.model.js'
+import { useAuth } from './useAuth.js'
 
 export function useStaffDashboard() {
-  const [tab, setTab] = useState('manage')
+  const { user } = useAuth()
+  // canteen_staff only has Orders access (view/update order status) — no
+  // menu/stock/price management. Everyone else (super_admin/admin) lands on
+  // Manage Today, matching the existing default.
+  const isCanteenStaffOnly = user?.role === 'staff' && user?.staff_role === 'canteen_staff'
+  const [tab, setTab] = useState(isCanteenStaffOnly ? 'orders' : 'manage')
   const [orders, setOrders] = useState([])
   const [todayItems, setTodayItems] = useState([])
   const [masterItems, setMasterItems] = useState([])
@@ -31,6 +37,15 @@ export function useStaffDashboard() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
 
+  // Phase 13 — order history. The live "Orders" tab/queue above is
+  // deliberately active-only (fetchOrders(..., 'active')); staff previously
+  // had no UI path at all to review a completed/cancelled order after it left
+  // that queue, even though the backend already supports an unfiltered fetch.
+  const [historyOrders, setHistoryOrders] = useState([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('all')
+
   const loadOrders = useCallback(async (targetPage = 1) => {
     try {
       const data = await fetchOrders(targetPage, limit, 'active')
@@ -42,6 +57,16 @@ export function useStaffDashboard() {
       })
     } catch (err) {
       setError(err.response?.data?.error || 'Unable to load orders.')
+    }
+  }, [limit])
+
+  const loadHistory = useCallback(async (targetPage = 1) => {
+    try {
+      const data = await fetchOrders(targetPage, limit)
+      setHistoryOrders(data.orders)
+      setHistoryTotal(data.total)
+    } catch (err) {
+      setError(err.response?.data?.error || 'Unable to load order history.')
     }
   }, [limit])
 
@@ -66,11 +91,11 @@ export function useStaffDashboard() {
   const refreshDashboard = useCallback(async () => {
     setIsRefreshing(true)
     try {
-      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster()])
+      await Promise.all([loadOrders(page), loadMenuConfig(), loadMaster(), loadHistory(historyPage)])
     } finally {
       setIsRefreshing(false)
     }
-  }, [page, loadOrders, loadMenuConfig, loadMaster])
+  }, [page, historyPage, loadOrders, loadMenuConfig, loadMaster, loadHistory])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -81,8 +106,30 @@ export function useStaffDashboard() {
   }, [page, refreshDashboard])
 
   useEffect(() => {
+    if (tab !== 'history') return undefined
+    const timer = window.setTimeout(() => {
+      void loadHistory(historyPage)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [tab, historyPage, loadHistory])
+
+  useEffect(() => {
     const socket = io(socketUrl)
-    socket.emit('join-staff-room')
+    let hasConnectedBefore = false
+
+    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // auto-rejoins an app-level room on its own reconnect; re-emit the join
+    // every time, and resync orders/menu via HTTP on any reconnect (not the
+    // first connect) so a status change published while the staff dashboard
+    // was disconnected (ground WiFi drop, etc.) is never silently missed.
+    socket.on('connect', () => {
+      socket.emit('join-staff-room')
+      if (hasConnectedBefore) {
+        loadOrders(page)
+        loadMenuConfig()
+      }
+      hasConnectedBefore = true
+    })
 
     socket.on('order-created', () => loadOrders(page))
     socket.on('order-status-updated', () => loadOrders(page))
@@ -213,18 +260,25 @@ export function useStaffDashboard() {
   }
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit])
+  const historyTotalPages = useMemo(() => Math.max(1, Math.ceil(historyTotal / limit)), [historyTotal, limit])
 
   const filteredOrders = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
 
     return orders.filter((order) => {
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter
-      const matchesSearch = !term || [order.id, order.mobile, order.seatId].some((value) => String(value || '').toLowerCase().includes(term))
+      const matchesSearch = !term || [order.id, order.customerName, order.seatId].some((value) => String(value || '').toLowerCase().includes(term))
       return matchesStatus && matchesSearch
     })
   }, [orders, searchTerm, statusFilter])
 
+  const filteredHistoryOrders = useMemo(() => {
+    if (historyStatusFilter === 'all') return historyOrders
+    return historyOrders.filter((order) => order.status === historyStatusFilter)
+  }, [historyOrders, historyStatusFilter])
+
   return {
+    isCanteenStaffOnly,
     tab,
     setTab,
     orders,
@@ -265,5 +319,11 @@ export function useStaffDashboard() {
     handleEditFoodImageChange,
     totalPages,
     filteredOrders,
+    historyPage,
+    setHistoryPage,
+    historyTotalPages,
+    historyStatusFilter,
+    setHistoryStatusFilter,
+    filteredHistoryOrders,
   }
 }

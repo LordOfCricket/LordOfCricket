@@ -1,2 +1,22 @@
 node_modules
 .env
+.env.local
+.env.*.local
+
+# Build outputs
+dist
+build
+
+# User-uploaded content (server/uploads/**) — runtime data, not source
+uploads
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage
+
+# OS junk
+.DS_Store
+Thumbs.db

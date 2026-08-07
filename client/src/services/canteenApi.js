@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getStoredToken } from '../utils/authToken.js'
 
 // The merged backend serves canteen routes under /api/canteen (see server/src/app.js).
 // VITE_API_URL already points at ".../api" (e.g. http://localhost:5000/api),
@@ -7,20 +8,13 @@ const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/canteen`,
 })
 
-export async function loginStaff(payload) {
-  const response = await api.post('/auth/staff/login', payload)
-  return response.data
-}
-
-export async function sendOtp(payload) {
-  const response = await api.post('/auth/otp/send', payload)
-  return response.data
-}
-
-export async function verifyOtp(payload) {
-  const response = await api.post('/auth/otp/verify', payload)
-  return response.data
-}
+api.interceptors.request.use((config) => {
+  const token = getStoredToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
 
 export async function fetchMenu() {
   const response = await api.get('/menu')
@@ -57,18 +51,18 @@ export async function deleteMenuItem(id) {
   return response.data
 }
 
-export async function lookupOrderByMobile(mobile) {
-  const response = await api.get('/orders/lookup', { params: { mobile } })
+export async function lookupOrderByUser(userId) {
+  const response = await api.get('/orders/lookup', { params: { userId } })
   return response.data.order
 }
 
-export async function fetchActiveOrder(mobile) {
-  const response = await api.get(`/orders/active/${mobile}`)
+export async function fetchActiveOrder(userId) {
+  const response = await api.get(`/orders/active/${userId}`)
   return response.data.order
 }
 
-export async function fetchOrderHistory(mobile) {
-  const response = await api.get(`/orders/history/${mobile}`)
+export async function fetchOrderHistory(userId) {
+  const response = await api.get(`/orders/history/${userId}`)
   return response.data.orders
 }
 
