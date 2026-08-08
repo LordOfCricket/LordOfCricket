@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { getAmenities } from '../../services/amenities.js'
 import useGlowHover from '../../hooks/useGlowHover.js'
 import GlowOverlay from './GlowOverlay.jsx'
+import ScrollReveal from './ScrollReveal.jsx'
+import StaggerItem from './StaggerItem.jsx'
+import { staggerContainer } from '../../lib/revealVariants.js'
 
 function AmenityCard({ amenity }) {
   const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
@@ -46,10 +49,16 @@ export default function AmenitiesGrid() {
   }
 
   return (
-    <div className="flex w-full flex-wrap justify-center gap-8 px-6 lg:gap-10 lg:px-10">
+    <ScrollReveal
+      variant={staggerContainer(0.06)}
+      amount={0.15}
+      className="flex w-full flex-wrap justify-center gap-8 px-6 lg:gap-10 lg:px-10"
+    >
       {amenities.map((amenity) => (
-        <AmenityCard key={amenity.id} amenity={amenity} />
+        <StaggerItem key={amenity.id}>
+          <AmenityCard amenity={amenity} />
+        </StaggerItem>
       ))}
-    </div>
+    </ScrollReveal>
   )
 }
