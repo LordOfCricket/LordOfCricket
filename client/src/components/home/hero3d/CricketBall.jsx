@@ -8,6 +8,14 @@ import { createCricketBallSurfaceTexture } from './cricketBallTexture.js'
 const ROTATION_SPEED = 0.15
 const FLOAT_SPEED = 0.12
 const FLOAT_AMPLITUDE = 0.04
+// Phase 7 — a tiny depth (z-axis) drift, independent of the vertical float:
+// a different speed and a cosine instead of a sine so the two never share a
+// phase (they'd cross zero together every cycle otherwise, which reads as
+// one motion pretending to be two). Amplitude stays small relative to the
+// camera's 13-unit distance — this is a "suspended in space" cue, not a
+// bob toward/away from camera.
+const DEPTH_SPEED = 0.09
+const DEPTH_AMPLITUDE = 0.025
 // Phase 7.4 — the ball now reads as *slightly* more responsive than
 // CameraRig's parallax (0.07), not less: two layers moving at visibly
 // different rates (and both run through easePointer, see below) is what
@@ -41,12 +49,16 @@ const ROTATION_AXIS = new Vector3(0.22, 0.92, 0.14).normalize()
  * the procedural seam/grain texture from cricketBallTexture.js.
  *
  * Phase 7.4 — restructured into the group hierarchy the visual review asked
- * for: an outer `floatGroup` owns float + pointer tilt (the two motions
- * that should move the ball as a whole), an inner static group applies
- * SEAM_TILT once (orientation), and the innermost mesh owns only the
- * continuous off-axis spin. Splitting these means the seam's resting angle,
- * its tumble, and the ball's float/tilt are three independent motions
+ * for: an outer `floatGroup` owns float + depth drift + pointer tilt (the
+ * motions that should move the ball as a whole), an inner static group
+ * applies SEAM_TILT once (orientation), and the innermost mesh owns only
+ * the continuous off-axis spin. Splitting these means the seam's resting
+ * angle, its tumble, and the ball's float/tilt are independent motions
  * instead of one rotation.y doing all the work.
+ *
+ * Phase 7 — float (y), depth drift (z, see DEPTH_SPEED/DEPTH_AMPLITUDE
+ * above) and pointer tilt each run on their own speed/phase, so the ball
+ * never collapses into "one sine wave wearing three hats."
  *
  * Pointer tilt is still sourced from Phase 4's existing MouseParallaxProvider
  * via useHeroParallax3D — the same bridge CameraRig uses, not a new
@@ -68,6 +80,7 @@ export default function CricketBall() {
 
     const t = state.clock.elapsedTime
     floatGroup.position.y = Math.sin(t * FLOAT_SPEED) * FLOAT_AMPLITUDE
+    floatGroup.position.z = Math.cos(t * DEPTH_SPEED) * DEPTH_AMPLITUDE
 
     floatGroup.rotation.x = enabled ? -easePointer(y.get()) * TILT_AMPLITUDE : 0
     floatGroup.rotation.z = enabled ? easePointer(x.get()) * TILT_AMPLITUDE : 0
