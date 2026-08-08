@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { statusLabel } from '../../models/matchDiscovery.model.js'
+import useGlowHover from '../../hooks/useGlowHover.js'
+import GlowOverlay from '../common/GlowOverlay.jsx'
 
 // Phase 10 Part 1 — the homepage's prominent single live match (Part 27/28).
 // Deterministic selection: whichever match listPublicMatches({category:'LIVE'})
@@ -15,6 +17,7 @@ function chaseLine(chase) {
 
 export default function FeaturedLiveMatch({ match }) {
   const navigate = useNavigate()
+  const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
 
   if (!match) {
     return (
@@ -35,8 +38,11 @@ export default function FeaturedLiveMatch({ match }) {
     <button
       type="button"
       onClick={() => navigate(`/matches/${match.id}/summary`)}
-      className="flex h-full w-full flex-col gap-4 rounded-3xl border border-emerald-400/15 bg-linear-to-b from-emerald-900/60 to-emerald-950/60 p-6 text-left shadow-2xl shadow-black/30 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-emerald-400/40"
+      ref={glowRef}
+      {...(glowEnabled ? { onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } : {})}
+      className="relative flex h-full w-full flex-col gap-4 rounded-3xl border border-emerald-400/15 bg-linear-to-b from-emerald-900/60 to-emerald-950/60 p-6 text-left shadow-2xl shadow-black/30 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-emerald-400/40"
     >
+      {glowEnabled && <GlowOverlay />}
       <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-rose-500/15 px-3 py-1 text-xs font-bold uppercase tracking-widest text-rose-200">
         <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" />
         {statusLabel(match)}

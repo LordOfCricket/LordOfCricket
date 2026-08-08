@@ -4,6 +4,7 @@ import FloodLightRays from './FloodLightRays.jsx'
 import AmbientLighting from './AmbientLighting.jsx'
 import GlowLayer from './GlowLayer.jsx'
 import FloatingParticles from './FloatingParticles.jsx'
+import ParallaxLayer from '../../common/ParallaxLayer.jsx'
 
 /**
  * The homepage's single shared atmosphere. Mounted once (in HomePage.jsx,
@@ -33,15 +34,33 @@ import FloatingParticles from './FloatingParticles.jsx'
  * to screen readers, and — because -z-10 is a large negative value —
  * can't end up above real content regardless of what z-index a future
  * section adds.
+ *
+ * Phase 4 — each layer (except FloatingParticles, which already animates)
+ * is wrapped in ParallaxLayer for a few px of mouse-parallax, sourced from
+ * Hero's pointer listener via MouseParallaxProvider (see HomePage.jsx).
+ * Background moves least, glow moves most — a subtle depth cue, not a
+ * redesign of any layer. Each wrapper's `absolute inset-0` is pixel-
+ * identical to the outer `fixed inset-0` div it sits inside, so every
+ * layer's own offsets (-top-32, top-1/3, etc.) resolve exactly as before.
  */
 export default function BackgroundSystem() {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-      <GradientLayer />
-      <FogLayer />
-      <FloodLightRays />
-      <AmbientLighting />
-      <GlowLayer />
+      <ParallaxLayer strength={3} className="pointer-events-none absolute inset-0">
+        <GradientLayer />
+      </ParallaxLayer>
+      <ParallaxLayer strength={5} className="pointer-events-none absolute inset-0">
+        <FogLayer />
+      </ParallaxLayer>
+      <ParallaxLayer strength={6} className="pointer-events-none absolute inset-0">
+        <FloodLightRays />
+      </ParallaxLayer>
+      <ParallaxLayer strength={4} className="pointer-events-none absolute inset-0">
+        <AmbientLighting />
+      </ParallaxLayer>
+      <ParallaxLayer strength={8} className="pointer-events-none absolute inset-0">
+        <GlowLayer />
+      </ParallaxLayer>
       <FloatingParticles />
     </div>
   )
