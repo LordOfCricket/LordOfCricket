@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { getPartners } from '../../services/partners.js'
 import useGlowHover from '../../hooks/useGlowHover.js'
 import GlowOverlay from './GlowOverlay.jsx'
+import ScrollReveal from './ScrollReveal.jsx'
+import StaggerItem from './StaggerItem.jsx'
+import { staggerContainer, staggerItemScale } from '../../lib/revealVariants.js'
 
 function PartnerCard({ partner }) {
   const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
@@ -52,10 +55,16 @@ export default function PartnersGrid() {
   }
 
   return (
-    <div className="flex w-full flex-wrap justify-center gap-8 px-6 lg:gap-10 lg:px-10">
+    <ScrollReveal
+      variant={staggerContainer(0.1)}
+      amount={0.15}
+      className="flex w-full flex-wrap justify-center gap-8 px-6 lg:gap-10 lg:px-10"
+    >
       {partners.map((partner) => (
-        <PartnerCard key={partner.id} partner={partner} />
+        <StaggerItem key={partner.id} variant={staggerItemScale}>
+          <PartnerCard partner={partner} />
+        </StaggerItem>
       ))}
-    </div>
+    </ScrollReveal>
   )
 }

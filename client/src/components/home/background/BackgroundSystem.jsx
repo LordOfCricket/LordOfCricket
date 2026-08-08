@@ -5,6 +5,7 @@ import AmbientLighting from './AmbientLighting.jsx'
 import GlowLayer from './GlowLayer.jsx'
 import FloatingParticles from './FloatingParticles.jsx'
 import ParallaxLayer from '../../common/ParallaxLayer.jsx'
+import ScrollAtmosphere from './ScrollAtmosphere.jsx'
 
 /**
  * The homepage's single shared atmosphere. Mounted once (in HomePage.jsx,
@@ -42,6 +43,13 @@ import ParallaxLayer from '../../common/ParallaxLayer.jsx'
  * redesign of any layer. Each wrapper's `absolute inset-0` is pixel-
  * identical to the outer `fixed inset-0` div it sits inside, so every
  * layer's own offsets (-top-32, top-1/3, etc.) resolve exactly as before.
+ *
+ * Phase 5 — Ambient + Glow (the two lighting layers) are additionally
+ * wrapped in one shared ScrollAtmosphere, a slow opacity "breathe" tied to
+ * page-scroll progress. Gradient/Fog/FloodLightRays/Particles are
+ * untouched — only the lighting reads as "evolving" while scrolling, per
+ * the brief's "lighting may shift slightly, do not create dramatic
+ * changes."
  */
 export default function BackgroundSystem() {
   return (
@@ -55,12 +63,14 @@ export default function BackgroundSystem() {
       <ParallaxLayer strength={6} className="pointer-events-none absolute inset-0">
         <FloodLightRays />
       </ParallaxLayer>
-      <ParallaxLayer strength={4} className="pointer-events-none absolute inset-0">
-        <AmbientLighting />
-      </ParallaxLayer>
-      <ParallaxLayer strength={8} className="pointer-events-none absolute inset-0">
-        <GlowLayer />
-      </ParallaxLayer>
+      <ScrollAtmosphere className="pointer-events-none absolute inset-0">
+        <ParallaxLayer strength={4} className="pointer-events-none absolute inset-0">
+          <AmbientLighting />
+        </ParallaxLayer>
+        <ParallaxLayer strength={8} className="pointer-events-none absolute inset-0">
+          <GlowLayer />
+        </ParallaxLayer>
+      </ScrollAtmosphere>
       <FloatingParticles />
     </div>
   )
