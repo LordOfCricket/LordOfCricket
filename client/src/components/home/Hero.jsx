@@ -2,6 +2,8 @@ import { motion, useReducedMotion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
+import ParallaxLayer from '../common/ParallaxLayer.jsx'
+import useMouseParallax from '../../hooks/useMouseParallax.js'
 import { reveal } from '../../lib/motion.js'
 
 // Entrance sequence: background (instant) → gallery → LOC panel → India
@@ -12,9 +14,17 @@ const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 export default function Hero() {
   const reduceMotion = useReducedMotion()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
+  // Phase 4 — Hero is the pointer "source": one listener here drives the
+  // shared parallax MotionValues that BackgroundSystem's layers and the
+  // panels below all read from (see MouseParallaxContext.jsx).
+  const { onPointerMove, onPointerLeave, enabled: parallaxEnabled } = useMouseParallax()
 
   return (
-    <section className="relative flex min-h-dvh w-full flex-col overflow-hidden bg-loc-dark">
+    <section
+      className="relative flex min-h-dvh w-full flex-col overflow-hidden bg-loc-dark"
+      onPointerMove={parallaxEnabled ? onPointerMove : undefined}
+      onPointerLeave={parallaxEnabled ? onPointerLeave : undefined}
+    >
       {/* Restrained atmosphere: real ground photography carries the visual
           weight now, so the backdrop stays quiet — a dark wash + one soft
           floodlight glow, nothing competing with the photo or the scores. */}
@@ -45,15 +55,21 @@ export default function Hero() {
               row on tablet; everything stacked on mobile, gallery first. */}
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:h-140 lg:grid-cols-[2fr_1fr] lg:gap-5 xl:h-155">
             <motion.div {...motionProps(DELAY.gallery)} className="lg:h-full">
-              <GroundGallery className="lg:h-full" />
+              <ParallaxLayer strength={10} tilt tiltStrength={3} className="lg:h-full">
+                <GroundGallery className="lg:h-full" />
+              </ParallaxLayer>
             </motion.div>
 
             <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:h-full lg:grid-cols-1 lg:gap-5">
               <motion.div {...motionProps(DELAY.loc)} className="lg:h-full">
-                <LocMatchPanel className="lg:h-full" />
+                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
+                  <LocMatchPanel className="lg:h-full" />
+                </ParallaxLayer>
               </motion.div>
               <motion.div {...motionProps(DELAY.india)} className="lg:h-full">
-                <IndiaMatchPanel className="lg:h-full" />
+                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
+                  <IndiaMatchPanel className="lg:h-full" />
+                </ParallaxLayer>
               </motion.div>
             </div>
           </div>

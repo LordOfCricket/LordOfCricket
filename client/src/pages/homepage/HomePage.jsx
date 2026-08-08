@@ -10,6 +10,7 @@ import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
+import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
 
 function SectionHeading({ eyebrow, title, subtitle }) {
@@ -35,10 +36,12 @@ export default function HomePage() {
 
   return (
     <div id="home" className="relative min-h-screen overflow-x-hidden bg-loc-dark">
-      <BackgroundSystem />
+      <MouseParallaxProvider>
+        <BackgroundSystem />
 
-      <Navbar />
-      <Hero />
+        <Navbar />
+        <Hero />
+      </MouseParallaxProvider>
 
       <div className="relative flex flex-col items-center gap-16 pb-16">
         {/* Full gallery — the hero above shows a compact rotating preview of

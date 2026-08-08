@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { statusLabel, formatMatchDate, formatMatchTime, formatOversFormat } from '../../models/matchDiscovery.model.js'
 import TeamBadge from '../teams/TeamBadge.jsx'
+import useGlowHover from '../../hooks/useGlowHover.js'
+import GlowOverlay from '../common/GlowOverlay.jsx'
 
 // Phase 10 Part 1 — one adaptive card for all three categories (Part 12),
 // never three unrelated implementations. Every number shown is already
@@ -54,6 +56,7 @@ function chaseLine(chase) {
 
 export default function MatchCard({ match }) {
   const navigate = useNavigate()
+  const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
   const innings1 = match.innings.find((i) => i.inningsNumber === 1) || null
   const innings2 = match.innings.find((i) => i.inningsNumber === 2) || null
   const chaseText = chaseLine(match.chase)
@@ -62,8 +65,11 @@ export default function MatchCard({ match }) {
     <button
       type="button"
       onClick={() => navigate(`/matches/${match.id}/summary`)}
-      className="flex w-full flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left shadow-sm backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-emerald-400/30 hover:bg-slate-900/80 sm:p-5"
+      ref={glowRef}
+      {...(glowEnabled ? { onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } : {})}
+      className="relative flex w-full flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-left shadow-sm backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-emerald-400/30 hover:bg-slate-900/80 sm:p-5"
     >
+      {glowEnabled && <GlowOverlay />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <StatusBadge match={match} />
         <p className="text-xs font-medium text-slate-400">
