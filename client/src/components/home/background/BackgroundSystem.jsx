@@ -6,6 +6,8 @@ import GlowLayer from './GlowLayer.jsx'
 import FloatingParticles from './FloatingParticles.jsx'
 import ParallaxLayer from '../../common/ParallaxLayer.jsx'
 import ScrollAtmosphere from './ScrollAtmosphere.jsx'
+import EnvironmentTint from './EnvironmentTint.jsx'
+import { ScrollEnvironmentProvider } from '../../../context/ScrollEnvironmentContext.jsx'
 
 /**
  * The homepage's single shared atmosphere. Mounted once (in HomePage.jsx,
@@ -50,28 +52,41 @@ import ScrollAtmosphere from './ScrollAtmosphere.jsx'
  * untouched — only the lighting reads as "evolving" while scrolling, per
  * the brief's "lighting may shift slightly, do not create dramatic
  * changes."
+ *
+ * Phase 6 — ScrollEnvironmentProvider replaces Phase 5's private scroll
+ * listener (inside the old ScrollAtmosphere) with one shared scroll-
+ * progress source, scoped to this subtree only. ScrollAtmosphere's
+ * "breathe" curve now follows a section-anchored lighting progression
+ * (environmentTimeline.js) instead of a flat 3-point pulse, and a new
+ * EnvironmentTint layer — rendered last, above FloatingParticles — grades
+ * the whole composed scene's color temperature through that same
+ * progression. Every existing layer file (Gradient/Fog/FloodLightRays/
+ * AmbientLighting/GlowLayer/FloatingParticles) is unmodified.
  */
 export default function BackgroundSystem() {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-      <ParallaxLayer strength={3} className="pointer-events-none absolute inset-0">
-        <GradientLayer />
-      </ParallaxLayer>
-      <ParallaxLayer strength={5} className="pointer-events-none absolute inset-0">
-        <FogLayer />
-      </ParallaxLayer>
-      <ParallaxLayer strength={6} className="pointer-events-none absolute inset-0">
-        <FloodLightRays />
-      </ParallaxLayer>
-      <ScrollAtmosphere className="pointer-events-none absolute inset-0">
-        <ParallaxLayer strength={4} className="pointer-events-none absolute inset-0">
-          <AmbientLighting />
+    <ScrollEnvironmentProvider>
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+        <ParallaxLayer strength={3} className="pointer-events-none absolute inset-0">
+          <GradientLayer />
         </ParallaxLayer>
-        <ParallaxLayer strength={8} className="pointer-events-none absolute inset-0">
-          <GlowLayer />
+        <ParallaxLayer strength={5} className="pointer-events-none absolute inset-0">
+          <FogLayer />
         </ParallaxLayer>
-      </ScrollAtmosphere>
-      <FloatingParticles />
-    </div>
+        <ParallaxLayer strength={6} className="pointer-events-none absolute inset-0">
+          <FloodLightRays />
+        </ParallaxLayer>
+        <ScrollAtmosphere className="pointer-events-none absolute inset-0">
+          <ParallaxLayer strength={4} className="pointer-events-none absolute inset-0">
+            <AmbientLighting />
+          </ParallaxLayer>
+          <ParallaxLayer strength={8} className="pointer-events-none absolute inset-0">
+            <GlowLayer />
+          </ParallaxLayer>
+        </ScrollAtmosphere>
+        <FloatingParticles />
+        <EnvironmentTint className="pointer-events-none absolute inset-0 opacity-70 sm:opacity-100" />
+      </div>
+    </ScrollEnvironmentProvider>
   )
 }

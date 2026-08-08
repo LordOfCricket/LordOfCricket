@@ -10,6 +10,7 @@ import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
+import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
@@ -47,9 +48,10 @@ export default function HomePage() {
   const [bookingOpen, setBookingOpen] = useState(false)
 
   return (
-    <div id="home" className="relative min-h-screen overflow-x-hidden bg-loc-dark">
+    <div id="home" className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
       <MouseParallaxProvider>
         <BackgroundSystem />
+        <CursorGlow />
 
         <Navbar />
         <Hero />
@@ -60,17 +62,13 @@ export default function HomePage() {
             these same ground photos; this is the expanded view its "View
             Gallery" link scrolls to. India's score now lives in the hero,
             so this row is gallery-only (no more duplicate India card). */}
-        <ScrollReveal
-          as="div"
-          variant={atmosphereReveal}
-          amount={0.2}
-          id="gallery"
-          className="w-full scroll-mt-24 px-6 lg:px-10"
-        >
-          <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
-            <ImageSlider />
-          </div>
-        </ScrollReveal>
+        <div id="gallery" className="w-full scroll-mt-24 px-6 lg:px-10">
+          <ScrollReveal as="div" variant={atmosphereReveal} amount={0.2} className="w-full">
+            <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
+              <ImageSlider />
+            </div>
+          </ScrollReveal>
+        </div>
 
         {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
         <div id="matches" className="w-full scroll-mt-24">

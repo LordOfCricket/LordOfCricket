@@ -1,10 +1,18 @@
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
 import ParallaxLayer from '../common/ParallaxLayer.jsx'
 import useMouseParallax from '../../hooks/useMouseParallax.js'
+import useWebGLCapability from '../../hooks/useWebGLCapability.js'
+import HeroSceneBoundary from './hero3d/HeroSceneBoundary.jsx'
 import { reveal } from '../../lib/motion.js'
+
+// Phase 7.1 — its own chunk, never bundled with Hero/HomePage. Import
+// deferred until after first paint (see the idle-mount effect below), so
+// this never competes with the critical render path.
+const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 
 // Entrance sequence: background (instant) → gallery → LOC panel → India
 // panel, a short cascade rather than a marketing reveal — the hero's job now
@@ -18,6 +26,34 @@ export default function Hero() {
   // shared parallax MotionValues that BackgroundSystem's layers and the
   // panels below all read from (see MouseParallaxContext.jsx).
   const { onPointerMove, onPointerLeave, enabled: parallaxEnabled } = useMouseParallax()
+
+  // Phase 7.1 — mount decision happens here, before HeroScene's dynamic
+  // import ever fires: unsupported/low-end devices (useWebGLCapability)
+  // and reduced-motion users (accessibility default: scene doesn't mount
+  // at all) never download the three.js chunk. Approved devices still
+  // defer the import until the browser is idle after first paint, so the
+  // 3D scene can never delay Hero's own content from appearing.
+  const webglCapable = useWebGLCapability()
+  const [sceneReady, setSceneReady] = useState(false)
+
+  useEffect(() => {
+    if (!webglCapable || reduceMotion) return undefined
+    let cancelled = false
+    const idleId = window.requestIdleCallback
+      ? window.requestIdleCallback(() => {
+          if (!cancelled) setSceneReady(true)
+        })
+      : setTimeout(() => {
+          if (!cancelled) setSceneReady(true)
+        }, 200)
+    return () => {
+      cancelled = true
+      if (window.requestIdleCallback && window.cancelIdleCallback) window.cancelIdleCallback(idleId)
+      else clearTimeout(idleId)
+    }
+  }, [webglCapable, reduceMotion])
+
+  const showScene = webglCapable && !reduceMotion && sceneReady
 
   return (
     <section
@@ -47,6 +83,22 @@ export default function Hero() {
           />
         )}
       </div>
+
+      {/* Phase 7.1 — Hero 3D foundation. Sits above the CSS backdrop and
+          below the content grid (z-10) purely by DOM order, matching the
+          backdrop div's own convention of not needing an explicit
+          z-index. Decorative only: pointer-events-none + aria-hidden, and
+          HeroSceneBoundary means any WebGL/render failure silently falls
+          back to nothing — the CSS backdrop above stands on its own. */}
+      {showScene && (
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <HeroSceneBoundary>
+            <Suspense fallback={null}>
+              <HeroScene />
+            </Suspense>
+          </HeroSceneBoundary>
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-1 flex-col pt-20 pb-5 lg:pt-24 lg:pb-6">
         <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col justify-center px-4 sm:px-6 lg:px-8">
