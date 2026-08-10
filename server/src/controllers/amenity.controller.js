@@ -1,9 +1,8 @@
-import { unlink } from 'fs/promises'
-import { join } from 'path'
 import { createAmenity, findAllAmenities, deleteAmenity } from '../models/amenity.model.js'
-import { createUploader } from '../config/upload.js'
+import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { logger } from '../utils/logger.js'
 
-const { uploadsDir } = createUploader('amenities')
+const CLOUDINARY_FOLDER = 'LOC/amenities'
 
 export async function listAmenities(req, res, next) {
   try {
@@ -36,9 +35,28 @@ export async function uploadAmenity(req, res, next) {
     if (!name) {
       return res.status(400).json({ message: 'name is required' })
     }
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/amenities/${req.file.filename}`
-    const amenity = await createAmenity({ name, imageUrl, sortOrder })
-    res.status(201).json(amenity)
+    const uploaded = await uploadImageFileDetailed(req.file, CLOUDINARY_FOLDER)
+
+    try {
+      const amenity = await createAmenity({
+        name,
+        imageUrl: uploaded.url,
+        sortOrder,
+        cloudinaryPublicId: uploaded.publicId,
+      })
+      res.status(201).json(amenity)
+    } catch (dbErr) {
+      try {
+        await deleteImageByPublicId(uploaded.publicId)
+      } catch (cleanupErr) {
+        logger.error('Failed to roll back orphaned Cloudinary asset after amenities insert failure', {
+          publicId: uploaded.publicId,
+          saveError: dbErr.message,
+          cleanupError: cleanupErr.message,
+        })
+      }
+      throw dbErr
+    }
   } catch (err) {
     next(err)
   }
@@ -50,9 +68,16 @@ export async function removeAmenity(req, res, next) {
     if (!amenity) {
       return res.status(404).json({ message: 'Amenity not found' })
     }
-    if (amenity.image_url.includes('/uploads/amenities/')) {
-      const filename = amenity.image_url.split('/uploads/amenities/')[1]
-      await unlink(join(uploadsDir, filename)).catch(() => {})
+    if (amenity.cloudinary_public_id) {
+      try {
+        await deleteImageByPublicId(amenity.cloudinary_public_id)
+      } catch (err) {
+        logger.error('Cloudinary delete failed during amenity removal', {
+          id: req.params.id,
+          publicId: amenity.cloudinary_public_id,
+          error: err.message,
+        })
+      }
     }
     res.json(amenity)
   } catch (err) {

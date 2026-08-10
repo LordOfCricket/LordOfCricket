@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import CameraRig from './CameraRig.jsx'
 import LightingRig from './LightingRig.jsx'
-import CricketBall from './CricketBall.jsx'
 import usePointerCapability from '../../../hooks/usePointerCapability.js'
 
 /**
@@ -65,7 +64,6 @@ export default function HeroScene() {
       >
         <CameraRig />
         <LightingRig />
-        <CricketBall />
       </Canvas>
     </div>
   )

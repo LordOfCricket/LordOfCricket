@@ -702,3 +702,20 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_role_id INTEGER REFERENCES staf
 -- unchanged). Unique at the DB level; duplicates are caught and translated
 -- to a clean validation error in staff.controller.js.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;
+
+-- ============================================================================
+-- PHASE 10 (3D homepage project) — Ground media storage migrated to Cloudinary
+-- ============================================================================
+--
+-- ground_photos/amenities/partners previously stored uploaded images on local
+-- disk (server/uploads/*, via multer diskStorage) — lost on any redeploy to
+-- an ephemeral filesystem. Storage moved to Cloudinary, mirroring the
+-- existing, already-proven GalleryImage (MongoDB) pattern's exact rationale
+-- for keeping the public_id: deleting/replacing an asset needs it, and
+-- `image_url`/`logo_url` alone (the pre-existing column) isn't reliably
+-- reversible into one. Nullable — a row created via the plain
+-- add(name+imageUrl) JSON path (an externally-hosted URL, never uploaded
+-- through this app) legitimately has no Cloudinary asset to delete.
+ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
+ALTER TABLE amenities ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
