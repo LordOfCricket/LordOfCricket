@@ -1,29 +1,66 @@
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
+import ParallaxLayer from '../common/ParallaxLayer.jsx'
+import useMouseParallax from '../../hooks/useMouseParallax.js'
+import useWebGLCapability from '../../hooks/useWebGLCapability.js'
+import HeroSceneBoundary from './hero3d/HeroSceneBoundary.jsx'
+import { reveal } from '../../lib/motion.js'
 
-const EASE = [0.16, 1, 0.3, 1]
+// Phase 7.1 — its own chunk, never bundled with Hero/HomePage. Import
+// deferred until after first paint (see the idle-mount effect below), so
+// this never competes with the critical render path.
+const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 
 // Entrance sequence: background (instant) → gallery → LOC panel → India
 // panel, a short cascade rather than a marketing reveal — the hero's job now
 // is "show the ground and the scores fast", not stage a headline moment.
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 
-function reveal(delay) {
-  return {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.5, delay, ease: EASE },
-  }
-}
-
 export default function Hero() {
   const reduceMotion = useReducedMotion()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
+  // Phase 4 — Hero is the pointer "source": one listener here drives the
+  // shared parallax MotionValues that BackgroundSystem's layers and the
+  // panels below all read from (see MouseParallaxContext.jsx).
+  const { onPointerMove, onPointerLeave, enabled: parallaxEnabled } = useMouseParallax()
+
+  // Phase 7.1 — mount decision happens here, before HeroScene's dynamic
+  // import ever fires: unsupported/low-end devices (useWebGLCapability)
+  // and reduced-motion users (accessibility default: scene doesn't mount
+  // at all) never download the three.js chunk. Approved devices still
+  // defer the import until the browser is idle after first paint, so the
+  // 3D scene can never delay Hero's own content from appearing.
+  const webglCapable = useWebGLCapability()
+  const [sceneReady, setSceneReady] = useState(false)
+
+  useEffect(() => {
+    if (!webglCapable || reduceMotion) return undefined
+    let cancelled = false
+    const idleId = window.requestIdleCallback
+      ? window.requestIdleCallback(() => {
+          if (!cancelled) setSceneReady(true)
+        })
+      : setTimeout(() => {
+          if (!cancelled) setSceneReady(true)
+        }, 200)
+    return () => {
+      cancelled = true
+      if (window.requestIdleCallback && window.cancelIdleCallback) window.cancelIdleCallback(idleId)
+      else clearTimeout(idleId)
+    }
+  }, [webglCapable, reduceMotion])
+
+  const showScene = webglCapable && !reduceMotion && sceneReady
 
   return (
-    <section className="relative flex min-h-dvh w-full flex-col overflow-hidden bg-loc-dark">
+    <section
+      className="relative flex min-h-dvh w-full flex-col overflow-hidden bg-loc-dark"
+      onPointerMove={parallaxEnabled ? onPointerMove : undefined}
+      onPointerLeave={parallaxEnabled ? onPointerLeave : undefined}
+    >
       {/* Restrained atmosphere: real ground photography carries the visual
           weight now, so the backdrop stays quiet — a dark wash + one soft
           floodlight glow, nothing competing with the photo or the scores. */}
@@ -47,6 +84,22 @@ export default function Hero() {
         )}
       </div>
 
+      {/* Phase 7.1 — Hero 3D foundation. Sits above the CSS backdrop and
+          below the content grid (z-10) purely by DOM order, matching the
+          backdrop div's own convention of not needing an explicit
+          z-index. Decorative only: pointer-events-none + aria-hidden, and
+          HeroSceneBoundary means any WebGL/render failure silently falls
+          back to nothing — the CSS backdrop above stands on its own. */}
+      {showScene && (
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          <HeroSceneBoundary>
+            <Suspense fallback={null}>
+              <HeroScene />
+            </Suspense>
+          </HeroSceneBoundary>
+        </div>
+      )}
+
       <div className="relative z-10 flex flex-1 flex-col pt-20 pb-5 lg:pt-24 lg:pb-6">
         <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col justify-center px-4 sm:px-6 lg:px-8">
           {/* Strict 2:1 composition — gallery (2fr) beside a LOC/India stack
@@ -54,15 +107,21 @@ export default function Hero() {
               row on tablet; everything stacked on mobile, gallery first. */}
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:h-140 lg:grid-cols-[2fr_1fr] lg:gap-5 xl:h-155">
             <motion.div {...motionProps(DELAY.gallery)} className="lg:h-full">
-              <GroundGallery className="lg:h-full" />
+              <ParallaxLayer strength={10} tilt tiltStrength={3} className="lg:h-full">
+                <GroundGallery className="lg:h-full" />
+              </ParallaxLayer>
             </motion.div>
 
             <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:h-full lg:grid-cols-1 lg:gap-5">
               <motion.div {...motionProps(DELAY.loc)} className="lg:h-full">
-                <LocMatchPanel className="lg:h-full" />
+                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
+                  <LocMatchPanel className="lg:h-full" />
+                </ParallaxLayer>
               </motion.div>
               <motion.div {...motionProps(DELAY.india)} className="lg:h-full">
-                <IndiaMatchPanel className="lg:h-full" />
+                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
+                  <IndiaMatchPanel className="lg:h-full" />
+                </ParallaxLayer>
               </motion.div>
             </div>
           </div>

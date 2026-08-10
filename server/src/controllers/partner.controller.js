@@ -1,9 +1,8 @@
-import { unlink } from 'fs/promises'
-import { join } from 'path'
 import { createPartner, findAllPartners, deletePartner } from '../models/partner.model.js'
-import { createUploader } from '../config/upload.js'
+import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { logger } from '../utils/logger.js'
 
-const { uploadsDir } = createUploader('partners')
+const CLOUDINARY_FOLDER = 'LOC/partners'
 
 export async function listPartners(req, res, next) {
   try {
@@ -36,9 +35,29 @@ export async function uploadPartner(req, res, next) {
     if (!name) {
       return res.status(400).json({ message: 'name is required' })
     }
-    const logoUrl = `${req.protocol}://${req.get('host')}/uploads/partners/${req.file.filename}`
-    const partner = await createPartner({ name, logoUrl, websiteUrl, sortOrder })
-    res.status(201).json(partner)
+    const uploaded = await uploadImageFileDetailed(req.file, CLOUDINARY_FOLDER)
+
+    try {
+      const partner = await createPartner({
+        name,
+        logoUrl: uploaded.url,
+        websiteUrl,
+        sortOrder,
+        cloudinaryPublicId: uploaded.publicId,
+      })
+      res.status(201).json(partner)
+    } catch (dbErr) {
+      try {
+        await deleteImageByPublicId(uploaded.publicId)
+      } catch (cleanupErr) {
+        logger.error('Failed to roll back orphaned Cloudinary asset after partners insert failure', {
+          publicId: uploaded.publicId,
+          saveError: dbErr.message,
+          cleanupError: cleanupErr.message,
+        })
+      }
+      throw dbErr
+    }
   } catch (err) {
     next(err)
   }
@@ -50,9 +69,16 @@ export async function removePartner(req, res, next) {
     if (!partner) {
       return res.status(404).json({ message: 'Partner not found' })
     }
-    if (partner.logo_url.includes('/uploads/partners/')) {
-      const filename = partner.logo_url.split('/uploads/partners/')[1]
-      await unlink(join(uploadsDir, filename)).catch(() => {})
+    if (partner.cloudinary_public_id) {
+      try {
+        await deleteImageByPublicId(partner.cloudinary_public_id)
+      } catch (err) {
+        logger.error('Cloudinary delete failed during partner removal', {
+          id: req.params.id,
+          publicId: partner.cloudinary_public_id,
+          error: err.message,
+        })
+      }
     }
     res.json(partner)
   } catch (err) {

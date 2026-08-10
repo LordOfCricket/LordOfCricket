@@ -17,9 +17,13 @@ export default defineConfig({
     },
   },
   server: {
+    port: 5173,
+    strictPort: true,
     allowedHosts: ['lordofcricket.com', 'www.lordofcricket.com'],
   },
   preview: {
+    port: 4173,
+    strictPort: true,
     allowedHosts: ['lordofcricket.com', 'www.lordofcricket.com'],
   },
 })

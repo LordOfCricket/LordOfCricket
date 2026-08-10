@@ -1,16 +1,52 @@
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react'
 import { ChevronLeft, ChevronRight, ImageIcon, ArrowRight } from 'lucide-react'
 import { useGroundGallery } from '../../hooks/useGroundGallery.js'
 import { GROUND_ADDRESS } from '../../models/homepage.model.js'
+import { EASE } from '../../lib/motion.js'
+import usePointerCapability from '../../hooks/usePointerCapability.js'
 
 const AUTO_ADVANCE_MS = 5500
-const EASE = [0.16, 1, 0.3, 1]
+
+// Local to this file, deliberately not routed through the shared Hero
+// parallax context — this needs bounds/resolution scoped to the gallery
+// region itself (hover-to-inspect-the-photo), not the whole Hero viewport.
+function useGalleryTilt(maxTiltDeg = 5, maxScale = 1.015) {
+  const enabled = usePointerCapability()
+  const rotateX = useMotionValue(0)
+  const rotateY = useMotionValue(0)
+  const scale = useMotionValue(1)
+  const spring = { stiffness: 200, damping: 20, mass: 0.4 }
+  const springRotateX = useSpring(rotateX, spring)
+  const springRotateY = useSpring(rotateY, spring)
+  const springScale = useSpring(scale, spring)
+
+  const onPointerMove = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const px = (event.clientX - rect.left) / rect.width
+    const py = (event.clientY - rect.top) / rect.height
+    rotateY.set((px - 0.5) * 2 * maxTiltDeg)
+    rotateX.set((0.5 - py) * 2 * maxTiltDeg)
+    scale.set(maxScale)
+  }
+  const onPointerLeave = () => {
+    rotateX.set(0)
+    rotateY.set(0)
+    scale.set(1)
+  }
+
+  return {
+    enabled,
+    style: { rotateX: springRotateX, rotateY: springRotateY, scale: springScale, transformPerspective: 800 },
+    onPointerMove,
+    onPointerLeave,
+  }
+}
 
 function GalleryFrame({ children, className = '' }) {
   return (
     <div
-      className={`relative h-64 w-full overflow-hidden rounded-2xl border border-white/10 bg-loc-card-dark shadow-xl shadow-black/40 sm:h-80 md:h-96 lg:h-full ${className}`}
+      className={`relative h-64 w-full overflow-hidden rounded-2xl border border-white/10 bg-loc-card-dark shadow-xl shadow-black/40 transition-shadow duration-300 has-[[role=region]:hover]:shadow-2xl has-[[role=region]:hover]:shadow-emerald-500/20 sm:h-80 md:h-96 lg:h-full ${className}`}
     >
       {children}
     </div>
@@ -67,6 +103,7 @@ export default function GroundGallery({ className = '' }) {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const count = photos?.length ?? 0
+  const tilt = useGalleryTilt()
 
   useEffect(() => {
     if (reduceMotion || paused || count <= 1) return undefined
@@ -91,9 +128,11 @@ export default function GroundGallery({ className = '' }) {
   const prev = () => goTo(index - 1)
   const current = photos[index]
 
+  const GalleryRegion = tilt.enabled ? motion.div : 'div'
+
   return (
     <GalleryFrame className={className}>
-      <div
+      <GalleryRegion
         role="region"
         aria-roledescription="carousel"
         aria-label="Ground photo gallery"
@@ -102,6 +141,9 @@ export default function GroundGallery({ className = '' }) {
         onMouseLeave={() => setPaused(false)}
         onFocus={() => setPaused(true)}
         onBlur={() => setPaused(false)}
+        {...(tilt.enabled
+          ? { style: tilt.style, onPointerMove: tilt.onPointerMove, onPointerLeave: tilt.onPointerLeave }
+          : {})}
       >
         <AnimatePresence initial={false}>
           <motion.img
@@ -158,7 +200,7 @@ export default function GroundGallery({ className = '' }) {
             </div>
           </>
         )}
-      </div>
+      </GalleryRegion>
     </GalleryFrame>
   )
 }

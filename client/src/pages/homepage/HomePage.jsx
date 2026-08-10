@@ -9,11 +9,26 @@ import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
+import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
+import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
+import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import { useHomePage } from '../../hooks/useHomePage.js'
+import ScrollReveal from '../../components/common/ScrollReveal.jsx'
+import StatCounter from '../../components/homepage/StatCounter.jsx'
+import {
+  atmosphereReveal,
+  fadeUpSoft,
+  mapReveal,
+  settleFade,
+  spotlightReveal,
+  staggerContainer,
+} from '../../lib/revealVariants.js'
 
+// Phase 5 — headings get their own (soft, quick) reveal, separate from
+// whatever content sits below them, so the two never move in lockstep.
 function SectionHeading({ eyebrow, title, subtitle }) {
   return (
-    <div className="flex flex-col items-center gap-3 text-center">
+    <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex flex-col items-center gap-3 text-center">
       {eyebrow && (
         <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
           {eyebrow}
@@ -24,7 +39,7 @@ function SectionHeading({ eyebrow, title, subtitle }) {
       </h2>
       <span className="h-1 w-16 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600" />
       {subtitle && <p className="max-w-2xl text-emerald-100/60">{subtitle}</p>}
-    </div>
+    </ScrollReveal>
   )
 }
 
@@ -33,16 +48,14 @@ export default function HomePage() {
   const [bookingOpen, setBookingOpen] = useState(false)
 
   return (
-    <div id="home" className="relative min-h-screen overflow-x-hidden bg-emerald-950">
-      {/* Ambient glow blobs */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl" />
-        <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 h-96 w-96 rounded-full bg-emerald-600/10 blur-3xl" />
-      </div>
+    <div id="home" className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
+      <MouseParallaxProvider>
+        <BackgroundSystem />
+        <CursorGlow />
 
-      <Navbar />
-      <Hero />
+        <Navbar />
+        <Hero />
+      </MouseParallaxProvider>
 
       <div className="relative flex flex-col items-center gap-16 pb-16">
         {/* Full gallery — the hero above shows a compact rotating preview of
@@ -50,9 +63,11 @@ export default function HomePage() {
             Gallery" link scrolls to. India's score now lives in the hero,
             so this row is gallery-only (no more duplicate India card). */}
         <div id="gallery" className="w-full scroll-mt-24 px-6 lg:px-10">
-          <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
-            <ImageSlider />
-          </div>
+          <ScrollReveal as="div" variant={atmosphereReveal} amount={0.2} className="w-full">
+            <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
+              <ImageSlider />
+            </div>
+          </ScrollReveal>
         </div>
 
         {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
@@ -75,29 +90,33 @@ export default function HomePage() {
           <SectionHeading eyebrow="Est. 2011" title="About the Ground" />
 
           <div className="grid w-full gap-6 lg:grid-cols-3">
-            <div className="flex flex-col justify-center rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent p-6 shadow-lg shadow-black/20">
+            <ScrollReveal
+              variant={fadeUpSoft}
+              amount={0.4}
+              className="flex flex-col justify-center rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent p-6 shadow-lg shadow-black/20"
+            >
               <p className="text-emerald-100/70">
                 LOC has been the home ground for local cricket for over a decade — from weekend
                 nets to league finals. A well-kept outfield, true-bouncing pitches, and a
                 welcoming pavilion make it the ground players come back to.
               </p>
-            </div>
+            </ScrollReveal>
 
-            <div className="flex flex-wrap content-center justify-center gap-6">
+            <ScrollReveal
+              variant={staggerContainer(0.12)}
+              amount={0.4}
+              className="flex flex-wrap content-center justify-center gap-6"
+            >
               {stats.map((stat) => (
-                <div
-                  key={stat.label}
-                  className="w-40 rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent px-4 py-6 text-center shadow-lg shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-400/40"
-                >
-                  <p className="bg-linear-to-r from-emerald-300 to-emerald-500 bg-clip-text text-3xl font-bold text-transparent">
-                    {stat.value}
-                  </p>
-                  <p className="mt-1 text-sm text-emerald-100/60">{stat.label}</p>
-                </div>
+                <StatCounter key={stat.label} stat={stat} />
               ))}
-            </div>
+            </ScrollReveal>
 
-            <div className="min-h-64 overflow-hidden rounded-2xl border border-emerald-400/15 shadow-lg shadow-black/20">
+            <ScrollReveal
+              variant={mapReveal}
+              amount={0.3}
+              className="min-h-64 overflow-hidden rounded-2xl border border-emerald-400/15 shadow-lg shadow-black/20"
+            >
               <iframe
                 title="Ground location"
                 src={`https://maps.google.com/maps?q=${encodeURIComponent(groundAddress)}&output=embed`}
@@ -106,7 +125,7 @@ export default function HomePage() {
                 referrerPolicy="no-referrer-when-downgrade"
                 allowFullScreen
               />
-            </div>
+            </ScrollReveal>
           </div>
         </div>
 
@@ -121,9 +140,25 @@ export default function HomePage() {
         </div>
 
 
-        {/* Booking */}
-        <div id="booking" className="w-full scroll-mt-24 px-6 py-6">
-          <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-emerald-400/20 bg-linear-to-b from-emerald-400/10 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm">
+        {/* Booking — the homepage's primary CTA, so it gets the strongest
+            single entrance (spotlightReveal) plus a soft decorative glow
+            behind the card that fades in with it. Not a new lighting
+            layer — just one low-opacity radial, scoped to this section. */}
+        <div id="booking" className="relative w-full scroll-mt-24 px-6 py-6">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <div
+              className="h-72 w-full max-w-2xl rounded-full opacity-60 blur-3xl"
+              style={{ background: 'radial-gradient(ellipse 60% 60% at 50% 50%, color-mix(in srgb, var(--color-loc-gold) 20%, transparent), transparent 70%)' }}
+            />
+          </div>
+          <ScrollReveal
+            variant={spotlightReveal}
+            amount={0.35}
+            className="relative mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-emerald-400/20 bg-linear-to-b from-emerald-400/10 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm"
+          >
             <h2 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
               Book Our Cricket Ground
             </h2>
@@ -139,12 +174,17 @@ export default function HomePage() {
             >
               Book Ground
             </button>
-          </div>
+          </ScrollReveal>
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="relative border-t border-emerald-400/10 bg-emerald-950/60 px-6 py-10 lg:px-10">
+      {/* Footer — the atmosphere gently settles: fade only, no rise. */}
+      <ScrollReveal
+        as="footer"
+        variant={settleFade}
+        amount={0.15}
+        className="relative border-t border-emerald-400/10 bg-loc-dark/60 px-6 py-10 lg:px-10"
+      >
         <div className="flex w-full flex-col items-center justify-between gap-6 lg:flex-row">
           <div className="flex items-center">
             <img
@@ -177,7 +217,7 @@ export default function HomePage() {
         <p className="mt-8 text-center text-xs text-emerald-100/40">
           © {currentYear} LOC — Lord of Cricket Ground. All rights reserved.
         </p>
-      </footer>
+      </ScrollReveal>
 
       <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
     </div>

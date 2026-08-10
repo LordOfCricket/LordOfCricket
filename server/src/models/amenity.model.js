@@ -1,11 +1,11 @@
 import { pool } from '../config/db.js'
 
-export async function createAmenity({ name, imageUrl, sortOrder = 0 }) {
+export async function createAmenity({ name, imageUrl, sortOrder = 0, cloudinaryPublicId = null }) {
   const { rows } = await pool.query(
-    `INSERT INTO amenities (name, image_url, sort_order)
-     VALUES ($1, $2, $3)
+    `INSERT INTO amenities (name, image_url, sort_order, cloudinary_public_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [name, imageUrl, sortOrder]
+    [name, imageUrl, sortOrder, cloudinaryPublicId]
   )
   return rows[0]
 }

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { fetchAvailability } from '../../services/bookingApi.js'
 import { formatSlotTime, todayDateInputValue } from '../../models/booking.model.js'
+import useGlowHover from '../../hooks/useGlowHover.js'
+import GlowOverlay from '../common/GlowOverlay.jsx'
 
 const PREVIEW_SLOT_COUNT = 4
 
@@ -12,6 +14,7 @@ const PREVIEW_SLOT_COUNT = 4
 export default function PublicAvailabilityPreview() {
   const [slots, setSlots] = useState(null)
   const [error, setError] = useState(false)
+  const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -30,7 +33,12 @@ export default function PublicAvailabilityPreview() {
   const nextAvailable = slots.filter((s) => s.status === 'AVAILABLE').slice(0, PREVIEW_SLOT_COUNT)
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-4 text-left">
+    <div
+      ref={glowRef}
+      {...(glowEnabled ? { onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } : {})}
+      className="relative w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+    >
+      {glowEnabled && <GlowOverlay />}
       <p className="text-xs font-bold uppercase tracking-wide text-emerald-300">Today's Availability</p>
       {nextAvailable.length === 0 ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-slate-300">

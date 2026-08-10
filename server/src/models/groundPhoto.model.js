@@ -1,11 +1,11 @@
 import { pool } from '../config/db.js'
 
-export async function createGroundPhoto({ title = null, imageUrl, sortOrder = 0 }) {
+export async function createGroundPhoto({ title = null, imageUrl, sortOrder = 0, cloudinaryPublicId = null }) {
   const { rows } = await pool.query(
-    `INSERT INTO ground_photos (title, image_url, sort_order)
-     VALUES ($1, $2, $3)
+    `INSERT INTO ground_photos (title, image_url, sort_order, cloudinary_public_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [title, imageUrl, sortOrder]
+    [title, imageUrl, sortOrder, cloudinaryPublicId]
   )
   return rows[0]
 }

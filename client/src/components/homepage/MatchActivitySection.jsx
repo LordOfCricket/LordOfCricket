@@ -3,6 +3,9 @@ import { useHomeDiscovery } from '../../hooks/useHomeDiscovery.js'
 import FeaturedLiveMatch from './FeaturedLiveMatch.jsx'
 import MatchCard from '../matches/MatchCard.jsx'
 import { StatsErrorState } from '../stats/StatsStates.jsx'
+import ScrollReveal from '../common/ScrollReveal.jsx'
+import StaggerItem from '../common/StaggerItem.jsx'
+import { energeticReveal, staggerContainer } from '../../lib/revealVariants.js'
 
 // Phase 10 Part 1 — homepage match discovery (Part 25/32). One bounded
 // GET /matches/home call feeds all three previews; a failure here is
@@ -33,11 +36,17 @@ function PreviewRow({ title, matches, emptyMessage, viewAllTo }) {
           {emptyMessage}
         </p>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <ScrollReveal
+          variant={staggerContainer(0.08)}
+          amount={0.2}
+          className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3"
+        >
           {matches.map((m) => (
-            <MatchCard key={m.id} match={m} />
+            <StaggerItem key={m.id}>
+              <MatchCard match={m} />
+            </StaggerItem>
           ))}
-        </div>
+        </ScrollReveal>
       )}
     </div>
   )
@@ -65,7 +74,9 @@ export default function MatchActivitySection() {
 
   return (
     <div className="flex w-full flex-col gap-10 px-6 py-6 lg:px-10">
-      <FeaturedLiveMatch match={data.featuredLiveMatch} />
+      <ScrollReveal variant={energeticReveal} amount={0.3}>
+        <FeaturedLiveMatch match={data.featuredLiveMatch} />
+      </ScrollReveal>
       <PreviewRow title="Upcoming Matches" matches={data.upcomingMatches} emptyMessage="No upcoming matches scheduled yet." viewAllTo="/matches?tab=UPCOMING" />
       <PreviewRow title="Recent Results" matches={data.recentResults} emptyMessage="No completed matches yet." viewAllTo="/matches?tab=RESULTS" />
     </div>
