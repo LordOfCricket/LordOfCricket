@@ -1043,3 +1043,109 @@ CREATE TABLE IF NOT EXISTS order_items (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+
+-- ============================================================================
+-- Phase 8 — Ground + Canteen foundation (multi-ground architecture, Part 1)
+-- ============================================================================
+--
+-- Per the Phase 7 audit: introduces the two anchor tables the whole
+-- multi-ground design (§7-9 of that audit) hangs off — `grounds` as the
+-- primary tenancy boundary, `canteens` as the intermediate parent for the
+-- existing menu_items/today_menu/orders tables (still ungrounded this
+-- phase — deliberately out of scope, see the Phase 8 report). No other
+-- table gains a ground_id/canteen_id column yet.
+--
+-- `latitude`/`longitude` are plain NUMERIC, not PostGIS `geography` as
+-- Phase 7 recommended for the *ground-creation* moment: audited first, this
+-- Postgres host has no PostGIS extension available at all
+-- (`pg_available_extensions` has no `postgis` row) — not a "not yet
+-- installed," a hard environment constraint. Migrating a lat/lng pair to a
+-- geography column later is a small, self-contained change; blocking this
+-- phase on an extension this host cannot install would not be.
+--
+-- `status` defaults to 'DRAFT' at the schema level (a new ground, from a
+-- future onboarding flow, shouldn't appear live before review) — the one
+-- real ground this phase seeds is explicitly set to 'ACTIVE' at seed time,
+-- not by relying on this default.
+CREATE TABLE IF NOT EXISTS grounds (
+  id SERIAL PRIMARY KEY,
+  public_ground_id VARCHAR(20) UNIQUE NOT NULL,
+  slug VARCHAR(150) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL,
+  description VARCHAR(500),
+  address_line VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100) NOT NULL DEFAULT 'India',
+  postal_code VARCHAR(20),
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
+  phone VARCHAR(30),
+  email VARCHAR(150),
+  website TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'ACTIVE', 'SUSPENDED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- A ground may have more than one canteen (Phase 7 §9's stated reason for
+-- this table existing at all, instead of a flat `canteen_id`-free design) —
+-- deliberately no UNIQUE(ground_id) here.
+CREATE TABLE IF NOT EXISTS canteens (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  public_canteen_id VARCHAR(20) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL DEFAULT 'Main Canteen',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_canteens_ground_id ON canteens(ground_id);
+
+-- Phase 9 — ground-scoped authorization. A user's GLOBAL role (users.role /
+-- staff_role_id, unchanged) says what kind of account they have; a row here
+-- says what they're allowed to do AT A SPECIFIC GROUND. SUPER_ADMIN is
+-- deliberately NOT a value here — it stays the existing platform-wide
+-- staff_role_id=1 concept (Phase 7 §14/Step 14) and bypasses this table
+-- entirely in the authorization middleware, so a Super Admin is never forced
+-- to hold a membership row per ground.
+--
+-- Role is a plain CHECK-constrained VARCHAR, not a role_id FK into
+-- staff_roles: staff_roles is the GLOBAL staff sub-role lookup (super_admin/
+-- admin/canteen_staff, referenced by users.staff_role_id) and is a different
+-- concept from a ground-scoped role — reusing it would let a ground
+-- membership row claim 'super_admin', contradicting Step 14. A plain CHECK
+-- mirrors the existing grounds.status convention (this file, above) instead
+-- of introducing a second lookup-table pattern for what is still a small,
+-- fixed enum.
+--
+-- One row per (user, ground, role) — not one row per (user, ground) — so a
+-- single user can hold multiple roles at the same ground (e.g. OWNER and
+-- CANTEEN_STAFF) without a separate permissions/many-role structure.
+-- UNIQUE(user_id, ground_id, role) is the constraint that makes that legal
+-- while still rejecting an exact duplicate grant.
+--
+-- Revocation is is_active=false, never a DELETE — a past grant is
+-- authorization history, not disposable business data (Step 6/Step 7).
+-- ON DELETE CASCADE from users/grounds only removes the membership ROW
+-- itself if the user or ground is hard-deleted; it never reaches into any
+-- other table (orders, menu_items, etc. don't reference ground_users at
+-- all), so it cannot silently erase business data.
+CREATE TABLE IF NOT EXISTS ground_users (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL CHECK (role IN ('GROUND_OWNER', 'GROUND_ADMIN', 'CANTEEN_STAFF', 'UMPIRE', 'SCORER')),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, ground_id, role)
+);
+-- UNIQUE(user_id, ground_id, role) above already gives a btree index whose
+-- leading columns (user_id) and leading pair (user_id, ground_id) cover the
+-- two most common authorization checks ("this user, this ground" and "all of
+-- this user's memberships") for free. The one query shape it can't serve —
+-- "everyone active at this ground" (e.g. a future owner-dashboard staff
+-- list), which filters on ground_id without user_id — needs its own index,
+-- same reasoning as idx_canteens_ground_id above.
+CREATE INDEX IF NOT EXISTS idx_ground_users_ground_id ON ground_users(ground_id);
