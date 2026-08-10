@@ -22,7 +22,7 @@
     "migrate:orders": "node src/scripts/migrateOrdersToPostgres.js",
     "backup:mongo": "node src/scripts/exportMongoBackup.js",
     "test": "node --test src/domain/**/*.test.js src/utils/**/*.test.js",
-    "test:integration": "node --test src/tests/integration/**/*.test.js"
+    "test:integration": "node --test --test-concurrency=1 src/tests/integration/**/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

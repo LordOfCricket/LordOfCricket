@@ -7,8 +7,9 @@ import advertisementRoutes from './advertisement.routes.js'
 import matchRoutes from './match.routes.js'
 import indiaMatchRoutes from './indiaMatch.routes.js'
 import partnerRoutes from './partner.routes.js'
-import canteenMenuRoutes from './canteenMenu.routes.js'
-import canteenOrderRoutes from './canteenOrder.routes.js'
+import groundRoutes from './ground.routes.js'
+import canteenMenuRoutes, { groundScopedRouter as groundScopedCanteenMenuRoutes } from './canteenMenu.routes.js'
+import canteenOrderRoutes, { groundScopedRouter as groundScopedCanteenOrderRoutes } from './canteenOrder.routes.js'
 import authRoutes from './auth.routes.js'
 import umpireRequestRoutes from './umpireRequest.routes.js'
 import staffRoutes from './staff.routes.js'
@@ -83,10 +84,31 @@ router.use('/staff', staffRoutes)
 router.use('/me', meRoutes)
 
 // Canteen (merged into the main LOC API, namespaced under /canteen)
+// TRANSITIONAL — Phase 10/11: single-canteen-resolving, kept for the
+// existing frontend (Phase 11 Step 20/30 forbids a frontend redesign this
+// phase). Fails safely (409) instead of guessing if a second canteen ever
+// exists (see canteen.model.js's AmbiguousCanteenError).
 router.use('/canteen/menu', canteenMenuRoutes)
 router.use('/canteen/orders', canteenOrderRoutes)
 router.get('/canteen/health', (req, res) => {
   res.json({ ok: true, service: 'Canteen Management API' })
 })
+
+// REAL multi-ground routes (Phase 11) — the canonical architecture going
+// forward: tenancy is resolved from the URL + verified in PostgreSQL, never
+// guessed. Not yet used by any frontend; exists so ground/canteen tenancy
+// is provably real and testable ahead of the frontend's own migration.
+router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/menu', groundScopedCanteenMenuRoutes)
+router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/orders', groundScopedCanteenOrderRoutes)
+
+// Phase 12 — public ground discovery (GET /grounds/nearby) and public
+// ground profile (GET /grounds/:publicGroundId). Mounted at the same
+// '/grounds' prefix as the mounts above with no ordering conflict: Express
+// strips the '/grounds' prefix and hands the remainder to whichever router
+// is tried; groundRoutes only defines single-segment routes ('/nearby',
+// '/:publicGroundId'), so a multi-segment path like
+// '/GRD-x/canteens/CAN-y/menu' never matches here and falls through to the
+// canteen-scoped mounts above, regardless of registration order.
+router.use('/grounds', groundRoutes)
 
 export default router

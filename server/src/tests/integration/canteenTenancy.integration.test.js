@@ -67,6 +67,7 @@ import {
 import { createMembership } from '../../models/groundUser.model.js'
 
 const realCanteen = await findSingleCanteen()
+const realGround = (await pool.query('SELECT * FROM grounds WHERE id = $1', [realCanteen.ground_id])).rows[0]
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -402,9 +403,22 @@ test('requireCanteenStaffAccess: a real ground_users GROUND_ADMIN membership at 
 
 test('requireCanteenStaffAccess: a ground_users membership at an UNRELATED ground does NOT grant access to the real canteen (403)', async () => {
   const server = await startTestApp()
-  const fx = await createGroundCanteenFixture('unrelated')
+  // A GROUND-ONLY fixture (no canteen row) — this test only needs a
+  // different ground to hold the membership; it never touches a canteen of
+  // its own. Deliberately does NOT create a second `canteens` row: the
+  // TRANSITIONAL route under test here (findSingleCanteen) requires
+  // EXACTLY one canteen to exist to remain safe (Phase 11 Step 20) — that
+  // exact "what if a second canteen exists" scenario has its own dedicated
+  // test below and in canteenGroundContext.integration.test.js.
+  const ground = (
+    await pool.query(`INSERT INTO grounds (public_ground_id, slug, name, status) VALUES ($1,$2,$3,'ACTIVE') RETURNING *`, [
+      generatePublicId('GRD', 8),
+      `integration-test-tenancy-unrelated-ground-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      'Integration Test Unrelated Ground',
+    ])
+  ).rows[0]
   const user = await createUser('unrelated-ground-admin', { role: 'staff' })
-  const membership = await createMembership({ groundId: fx.ground.id, userId: user.id, role: 'GROUND_ADMIN' })
+  const membership = await createMembership({ groundId: ground.id, userId: user.id, role: 'GROUND_ADMIN' })
   try {
     // A denied request never reaches replaceTodayMenu — no snapshot/restore
     // needed here, but the payload is still harmless-shaped for clarity.
@@ -417,7 +431,7 @@ test('requireCanteenStaffAccess: a ground_users membership at an UNRELATED groun
   } finally {
     await pool.query('DELETE FROM ground_users WHERE id = $1', [membership.id])
     await user.cleanup()
-    await fx.cleanup()
+    await pool.query('DELETE FROM grounds WHERE id = $1', [ground.id])
     await server.close()
   }
 })
@@ -445,13 +459,14 @@ test('requireCanteenStaffAccess: CANTEEN_STAFF membership is sufficient for orde
 })
 
 // ---------------------------------------------------------------------------
-// Section F — IDOR: client-supplied canteen id is never consulted (Step 18)
+// Section F — IDOR: client-supplied canteen id is never consulted (Step 18),
+// and Phase 11 Step 20's fail-safe: the transitional route must never
+// silently guess once it can no longer prove there is exactly one canteen.
 // ---------------------------------------------------------------------------
 
-test('IDOR: a canteen_id/canteenId/ground_id claimed in the order body is never consulted — the order is always created under the server-resolved canteen', async () => {
+test('IDOR: a canteen_id/canteenId/ground_id claimed in the order body is never consulted, while exactly one canteen exists', async () => {
   const server = await startTestApp()
   const user = await createUser('idor-order')
-  const fx = await createGroundCanteenFixture('idor-claim-target')
   try {
     const res = await fetch(`${server.baseUrl}/canteen/orders`, {
       method: 'POST',
@@ -460,19 +475,38 @@ test('IDOR: a canteen_id/canteenId/ground_id claimed in the order body is never 
         seatId: 'A1',
         items: sampleItems(),
         total: 100,
-        canteen_id: fx.canteen.id,
-        canteenId: fx.canteen.id,
-        ground_id: fx.ground.id,
+        canteen_id: 999999999,
+        canteenId: 999999999,
+        ground_id: 999999999,
       }),
     })
     assert.equal(res.status, 200)
     const body = await res.json()
 
     const { rows } = await pool.query('SELECT canteen_id FROM orders WHERE public_order_id = $1', [body.order.id])
-    assert.equal(rows[0].canteen_id, realCanteen.id, 'the order must be created under the server-resolved real canteen, never the client-claimed one')
-    assert.notEqual(rows[0].canteen_id, fx.canteen.id)
+    assert.equal(rows[0].canteen_id, realCanteen.id, 'the order must be created under the server-resolved real canteen, never a client-claimed (here, nonexistent) one')
   } finally {
     await pool.query('DELETE FROM orders WHERE user_id = $1', [user.id])
+    await user.cleanup()
+    await server.close()
+  }
+})
+
+test('Phase 11 Step 20 fail-safe: the transitional /canteen/* routes refuse to guess (409) once a SECOND canteen genuinely exists — never silently serve canteen #1', async () => {
+  const server = await startTestApp()
+  const fx = await createGroundCanteenFixture('ambiguity-fail-safe')
+  const user = await createUser('ambiguity-fail-safe')
+  try {
+    const res = await fetch(`${server.baseUrl}/canteen/menu`)
+    assert.equal(res.status, 409, 'the legacy single-canteen route must fail safely, not silently pick a canteen, once it can no longer prove there is exactly one')
+
+    const orderRes = await fetch(`${server.baseUrl}/canteen/orders`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seatId: 'A1', items: sampleItems(), total: 100 }),
+    })
+    assert.equal(orderRes.status, 409, 'order creation via the legacy route must also fail safely, never silently attach to an arbitrary canteen')
+  } finally {
     await user.cleanup()
     await fx.cleanup()
     await server.close()

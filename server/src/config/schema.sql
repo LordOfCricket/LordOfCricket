@@ -1214,3 +1214,45 @@ CREATE INDEX IF NOT EXISTS idx_orders_canteen_user ON orders(canteen_id, user_id
 -- list), which filters on ground_id without user_id — needs its own index,
 -- same reasoning as idx_canteens_ground_id above.
 CREATE INDEX IF NOT EXISTS idx_ground_users_ground_id ON ground_users(ground_id);
+
+-- ============================================================================
+-- Phase 12 — ground discovery / public ground profile foundation
+-- ============================================================================
+--
+-- ground_photos and amenities were global, ground-less tables (same
+-- situation Phase 10 found for menu_items/today_menu/orders pre-tenancy).
+-- The public ground profile (Step 14/15/16) requires an explicit ground
+-- boundary on these queries — "never SELECT all photos" — so they get the
+-- exact same nullable -> backfill -> NOT NULL treatment Phase 10 used for
+-- canteen_id, backfilled to the single existing ground (the only candidate
+-- in this database — a confident assignment, not an invented default,
+-- verified via direct query before writing this migration).
+--
+-- gallery_images is deliberately NOT touched here — Phase 12's brief
+-- explicitly forbids silently redesigning it this phase; it stays a global
+-- table and is omitted (not guessed at) from the public ground profile
+-- response until a future phase gives it a real ground relationship.
+ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+ALTER TABLE amenities ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+
+UPDATE ground_photos SET ground_id = (SELECT id FROM grounds ORDER BY id LIMIT 1) WHERE ground_id IS NULL;
+UPDATE amenities SET ground_id = (SELECT id FROM grounds ORDER BY id LIMIT 1) WHERE ground_id IS NULL;
+
+ALTER TABLE ground_photos ALTER COLUMN ground_id SET NOT NULL;
+ALTER TABLE amenities ALTER COLUMN ground_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_ground_photos_ground_id ON ground_photos(ground_id);
+CREATE INDEX IF NOT EXISTS idx_amenities_ground_id ON amenities(ground_id);
+
+-- Step 20 — status/public_ground_id/slug already have indexes (status has
+-- none yet; public_ground_id and slug are UNIQUE, which is itself a btree
+-- index). The nearby-search query filters on status = 'ACTIVE' AND
+-- latitude/longitude IS NOT NULL before computing distance — with grounds
+-- still numbering in the single digits, Postgres correctly prefers a Seq
+-- Scan over any index here (see Phase 12 report's EXPLAIN section), so a
+-- status index would sit unused today. It is cheap, safe, and exactly the
+-- column the discovery query filters on first, so it's added now rather
+-- than deferred — unlike latitude/longitude, which Step 20 explicitly says
+-- NOT to index with a plain B-tree (that isn't equivalent to a spatial
+-- index and would be actively misleading to add without PostGIS).
+CREATE INDEX IF NOT EXISTS idx_grounds_status ON grounds(status);

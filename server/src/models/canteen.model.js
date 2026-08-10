@@ -33,14 +33,34 @@ export async function findCanteenByPublicId(publicCanteenId) {
   return rows[0] || null
 }
 
-// Phase 10 — resolves "the" canteen for the current single-ground/single-
-// canteen environment (Phase 8: exactly one of each exists today). Every
-// existing canteen route is flat (/api/canteen/menu, /api/canteen/orders —
-// no :publicCanteenId in the URL at all), so redesigning the URL scheme to
-// carry an explicit canteen id is out of this phase's scope (that's the
-// ground-discovery/multi-canteen-selection UI, a later phase). Step 24
-// explicitly allows resolving the canteen dynamically like this for now.
+// Phase 11 Step 20 — thrown instead of ever guessing which canteen to use.
+// Distinguishes "genuinely ambiguous" from "not configured yet" (null) so
+// callers can return a clear, honest error instead of a misleading
+// "not found."
+export class AmbiguousCanteenError extends Error {
+  constructor() {
+    super('More than one canteen exists — single-canteen resolution is no longer safe. Use the ground/canteen-scoped routes instead.')
+    this.name = 'AmbiguousCanteenError'
+  }
+}
+
+// Phase 10 — resolves "the" canteen for the TRANSITIONAL, pre-multi-ground
+// routes (/api/canteen/menu, /api/canteen/orders — still no :publicCanteenId
+// in the URL, kept operating exactly as before for the existing frontend,
+// Phase 11 Step 20/30). Real multi-ground routes
+// (/api/grounds/:publicGroundId/canteens/:publicCanteenId/...) never call
+// this — they resolve via findCanteenByPublicId + explicit ground
+// verification (groundAccess.js's requireGroundCanteenRole).
+//
+// Phase 11 hardening: this used to be a blind `ORDER BY id LIMIT 1` — safe
+// only by coincidence while exactly one canteen existed. It now PROVES
+// there is exactly one before returning it: zero canteens -> null ("not
+// configured"), exactly one -> that row, more than one -> throws
+// AmbiguousCanteenError rather than silently picking "canteen #1" the
+// moment a second ground/canteen is ever created.
 export async function findSingleCanteen() {
-  const { rows } = await pool.query('SELECT * FROM canteens ORDER BY id LIMIT 1')
-  return rows[0] || null
+  const { rows } = await pool.query('SELECT * FROM canteens LIMIT 2')
+  if (rows.length === 0) return null
+  if (rows.length > 1) throw new AmbiguousCanteenError()
+  return rows[0]
 }

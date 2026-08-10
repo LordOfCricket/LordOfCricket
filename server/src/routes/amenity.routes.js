@@ -7,6 +7,7 @@ import {
   removeAmenity,
 } from '../controllers/amenity.controller.js'
 import { requireAuth, requireStaffRole } from '../middlewares/auth.js'
+import { attachSingleGroundContext } from '../middlewares/groundAccess.js'
 
 // Memory storage, not disk — the buffer goes straight to Cloudinary
 // (uploadImageFileDetailed) and is never written to this server's
@@ -37,8 +38,8 @@ function uploadSingleImage(req, res, next) {
 const router = express.Router()
 
 router.get('/', listAmenities)
-router.post('/', requireAuth, requireStaffRole('super_admin'), addAmenity)
-router.post('/upload', requireAuth, requireStaffRole('super_admin'), uploadSingleImage, uploadAmenity)
+router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addAmenity)
+router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
 router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeAmenity)
 
 export default router

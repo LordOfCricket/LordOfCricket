@@ -19,7 +19,7 @@ export async function addAmenity(req, res, next) {
     if (!name || !imageUrl) {
       return res.status(400).json({ message: 'name and imageUrl are required' })
     }
-    const amenity = await createAmenity({ name, imageUrl, sortOrder })
+    const amenity = await createAmenity({ groundId: req.ground.id, name, imageUrl, sortOrder })
     res.status(201).json(amenity)
   } catch (err) {
     next(err)
@@ -39,6 +39,7 @@ export async function uploadAmenity(req, res, next) {
 
     try {
       const amenity = await createAmenity({
+        groundId: req.ground.id,
         name,
         imageUrl: uploaded.url,
         sortOrder,

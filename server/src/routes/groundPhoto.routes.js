@@ -7,6 +7,7 @@ import {
   removeGroundPhoto,
 } from '../controllers/groundPhoto.controller.js'
 import { requireAuth, requireStaffRole } from '../middlewares/auth.js'
+import { attachSingleGroundContext } from '../middlewares/groundAccess.js'
 
 // Memory storage, not disk — the buffer goes straight to Cloudinary
 // (uploadImageFileDetailed) and is never written to this server's
@@ -37,8 +38,8 @@ function uploadSingleImage(req, res, next) {
 const router = express.Router()
 
 router.get('/', listGroundPhotos)
-router.post('/', requireAuth, requireStaffRole('super_admin'), addGroundPhoto)
-router.post('/upload', requireAuth, requireStaffRole('super_admin'), uploadSingleImage, uploadGroundPhoto)
+router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addGroundPhoto)
+router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadGroundPhoto)
 router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeGroundPhoto)
 
 export default router

@@ -25,7 +25,7 @@ export async function addGroundPhoto(req, res, next) {
     }
     // Externally-hosted URL, not an upload through this app — no Cloudinary
     // asset of ours exists for it, so cloudinaryPublicId stays null.
-    const photo = await createGroundPhoto({ title, imageUrl, sortOrder })
+    const photo = await createGroundPhoto({ groundId: req.ground.id, title, imageUrl, sortOrder })
     res.status(201).json(photo)
   } catch (err) {
     next(err)
@@ -42,6 +42,7 @@ export async function uploadGroundPhoto(req, res, next) {
 
     try {
       const photo = await createGroundPhoto({
+        groundId: req.ground.id,
         title,
         imageUrl: uploaded.url,
         sortOrder,

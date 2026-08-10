@@ -35,6 +35,15 @@ await connectMongo()
 // requireCanteenStaffAccess resolve "the" single canteen server-side); tests
 // that call the model layer directly (snapshotTodayMenu/restoreTodayMenu,
 // findOrderById) need that same canteen id.
+//
+// Phase 11: this top-level await throws AmbiguousCanteenError (crashing this
+// file's module load) if a second `canteens` row exists anywhere in the DB
+// at the moment this file loads — which genuinely happens if
+// groundCanteenContext.integration.test.js's temporary multi-canteen
+// fixtures are mid-flight in a different worker process. That's why
+// package.json's test:integration script runs with --test-concurrency=1
+// (node --test parallelizes files by default); don't drop that flag without
+// re-verifying the full suite serially first.
 const canteen = await findSingleCanteen()
 
 const ONE_PX_PNG = Buffer.from(

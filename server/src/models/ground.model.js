@@ -56,3 +56,83 @@ export async function findAllGrounds() {
   const { rows } = await pool.query('SELECT * FROM grounds ORDER BY id')
   return rows
 }
+
+// Phase 12 Step 22 — thrown instead of ever guessing which ground an admin
+// write (ground_photos/amenities upload — Step 1's discovery that neither
+// table has a ground_id yet) belongs to. Mirrors canteen.model.js's
+// findSingleCanteen()/AmbiguousCanteenError exactly: zero grounds -> null
+// ("not configured"), exactly one -> that row, more than one -> fail safely
+// rather than silently picking "ground #1".
+export class AmbiguousGroundError extends Error {
+  constructor() {
+    super('More than one ground exists — single-ground resolution is no longer safe.')
+    this.name = 'AmbiguousGroundError'
+  }
+}
+
+export async function findSingleGround() {
+  const { rows } = await pool.query('SELECT * FROM grounds LIMIT 2')
+  if (rows.length === 0) return null
+  if (rows.length > 1) throw new AmbiguousGroundError()
+  return rows[0]
+}
+
+// Phase 12 Step 24 — DRAFT/SUSPENDED grounds must not be reachable through
+// the public profile endpoint at all; filtering status here (rather than
+// fetching then checking in the controller) means an unknown id and a
+// real-but-non-ACTIVE id produce the exact same "not found" result with no
+// behavioral difference a client could use to distinguish the two cases.
+// Explicit column list (Step 2) — never SELECT * for a public-facing query.
+export async function findPublicActiveGroundByPublicId(publicGroundId) {
+  const { rows } = await pool.query(
+    `SELECT public_ground_id, slug, name, description, address_line, city, state,
+            country, postal_code, latitude, longitude, phone, email, website, id
+     FROM grounds
+     WHERE public_ground_id = $1 AND status = 'ACTIVE'`,
+    [publicGroundId],
+  )
+  return rows[0] || null
+}
+
+// Phase 12 Step 4-11 — the primary discovery query. PostGIS is unavailable
+// (Step 6/38) so distance is computed with the numerically stable haversine
+// form (asin/sqrt, not acos — acos's argument can drift fractionally above
+// 1 from floating-point error at very small distances and throw a domain
+// error) directly over the existing NUMERIC latitude/longitude columns.
+// A CTE is required (Step 7) because PostgreSQL cannot reference a SELECT
+// alias in the same level's WHERE clause. `COUNT(*) OVER()` for the
+// pagination total matches the established pattern in
+// tournament.repository.js's listPublicTournaments query — one round trip,
+// not two. `primary_photo` is a per-row correlated subquery (Step 12 needs
+// a ground-card thumbnail); acceptable at radius-filtered result-set sizes,
+// mirroring tournament.repository.js's own per-row subquery for team_count.
+const EARTH_RADIUS_KM = 6371 // mean radius, standard haversine constant
+
+export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         public_ground_id, slug, name, city, state, country, latitude, longitude,
+         (SELECT gp.image_url FROM ground_photos gp
+          WHERE gp.ground_id = g.id
+          ORDER BY gp.sort_order, gp.created_at
+          LIMIT 1) AS primary_photo,
+         ${2 * EARTH_RADIUS_KM} * asin(
+           sqrt(
+             power(sin(radians(latitude - $1) / 2), 2)
+             + cos(radians($1)) * cos(radians(latitude))
+               * power(sin(radians(longitude - $2) / 2), 2)
+           )
+         ) AS distance_km
+       FROM grounds g
+       WHERE status = 'ACTIVE' AND latitude IS NOT NULL AND longitude IS NOT NULL
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     WHERE distance_km <= $3
+     ORDER BY distance_km ASC
+     LIMIT $4 OFFSET $5`,
+    [latitude, longitude, radiusKm, limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}
