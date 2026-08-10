@@ -24,11 +24,18 @@ import { pool, connectMongo } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { getTodayMenu, replaceTodayMenu } from '../../models/canteenTodayMenu.model.js'
 import { findOrderById } from '../../models/canteenOrder.model.js'
+import { findSingleCanteen } from '../../models/canteen.model.js'
 import MenuItemMongo from '../../models/canteenMenuItemMongoLegacy.model.js'
 import { uploadImageFileDetailed, deleteImageByPublicId } from '../../utils/cloudinaryUpload.js'
 import { runMenuItemMigration } from '../../scripts/migrateMenuItemsToPostgres.js'
 
 await connectMongo()
+
+// Phase 10 — every route under test is now canteen-scoped (attachCurrentCanteen/
+// requireCanteenStaffAccess resolve "the" single canteen server-side); tests
+// that call the model layer directly (snapshotTodayMenu/restoreTodayMenu,
+// findOrderById) need that same canteen id.
+const canteen = await findSingleCanteen()
 
 const ONE_PX_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -119,7 +126,7 @@ async function cleanupItem(id) {
 // afterward, or it silently destroys real (possibly staff-configured)
 // shared dev data — precisely the Phase 3A incident.
 async function snapshotTodayMenu() {
-  const today = await getTodayMenu()
+  const today = await getTodayMenu(canteen.id)
   if (!today) return null
   return {
     publishedAt: today.published_at,
@@ -134,6 +141,7 @@ async function restoreTodayMenu(snapshot) {
   // all" Mongo-era case closely enough for test purposes (a fresh dev DB
   // has no today_menu row before the first publish either way).
   await replaceTodayMenu({
+    canteenId: canteen.id,
     publishedAt: snapshot ? snapshot.publishedAt : new Date().toISOString(),
     items: snapshot ? snapshot.items : [],
   })
@@ -358,7 +366,7 @@ test('deleting a MenuItem removes it from a published TodayMenu (existing cross-
       body: JSON.stringify({ items: [{ id: itemId, available: true, stock: 1, dailyPrice: 20 }] }),
     })
 
-    let today = await getTodayMenu()
+    let today = await getTodayMenu(canteen.id)
     assert.ok(today.items.some((e) => e.menu_item_id === createdId), 'sanity check: published before delete')
 
     const deleteRes = await fetch(`${server.baseUrl}/canteen/menu/master/${itemId}`, {
@@ -367,7 +375,7 @@ test('deleting a MenuItem removes it from a published TodayMenu (existing cross-
     })
     assert.equal(deleteRes.status, 200)
 
-    today = await getTodayMenu()
+    today = await getTodayMenu(canteen.id)
     assert.ok(!today.items.some((e) => e.menu_item_id === createdId), 'deleting the MenuItem must remove its TodayMenu entry, same as before this migration')
   } finally {
     await restoreTodayMenu(todayMenuSnapshot)
@@ -427,7 +435,7 @@ test('deleting a MenuItem never changes a historical Order that already snapshot
     // Delete (deactivate) the MenuItem the order referenced.
     await fetch(`${server.baseUrl}/canteen/menu/master/${itemId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin.token}` } })
 
-    const orderAfter = await findOrderById(orderId)
+    const orderAfter = await findOrderById(orderId, canteen.id)
     assert.equal(orderAfter.items[0].name, created.body.item.name, 'the order keeps its own snapshot, independent of the MenuItem row')
     assert.equal(orderAfter.items[0].price, 88)
   } finally {

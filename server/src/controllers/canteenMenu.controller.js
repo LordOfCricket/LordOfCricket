@@ -2,8 +2,7 @@ import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudin
 import { logger } from '../utils/logger.js'
 import {
   insertMenuItem,
-  findActiveMenuItems,
-  findAllMenuItems,
+  findActiveMenuItemsByCanteenId,
   updateMenuItemById,
   deactivateMenuItemById,
 } from '../models/canteenMenuItem.model.js'
@@ -43,8 +42,8 @@ function indexTodayMenuItems(today) {
 
 export async function listMenu(req, res) {
   try {
-    const items = await findActiveMenuItems()
-    const today = await getTodayMenu()
+    const items = await findActiveMenuItemsByCanteenId(req.canteen.id)
+    const today = await getTodayMenu(req.canteen.id)
     const settings = indexTodayMenuItems(today)
 
     const mapped = items.map((item) => {
@@ -71,7 +70,7 @@ export async function listMenu(req, res) {
 
 export async function listMasterMenu(req, res) {
   try {
-    const items = await findActiveMenuItems()
+    const items = await findActiveMenuItemsByCanteenId(req.canteen.id)
     return res.json({
       items: items.map((item) => ({
         id: String(item.id),
@@ -91,8 +90,8 @@ export async function listMasterMenu(req, res) {
 
 export async function getTodaysMenuConfig(req, res) {
   try {
-    const dbItems = await findActiveMenuItems()
-    const today = await getTodayMenu()
+    const dbItems = await findActiveMenuItemsByCanteenId(req.canteen.id)
+    const today = await getTodayMenu(req.canteen.id)
 
     const menuMap = Object.fromEntries(dbItems.map((item) => [String(item.id), item]))
     const selectedItems = today ? today.items : []
@@ -143,7 +142,7 @@ export function updateTodaysMenu(req, res) {
     // was never a "reject the whole publish" validation, only a "which
     // ids actually count" one, preserved exactly.
     try {
-      await replaceTodayMenu({ publishedAt, items })
+      await replaceTodayMenu({ canteenId: req.canteen.id, publishedAt, items })
     } catch (err) {
       logger.error('TodayMenu save error', { error: err.message })
       res.status(500).json({ error: err.message })
@@ -188,6 +187,7 @@ export async function createMenuItem(req, res) {
     }
 
     const item = await insertMenuItem({
+      canteenId: req.canteen.id,
       name,
       category,
       description: description || '',
@@ -239,7 +239,7 @@ export async function updateMenuItem(req, res) {
     if (imagePublicId) update.cloudinaryPublicId = imagePublicId
 
     const numericId = parseMenuItemId(id)
-    const item = numericId === null ? null : await updateMenuItemById(numericId, update)
+    const item = numericId === null ? null : await updateMenuItemById(numericId, req.canteen.id, update)
     if (!item) {
       return res.status(404).json({ error: 'Menu item not found.' })
     }
@@ -264,7 +264,7 @@ export async function deleteMenuItem(req, res) {
   try {
     const { id } = req.params
     const numericId = parseMenuItemId(id)
-    const item = numericId === null ? null : await deactivateMenuItemById(numericId)
+    const item = numericId === null ? null : await deactivateMenuItemById(numericId, req.canteen.id)
     if (!item) {
       return res.status(404).json({ error: 'Menu item not found.' })
     }

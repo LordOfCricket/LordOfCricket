@@ -72,6 +72,7 @@ export async function createOrder(req, res) {
   const { seatId, items, total } = req.body
   const userId = req.user.id
   const customerName = req.user.name
+  const canteenId = req.canteen.id
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order payload is invalid.' })
@@ -80,8 +81,8 @@ export async function createOrder(req, res) {
   try {
     // Friendly fast-path pre-check (matches the retired code's own
     // findOne-before-create shape) — the REAL guarantee is the partial
-    // unique index `idx_orders_one_active_per_user`, caught below.
-    const existingActive = await findActiveOrderByUserId(userId)
+    // unique index `idx_orders_one_active_per_canteen_user`, caught below.
+    const existingActive = await findActiveOrderByUserId(userId, canteenId)
     if (existingActive) {
       return res.status(409).json({
         error: 'You already have an active order.',
@@ -94,15 +95,17 @@ export async function createOrder(req, res) {
 
     let order
     try {
-      order = await insertOrder({ userId, customerName, seatId: seatId || 'unknown', items: normalizedItems, total: computedTotal })
+      order = await insertOrder({ userId, canteenId, customerName, seatId: seatId || 'unknown', items: normalizedItems, total: computedTotal })
     } catch (err) {
       // Phase 14's original guarantee, now enforced by Postgres: two
       // near-simultaneous requests can both pass the pre-check above, but
       // the database rejects the second INSERT (23505 unique_violation on
       // the partial index) — this is not a fallback path, it's the source
-      // of correctness, exactly as it was with MongoDB's E11000.
+      // of correctness, exactly as it was with MongoDB's E11000. Phase 10:
+      // the guarantee is now per-(canteen, user), not just per-user, so
+      // this same code path also protects against a canteen-scoped race.
       if (err.code === '23505') {
-        const stillActive = await findActiveOrderByUserId(userId)
+        const stillActive = await findActiveOrderByUserId(userId, canteenId)
         return res.status(409).json({
           error: 'You already have an active order.',
           order: toPublicOrder(stillActive),
@@ -125,16 +128,20 @@ export async function listOrders(req, res) {
     const page = Math.max(1, Number(req.query.page) || 1)
     const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 5))
 
-    const { total, orders: orderRows } = await listOrdersPaginated({ activeOnly, page, limit })
+    const { total, orders: orderRows } = await listOrdersPaginated({ canteenId: req.canteen.id, activeOnly, page, limit })
     return res.json({ page, limit, total, orders: orderRows.map(toPublicOrder) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
   }
 }
 
+// Phase 10 Step 26 — findOrderById is canteen-scoped: an order id that
+// belongs to a different canteen returns null here, same as a genuinely
+// unknown id, so staff scoped to one canteen can never fetch another
+// canteen's order by guessing/knowing its public id.
 export async function getOrder(req, res) {
   try {
-    const order = await findOrderById(req.params.id)
+    const order = await findOrderById(req.params.id, req.canteen.id)
     if (!order) {
       return res.status(404).json({ error: 'Order not found.' })
     }
@@ -150,7 +157,7 @@ export async function lookupOrderByUser(req, res) {
     if (!userId) {
       return res.status(400).json({ error: 'userId is required.' })
     }
-    const order = await findLatestOrderByUserId(userId)
+    const order = await findLatestOrderByUserId(userId, req.canteen.id)
     return res.json({ order: toPublicOrder(order) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
@@ -166,7 +173,7 @@ export async function getActiveOrder(req, res) {
     if (req.user.id !== userId && req.user.role !== 'staff') {
       return res.status(403).json({ error: 'You can only view your own orders.' })
     }
-    const order = await findActiveOrderByUserId(userId)
+    const order = await findActiveOrderByUserId(userId, req.canteen.id)
     return res.json({ order: toPublicOrder(order) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
@@ -182,13 +189,19 @@ export async function getOrderHistory(req, res) {
     if (req.user.id !== userId && req.user.role !== 'staff') {
       return res.status(403).json({ error: 'You can only view your own orders.' })
     }
-    const history = await findOrderHistoryByUserId(userId)
+    const history = await findOrderHistoryByUserId(userId, req.canteen.id)
     return res.json({ orders: history.map(toPublicOrder) })
   } catch (error) {
     return res.status(500).json({ error: error.message })
   }
 }
 
+// Phase 10 Step 26 — updateOrderStatusByPublicId is canteen-scoped: staff
+// authorized for one canteen cannot transition another canteen's order by
+// id, even though the OLD requireRole('staff')/new requireCanteenStaffAccess
+// check itself is not yet per-canteen-authorized for the legacy-staff path
+// (see groundAccess.js's comment) — this query-level scoping is the actual
+// tenant boundary enforcement Invariant 6 requires.
 export async function updateOrderStatus(req, res) {
   try {
     const { status } = req.body
@@ -196,7 +209,7 @@ export async function updateOrderStatus(req, res) {
       return res.status(400).json({ error: 'Invalid order status.' })
     }
 
-    const order = await updateOrderStatusByPublicId(req.params.id, status)
+    const order = await updateOrderStatusByPublicId(req.params.id, req.canteen.id, status)
     if (!order) {
       return res.status(404).json({ error: 'Order not found.' })
     }

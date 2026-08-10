@@ -22,9 +22,14 @@ import mongoose from 'mongoose'
 import { pool, connectMongo } from '../../config/db.js'
 import TodayMenuMongo from '../../models/canteenTodayMenuMongoLegacy.model.js'
 import { getTodayMenu, replaceTodayMenu } from '../../models/canteenTodayMenu.model.js'
+import { findSingleCanteen } from '../../models/canteen.model.js'
 import { runTodayMenuMigration } from '../../scripts/migrateTodayMenuToPostgres.js'
 
 await connectMongo()
+
+// Phase 10 — today_menu is now scoped per canteen; this file exercises the
+// real (single, Phase 8-seeded) canteen throughout.
+const canteen = await findSingleCanteen()
 
 async function snapshotMongoTodayMenu() {
   const doc = await TodayMenuMongo.findOne({}).lean()
@@ -44,7 +49,7 @@ async function restoreMongoTodayMenu(snapshot) {
 }
 
 async function snapshotPostgresTodayMenu() {
-  return getTodayMenu()
+  return getTodayMenu(canteen.id)
 }
 
 function assertPostgresTodayMenuUnchanged(before, after, label) {
@@ -162,7 +167,7 @@ test('replaceTodayMenu rolls back completely on a genuine mid-transaction databa
   ]
 
   await assert.rejects(
-    () => replaceTodayMenu({ publishedAt: new Date().toISOString(), items: poisonedItems }),
+    () => replaceTodayMenu({ canteenId: canteen.id, publishedAt: new Date().toISOString(), items: poisonedItems }),
     (err) => /numeric field overflow/.test(err.message),
     'the overflow must propagate as a real error, not be swallowed',
   )
@@ -184,6 +189,7 @@ test('replaceTodayMenu: duplicate ids in one publish keep the LAST occurrence, a
   try {
     const menuItemId = before.items[0].menu_item_id
     await replaceTodayMenu({
+      canteenId: canteen.id,
       publishedAt: new Date().toISOString(),
       items: [
         { id: String(menuItemId), available: false, stock: 1, dailyPrice: 1 }, // superseded
@@ -191,13 +197,14 @@ test('replaceTodayMenu: duplicate ids in one publish keep the LAST occurrence, a
       ],
     })
 
-    const after = await getTodayMenu()
+    const after = await getTodayMenu(canteen.id)
     assert.equal(after.items.length, 1, 'duplicate ids must collapse to exactly one row, not two')
     assert.equal(after.items[0].available, true)
     assert.equal(after.items[0].stock, 9)
     assert.equal(Number(after.items[0].daily_price), 9)
   } finally {
     await replaceTodayMenu({
+      canteenId: canteen.id,
       publishedAt: before.published_at,
       items: before.items.map((row) => ({ id: String(row.menu_item_id), available: row.available, stock: row.stock, dailyPrice: Number(row.daily_price) })),
     })

@@ -23,9 +23,15 @@ import { pool, connectMongo } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import OrderMongo from '../../models/canteenOrderMongoLegacy.model.js'
 import { insertOrder, findActiveOrderByUserId } from '../../models/canteenOrder.model.js'
+import { findSingleCanteen } from '../../models/canteen.model.js'
 import { runOrderMigration } from '../../scripts/migrateOrdersToPostgres.js'
 
 await connectMongo()
+
+// Phase 10 — every order is now canteen-scoped; direct model-layer/raw-SQL
+// calls in this file need the real (single, Phase 8-seeded) canteen id the
+// live HTTP endpoints resolve automatically via attachCurrentCanteen.
+const canteen = await findSingleCanteen()
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -381,13 +387,13 @@ test('CONCURRENCY Case 2: simultaneous orders for DIFFERENT users both succeed',
 test('CONCURRENCY Case 3: an order is rejected the instant an active order already exists, verified at the model layer directly', async () => {
   const player = await createUser('concurrency-model-level')
   try {
-    await insertOrder({ userId: player.id, customerName: player.name, seatId: 'A1', items: sampleItems(), total: 218 })
+    await insertOrder({ userId: player.id, canteenId: canteen.id, customerName: player.name, seatId: 'A1', items: sampleItems(), total: 218 })
     await assert.rejects(
-      () => insertOrder({ userId: player.id, customerName: player.name, seatId: 'A2', items: sampleItems(), total: 218 }),
+      () => insertOrder({ userId: player.id, canteenId: canteen.id, customerName: player.name, seatId: 'A2', items: sampleItems(), total: 218 }),
       (err) => err.code === '23505',
       'the database itself (not application logic) must reject the second active order',
     )
-    const active = await findActiveOrderByUserId(player.id)
+    const active = await findActiveOrderByUserId(player.id, canteen.id)
     assert.ok(active, 'exactly one active order must exist')
   } finally {
     await player.cleanup()
@@ -404,8 +410,8 @@ test('DB CONSTRAINT: an invalid status value is rejected by the CHECK constraint
   try {
     await assert.rejects(
       () => pool.query(
-        `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status) VALUES ('ORD-TESTBAD1', $1, 'x', 'x', 1, 'NotARealStatus')`,
-        [player.id],
+        `INSERT INTO orders (public_order_id, user_id, canteen_id, customer_name, seat_id, total, status) VALUES ('ORD-TESTBAD1', $1, $2, 'x', 'x', 1, 'NotARealStatus')`,
+        [player.id, canteen.id],
       ),
       (err) => /orders_status_check/.test(err.message) || err.code === '23514',
     )
@@ -414,19 +420,19 @@ test('DB CONSTRAINT: an invalid status value is rejected by the CHECK constraint
   }
 })
 
-test('DB CONSTRAINT: two directly-inserted active rows for the same user violate the partial unique index', async () => {
+test('DB CONSTRAINT: two directly-inserted active rows for the same user AT THE SAME CANTEEN violate the partial unique index', async () => {
   const player = await createUser('constraint-active')
   try {
     await pool.query(
-      `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status, has_active_order_flag) VALUES ('ORD-TESTACT1', $1, 'x', 'x', 1, 'Pending', true)`,
-      [player.id],
+      `INSERT INTO orders (public_order_id, user_id, canteen_id, customer_name, seat_id, total, status, has_active_order_flag) VALUES ('ORD-TESTACT1', $1, $2, 'x', 'x', 1, 'Pending', true)`,
+      [player.id, canteen.id],
     )
     await assert.rejects(
       () => pool.query(
-        `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status, has_active_order_flag) VALUES ('ORD-TESTACT2', $1, 'x', 'x', 1, 'Pending', true)`,
-        [player.id],
+        `INSERT INTO orders (public_order_id, user_id, canteen_id, customer_name, seat_id, total, status, has_active_order_flag) VALUES ('ORD-TESTACT2', $1, $2, 'x', 'x', 1, 'Pending', true)`,
+        [player.id, canteen.id],
       ),
-      (err) => err.code === '23505' && /idx_orders_one_active_per_user/.test(err.message),
+      (err) => err.code === '23505' && /idx_orders_one_active_per_canteen_user/.test(err.message),
     )
   } finally {
     await player.cleanup()
@@ -436,7 +442,7 @@ test('DB CONSTRAINT: two directly-inserted active rows for the same user violate
 test('DB CONSTRAINT: deleting an order cascades to its order_items — no orphans possible', async () => {
   const player = await createUser('constraint-cascade')
   try {
-    const order = await insertOrder({ userId: player.id, customerName: player.name, seatId: 'A1', items: sampleItems(), total: 218 })
+    const order = await insertOrder({ userId: player.id, canteenId: canteen.id, customerName: player.name, seatId: 'A1', items: sampleItems(), total: 218 })
     const before = await pool.query('SELECT COUNT(*)::int AS count FROM order_items WHERE order_id = $1', [order.id])
     assert.equal(before.rows[0].count, 1)
 
@@ -455,6 +461,7 @@ test('DB CONSTRAINT: a zero or negative quantity is rejected — and the whole o
     await assert.rejects(
       () => insertOrder({
         userId: player.id,
+        canteenId: canteen.id,
         customerName: player.name,
         seatId: 'A1',
         items: [{ id: '1', foodId: '1', name: 'Pizza', price: 109, qty: 0 }],
@@ -472,9 +479,21 @@ test('DB CONSTRAINT: a zero or negative quantity is rejected — and the whole o
 
 test('DB CONSTRAINT: user_id is required — a null user_id is rejected', async () => {
   await assert.rejects(
-    () => pool.query(`INSERT INTO orders (public_order_id, user_id, total, status) VALUES ('ORD-TESTNULL', NULL, 1, 'Pending')`),
+    () => pool.query(`INSERT INTO orders (public_order_id, user_id, canteen_id, total, status) VALUES ('ORD-TESTNULL', NULL, $1, 1, 'Pending')`, [canteen.id]),
     (err) => /null value in column "user_id"/.test(err.message) || err.code === '23502',
   )
+})
+
+test('DB CONSTRAINT: canteen_id is required — a null canteen_id is rejected', async () => {
+  const player = await createUser('constraint-canteen-null')
+  try {
+    await assert.rejects(
+      () => pool.query(`INSERT INTO orders (public_order_id, user_id, canteen_id, total, status) VALUES ('ORD-TESTNULL2', $1, NULL, 1, 'Pending')`, [player.id]),
+      (err) => /null value in column "canteen_id"/.test(err.message) || err.code === '23502',
+    )
+  } finally {
+    await player.cleanup()
+  }
 })
 
 // ---------------------------------------------------------------------------

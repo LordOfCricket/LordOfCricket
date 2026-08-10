@@ -32,3 +32,15 @@ export async function findCanteenByPublicId(publicCanteenId) {
   const { rows } = await pool.query('SELECT * FROM canteens WHERE public_canteen_id = $1', [publicCanteenId])
   return rows[0] || null
 }
+
+// Phase 10 — resolves "the" canteen for the current single-ground/single-
+// canteen environment (Phase 8: exactly one of each exists today). Every
+// existing canteen route is flat (/api/canteen/menu, /api/canteen/orders —
+// no :publicCanteenId in the URL at all), so redesigning the URL scheme to
+// carry an explicit canteen id is out of this phase's scope (that's the
+// ground-discovery/multi-canteen-selection UI, a later phase). Step 24
+// explicitly allows resolving the canteen dynamically like this for now.
+export async function findSingleCanteen() {
+  const { rows } = await pool.query('SELECT * FROM canteens ORDER BY id LIMIT 1')
+  return rows[0] || null
+}

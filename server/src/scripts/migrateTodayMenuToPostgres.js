@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { pool, connectMongo } from '../config/db.js'
 import TodayMenuMongo from '../models/canteenTodayMenuMongoLegacy.model.js'
 import { upsertTodayMenuByLegacyMongoId, resolveMenuItemId } from '../models/canteenTodayMenu.model.js'
+import { findSingleCanteen } from '../models/canteen.model.js'
 
 // One-time, idempotent, resumable, TRANSACTIONAL migration (MongoDB
 // cleanup, Phase 4): copies the single MongoDB TodayMenu document into
@@ -90,7 +91,14 @@ export async function runTodayMenuMigration() {
   }
 
   try {
+    // Phase 10: this migration predates multi-ground entirely — the single
+    // MongoDB TodayMenu document belongs to the single canteen that exists
+    // in this environment.
+    const canteen = await findSingleCanteen()
+    if (!canteen) throw new Error('No canteen exists yet — run db:seed:ground before this migration.')
+
     const { todayMenuId, inserted, itemCount } = await upsertTodayMenuByLegacyMongoId({
+      canteenId: canteen.id,
       legacyMongoId,
       publishedAt: doc.publishedAt ?? new Date(),
       createdAt: doc.createdAt ?? new Date(),

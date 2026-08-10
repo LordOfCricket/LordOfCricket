@@ -1141,6 +1141,71 @@ CREATE TABLE IF NOT EXISTS ground_users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, ground_id, role)
 );
+-- ============================================================================
+-- Phase 10 — canteen data tenancy (menu_items/today_menu/orders)
+-- ============================================================================
+--
+-- Ownership chain per Step 2: each table gets its OWN canteen_id, not a
+-- ground_id — canteens.ground_id (above) already establishes
+-- resource -> canteen -> ground, so a parallel ground_id here would be
+-- denormalized state that could drift from canteen_id's own ground.
+-- order_items deliberately does NOT get canteen_id (Step 6): its ownership
+-- chain is order_item -> order -> canteen, avoiding a third redundant
+-- tenancy column on the highest-row-count table in the schema.
+--
+-- Columns are added nullable, backfilled, THEN set NOT NULL in the same
+-- statement batch (migrate.js applies this whole file as one multi-statement
+-- query, which Postgres runs as one implicit transaction — see the Phase 10
+-- report's "Migration strategy" section) — safe to re-run: ADD COLUMN IF NOT
+-- EXISTS/the backfill's WHERE canteen_id IS NULL/SET NOT NULL are all no-ops
+-- once already applied.
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+ALTER TABLE today_menu ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+
+-- Backfill: every pre-Phase-10 row belongs to the single canteen Phase 8
+-- seeded — there is no other candidate canteen in this database, so this is
+-- a confident assignment (Phase 10 report's Pre-Implementation Audit), not
+-- an invented default. A future multi-canteen environment never reaches
+-- this UPDATE again (WHERE canteen_id IS NULL matches nothing once
+-- backfilled), so it can never mis-assign a genuinely new canteen's rows.
+UPDATE menu_items SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+UPDATE today_menu SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+UPDATE orders SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+
+ALTER TABLE menu_items ALTER COLUMN canteen_id SET NOT NULL;
+-- today_menu: one row PER CANTEEN now (was a global singleton pre-Phase-10,
+-- "the" row found via ORDER BY id LIMIT 1 with no filter) — UNIQUE enforces
+-- that a canteen can never accumulate two "today" rows, exactly preserving
+-- the old singleton guarantee, just scoped per-tenant instead of globally.
+ALTER TABLE today_menu ALTER COLUMN canteen_id SET NOT NULL;
+ALTER TABLE orders ALTER COLUMN canteen_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_menu_items_canteen_id ON menu_items(canteen_id);
+-- CREATE UNIQUE INDEX (not a named ADD CONSTRAINT — Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS", which would break this file's established
+-- re-run-safe idempotency) doubling as the exact index "today_menu WHERE
+-- canteen_id = ?" needs — no separate plain index required.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_today_menu_canteen_id ON today_menu(canteen_id);
+
+-- Step 12 — the active-order guarantee moves from GLOBAL-per-user to
+-- PER-CANTEEN-per-user: the same person may hold one active order at Ground
+-- A's canteen AND a separate active order at Ground B's canteen
+-- simultaneously, but never two active orders at the SAME canteen. Replaces
+-- (not narrows past correctness of) the Phase 5 global partial unique index.
+DROP INDEX IF EXISTS idx_orders_one_active_per_user;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_per_canteen_user
+  ON orders(canteen_id, user_id) WHERE has_active_order_flag = true;
+-- Step 10/11 — order history ("this user's orders at this canteen, newest
+-- first") and active-order lookup pre-checks are both this exact shape;
+-- (canteen_id, user_id) as leading columns also serves a bare
+-- "WHERE canteen_id = ?" staff order-list query via prefix match, so this
+-- replaces (not supplements) the old global idx_orders_user_id — under the
+-- new tenancy model "all of a user's orders regardless of canteen" is no
+-- longer a real query pattern (Step 11 canteen-scopes order history).
+DROP INDEX IF EXISTS idx_orders_user_id;
+CREATE INDEX IF NOT EXISTS idx_orders_canteen_user ON orders(canteen_id, user_id, ordered_at DESC);
+
 -- UNIQUE(user_id, ground_id, role) above already gives a btree index whose
 -- leading columns (user_id) and leading pair (user_id, ground_id) cover the
 -- two most common authorization checks ("this user, this ground" and "all of

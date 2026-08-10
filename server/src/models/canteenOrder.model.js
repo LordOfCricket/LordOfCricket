@@ -60,13 +60,27 @@ async function fetchItemsForOrders(client, orderIds) {
 // an error) when neither resolves — Order never validates against
 // MenuItem, at creation or afterward (proven in Phase 3's test suite), so
 // an unresolvable id is a normal, expected outcome, not a failure.
-export async function resolveMenuItemId(client, rawId) {
+//
+// Phase 10 Step 14/Invariant 5 — both lookups are scoped `AND canteen_id =
+// $canteenId`. This is a deliberate, narrower enforcement than "reject the
+// whole order": Order's existing, tested business rule is that item id/
+// name/price are entirely client-supplied and snapshotted verbatim, with
+// or without a resolvable MenuItem (order_items.menu_item_id is nullable
+// precisely for this — see schema.sql). Hard-rejecting a cross-canteen id
+// would break that already-proven behavior and the API-compatibility
+// requirement (Step 23). Instead, a real menu_items row belonging to a
+// DIFFERENT canteen is treated exactly like "does not exist" — resolves to
+// null — so the order is still created (unchanged from today), but
+// order_items.menu_item_id can structurally never point at another
+// canteen's menu item. See the Phase 10 report's "Order ownership" section
+// for the full reasoning.
+export async function resolveMenuItemId(client, rawId, canteenId) {
   const direct = Number(rawId)
   if (Number.isInteger(direct)) {
-    const { rows } = await client.query('SELECT id FROM menu_items WHERE id = $1', [direct])
+    const { rows } = await client.query('SELECT id FROM menu_items WHERE id = $1 AND canteen_id = $2', [direct, canteenId])
     if (rows[0]) return rows[0].id
   }
-  const { rows: byLegacy } = await client.query('SELECT id FROM menu_items WHERE legacy_mongo_id = $1', [String(rawId)])
+  const { rows: byLegacy } = await client.query('SELECT id FROM menu_items WHERE legacy_mongo_id = $1 AND canteen_id = $2', [String(rawId), canteenId])
   if (byLegacy[0]) return byLegacy[0].id
   return null
 }
@@ -79,24 +93,24 @@ export async function resolveMenuItemId(client, rawId) {
 // (code 23505) that the caller (createOrder) catches and translates to the
 // same 409 the retired Mongo E11000 path already produced — never
 // swallowed or retried here.
-export async function insertOrder({ userId, customerName, seatId, items, total }) {
+export async function insertOrder({ userId, canteenId, customerName, seatId, items, total }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
     const publicOrderId = generatePublicId('ORD', 8)
     const { rows: orderRows } = await client.query(
-      `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status, has_active_order_flag)
-       VALUES ($1,$2,$3,$4,$5,'Pending',true)
+      `INSERT INTO orders (public_order_id, user_id, canteen_id, customer_name, seat_id, total, status, has_active_order_flag)
+       VALUES ($1,$2,$3,$4,$5,$6,'Pending',true)
        RETURNING *`,
-      [publicOrderId, userId, customerName, seatId, total],
+      [publicOrderId, userId, canteenId, customerName, seatId, total],
     )
     const order = orderRows[0]
 
     const itemRows = []
     for (const item of items) {
       const rawItemId = String(item.id ?? item.foodId ?? '')
-      const menuItemId = await resolveMenuItemId(client, rawItemId)
+      const menuItemId = await resolveMenuItemId(client, rawItemId, canteenId)
       const { rows } = await client.query(
         `INSERT INTO order_items (order_id, menu_item_id, raw_item_id, item_name, unit_price, quantity)
          VALUES ($1,$2,$3,$4,$5,$6)
@@ -116,11 +130,11 @@ export async function insertOrder({ userId, customerName, seatId, items, total }
   }
 }
 
-export async function findActiveOrderByUserId(userId) {
+export async function findActiveOrderByUserId(userId, canteenId) {
   const { rows } = await pool.query(
-    `SELECT * FROM orders WHERE user_id = $1 AND has_active_order_flag = true
+    `SELECT * FROM orders WHERE user_id = $1 AND canteen_id = $2 AND has_active_order_flag = true
      ORDER BY ordered_at DESC, created_at DESC LIMIT 1`,
-    [userId],
+    [userId, canteenId],
   )
   const order = rows[0]
   if (!order) return null
@@ -128,18 +142,23 @@ export async function findActiveOrderByUserId(userId) {
   return attachItems(order, itemsByOrder.get(order.id) || [])
 }
 
-export async function findOrderById(publicOrderId) {
-  const { rows } = await pool.query('SELECT * FROM orders WHERE public_order_id = $1', [publicOrderId])
+// Phase 10 Step 26 — scoped by canteenId, not just public_order_id: a
+// well-formed order id belonging to a DIFFERENT canteen returns null here,
+// identical to "does not exist" at every call site (getOrder/
+// updateOrderStatus), so a canteen's staff can never read or mutate another
+// canteen's order merely by knowing/guessing its public id.
+export async function findOrderById(publicOrderId, canteenId) {
+  const { rows } = await pool.query('SELECT * FROM orders WHERE public_order_id = $1 AND canteen_id = $2', [publicOrderId, canteenId])
   const order = rows[0]
   if (!order) return null
   const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
   return attachItems(order, itemsByOrder.get(order.id) || [])
 }
 
-export async function findLatestOrderByUserId(userId) {
+export async function findLatestOrderByUserId(userId, canteenId) {
   const { rows } = await pool.query(
-    'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
-    [userId],
+    'SELECT * FROM orders WHERE user_id = $1 AND canteen_id = $2 ORDER BY created_at DESC LIMIT 1',
+    [userId, canteenId],
   )
   const order = rows[0]
   if (!order) return null
@@ -147,20 +166,24 @@ export async function findLatestOrderByUserId(userId) {
   return attachItems(order, itemsByOrder.get(order.id) || [])
 }
 
-export async function findOrderHistoryByUserId(userId) {
+export async function findOrderHistoryByUserId(userId, canteenId) {
   const { rows } = await pool.query(
-    'SELECT * FROM orders WHERE user_id = $1 ORDER BY ordered_at DESC, created_at DESC',
-    [userId],
+    'SELECT * FROM orders WHERE user_id = $1 AND canteen_id = $2 ORDER BY ordered_at DESC, created_at DESC',
+    [userId, canteenId],
   )
   if (rows.length === 0) return []
   const itemsByOrder = await fetchItemsForOrders(pool, rows.map((r) => r.id))
   return rows.map((order) => attachItems(order, itemsByOrder.get(order.id) || []))
 }
 
-export async function listOrdersPaginated({ activeOnly, page, limit }) {
+export async function listOrdersPaginated({ canteenId, activeOnly, page, limit }) {
   const skip = (page - 1) * limit
-  const whereClause = activeOnly ? 'WHERE status = ANY($1)' : ''
-  const params = activeOnly ? [ACTIVE_STATUSES] : []
+  const params = [canteenId]
+  let whereClause = 'WHERE canteen_id = $1'
+  if (activeOnly) {
+    params.push(ACTIVE_STATUSES)
+    whereClause += ` AND status = ANY($${params.length})`
+  }
 
   const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS count FROM orders ${whereClause}`, params)
   const { rows } = await pool.query(
@@ -179,7 +202,12 @@ export async function listOrdersPaginated({ activeOnly, page, limit }) {
 // the retired code exactly — no separate cancelled_at exists there) and
 // clears has_active_order_flag to NULL so the partial unique index stops
 // applying, freeing the user to place a new order.
-export async function updateOrderStatusByPublicId(publicOrderId, status) {
+//
+// Phase 10 Step 26 — `AND canteen_id = $3` in the WHERE clause makes this
+// an ownership-enforced UPDATE, not a fetch-then-check: a request for a
+// real order id belonging to a different canteen updates zero rows and
+// returns null, identical to "order not found."
+export async function updateOrderStatusByPublicId(publicOrderId, canteenId, status) {
   const isFinished = FINISHED_STATUSES.includes(status)
   const { rows } = await pool.query(
     `UPDATE orders SET
@@ -187,9 +215,9 @@ export async function updateOrderStatusByPublicId(publicOrderId, status) {
        completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
        has_active_order_flag = CASE WHEN $2 THEN NULL ELSE has_active_order_flag END,
        updated_at = NOW()
-     WHERE public_order_id = $3
+     WHERE public_order_id = $3 AND canteen_id = $4
      RETURNING *`,
-    [status, isFinished, publicOrderId],
+    [status, isFinished, publicOrderId, canteenId],
   )
   const order = rows[0]
   if (!order) return null
@@ -200,7 +228,7 @@ export async function updateOrderStatusByPublicId(publicOrderId, status) {
 // Idempotent, transactional upsert keyed on the ORIGINAL MongoDB `_id` —
 // used only by the one-time Phase 5 data migration script
 // (scripts/migrateOrdersToPostgres.js), never by the live request path.
-export async function upsertOrderByLegacyMongoId({ legacyMongoId, userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, resolvedItems }) {
+export async function upsertOrderByLegacyMongoId({ canteenId, legacyMongoId, userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, resolvedItems }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -223,11 +251,11 @@ export async function upsertOrderByLegacyMongoId({ legacyMongoId, userId, custom
       inserted = true
       publicOrderId = generatePublicId('ORD', 8)
       const row = await client.query(
-        `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status,
+        `INSERT INTO orders (public_order_id, user_id, canteen_id, customer_name, seat_id, total, status,
            has_active_order_flag, ordered_at, completed_at, created_at, updated_at, legacy_mongo_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          RETURNING id`,
-        [publicOrderId, userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, legacyMongoId],
+        [publicOrderId, userId, canteenId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, legacyMongoId],
       )
       orderId = row.rows[0].id
     }

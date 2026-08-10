@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { pool, connectMongo } from '../config/db.js'
 import MenuItemMongo from '../models/canteenMenuItemMongoLegacy.model.js'
 import { upsertMenuItemByLegacyMongoId } from '../models/canteenMenuItem.model.js'
+import { findSingleCanteen } from '../models/canteen.model.js'
 
 // One-time, idempotent, resumable migration (MongoDB cleanup, Phase 3):
 // copies every existing MongoDB MenuItem document into the new PostgreSQL
@@ -23,6 +24,14 @@ function isValidDoc(doc) {
 // Core migration logic, exported separately from the CLI entrypoint below so
 // integration tests can call it directly, matching the Phase 1/2 pattern.
 export async function runMenuItemMigration() {
+  // Phase 10: this migration predates multi-ground entirely (it moved
+  // MenuItem out of MongoDB back in Phase 3) — every row it produces
+  // belongs to the single canteen that exists in this environment.
+  const canteen = await findSingleCanteen()
+  if (!canteen) {
+    throw new Error('No canteen exists yet — run db:seed:ground before this migration.')
+  }
+
   const docs = await MenuItemMongo.find({}).lean()
   const sourceCount = docs.length
 
@@ -47,6 +56,7 @@ export async function runMenuItemMigration() {
 
     try {
       const row = await upsertMenuItemByLegacyMongoId({
+        canteenId: canteen.id,
         name: doc.name,
         category: doc.category,
         description: doc.description || '',

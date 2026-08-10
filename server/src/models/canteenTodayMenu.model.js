@@ -6,11 +6,13 @@ import { pool } from '../config/db.js'
 // The retired Mongoose model (canteenTodayMenuMongoLegacy.model.js) is kept
 // only for the one-time data migration script and rollback reference.
 
-// "The" one TodayMenu row — the retired code's own convention
-// (`TodayMenu.findOne({})` with no filter). Always the lowest id; the live
-// write path below never creates a second row once one exists.
-export async function getTodayMenu() {
-  const { rows: menuRows } = await pool.query('SELECT * FROM today_menu ORDER BY id LIMIT 1')
+// "The" TodayMenu row FOR THIS CANTEEN — Phase 10 narrows the retired
+// code's original convention (`TodayMenu.findOne({})`, no filter at all,
+// exactly one document ever) to per-canteen: `idx_today_menu_canteen_id`'s
+// UNIQUE(canteen_id) constraint guarantees at most one row per canteen, the
+// direct per-tenant equivalent of the old global singleton.
+export async function getTodayMenu(canteenId) {
+  const { rows: menuRows } = await pool.query('SELECT * FROM today_menu WHERE canteen_id = $1 ORDER BY id LIMIT 1', [canteenId])
   const menu = menuRows[0]
   if (!menu) return null
 
@@ -30,18 +32,27 @@ export async function getTodayMenu() {
 // retired code's own read-side `Object.fromEntries` "last wins" behavior),
 // then deletes and reinserts every child row inside one transaction — if
 // anything fails, the previous state is left completely untouched.
-export async function replaceTodayMenu({ publishedAt, items }) {
+//
+// Phase 10 Step 15 — the menu-item resolution query below is scoped
+// `AND canteen_id = $canteenId`: an id that belongs to a DIFFERENT
+// canteen is treated exactly like an id that doesn't exist at all (silently
+// dropped, never published) — the existing "unresolvable id is simply never
+// written" semantics extended to also cover "resolvable, but not yours."
+// This is the invariant today_menu.canteen_id === menu_item.canteen_id for
+// every published entry, enforced structurally rather than checked after
+// the fact.
+export async function replaceTodayMenu({ canteenId, publishedAt, items }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
-    const { rows: existing } = await client.query('SELECT id FROM today_menu ORDER BY id LIMIT 1')
+    const { rows: existing } = await client.query('SELECT id FROM today_menu WHERE canteen_id = $1 ORDER BY id LIMIT 1', [canteenId])
     let todayMenuId
     if (existing[0]) {
       todayMenuId = existing[0].id
       await client.query('UPDATE today_menu SET published_at = $1, updated_at = NOW() WHERE id = $2', [publishedAt, todayMenuId])
     } else {
-      const inserted = await client.query('INSERT INTO today_menu (published_at) VALUES ($1) RETURNING id', [publishedAt])
+      const inserted = await client.query('INSERT INTO today_menu (canteen_id, published_at) VALUES ($1,$2) RETURNING id', [canteenId, publishedAt])
       todayMenuId = inserted.rows[0].id
     }
 
@@ -56,7 +67,7 @@ export async function replaceTodayMenu({ publishedAt, items }) {
     for (const [rawId, { item, sortOrder }] of byId) {
       const numericId = Number(rawId)
       if (!Number.isInteger(numericId)) continue
-      const { rows: menuItemRows } = await client.query('SELECT id FROM menu_items WHERE id = $1', [numericId])
+      const { rows: menuItemRows } = await client.query('SELECT id FROM menu_items WHERE id = $1 AND canteen_id = $2', [numericId, canteenId])
       if (!menuItemRows[0]) continue
 
       await client.query(
@@ -98,7 +109,7 @@ export async function deleteTodayMenuItemsByMenuItemId(menuItemId) {
 // `resolvedItems` is pre-validated by the caller (Step 11 — the migration
 // itself fails all-or-nothing on an unresolvable id, BEFORE this function
 // is ever called, unlike the live write path's permissive skip-and-continue).
-export async function upsertTodayMenuByLegacyMongoId({ legacyMongoId, publishedAt, createdAt, updatedAt, resolvedItems }) {
+export async function upsertTodayMenuByLegacyMongoId({ canteenId, legacyMongoId, publishedAt, createdAt, updatedAt, resolvedItems }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -113,8 +124,8 @@ export async function upsertTodayMenuByLegacyMongoId({ legacyMongoId, publishedA
     } else {
       inserted = true
       const row = await client.query(
-        'INSERT INTO today_menu (published_at, created_at, updated_at, legacy_mongo_id) VALUES ($1,$2,$3,$4) RETURNING id',
-        [publishedAt, createdAt, updatedAt, legacyMongoId],
+        'INSERT INTO today_menu (canteen_id, published_at, created_at, updated_at, legacy_mongo_id) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+        [canteenId, publishedAt, createdAt, updatedAt, legacyMongoId],
       )
       todayMenuId = row.rows[0].id
     }

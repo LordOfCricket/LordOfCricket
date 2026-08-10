@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { pool, connectMongo } from '../config/db.js'
 import OrderMongo from '../models/canteenOrderMongoLegacy.model.js'
 import { upsertOrderByLegacyMongoId, resolveMenuItemId, resolveStatus, PRESET_STATUS } from '../models/canteenOrder.model.js'
+import { findSingleCanteen } from '../models/canteen.model.js'
 
 // One-time, idempotent, resumable migration (MongoDB cleanup, Phase 5 —
 // the FINAL business feature): copies every existing MongoDB Order
@@ -31,6 +32,14 @@ function isValidDoc(doc) {
 // Core migration logic, exported separately from the CLI entrypoint below so
 // integration tests can call it directly, matching the Phase 1/2/3 pattern.
 export async function runOrderMigration() {
+  // Phase 10: this migration predates multi-ground entirely — every
+  // historical MongoDB order belongs to the single canteen that exists in
+  // this environment.
+  const canteen = await findSingleCanteen()
+  if (!canteen) {
+    throw new Error('No canteen exists yet — run db:seed:ground before this migration.')
+  }
+
   const docs = await OrderMongo.find({}).lean()
   const sourceCount = docs.length
 
@@ -72,7 +81,7 @@ export async function runOrderMigration() {
       const resolvedItems = []
       for (const item of doc.items) {
         const rawItemId = String(item.id ?? item.foodId ?? '')
-        const menuItemId = await resolveMenuItemId(pool, rawItemId)
+        const menuItemId = await resolveMenuItemId(pool, rawItemId, canteen.id)
         resolvedItems.push({
           menuItemId,
           rawItemId,
@@ -83,6 +92,7 @@ export async function runOrderMigration() {
       }
 
       const { orderId, publicOrderId, inserted, itemCount } = await upsertOrderByLegacyMongoId({
+        canteenId: canteen.id,
         legacyMongoId,
         userId: doc.userId,
         customerName: doc.customerName || '',
