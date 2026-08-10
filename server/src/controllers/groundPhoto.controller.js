@@ -1,13 +1,12 @@
-import { unlink } from 'fs/promises'
-import { join } from 'path'
 import {
   createGroundPhoto,
   findAllGroundPhotos,
   deleteGroundPhoto,
 } from '../models/groundPhoto.model.js'
-import { createUploader } from '../config/upload.js'
+import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { logger } from '../utils/logger.js'
 
-const { uploadsDir } = createUploader('ground-photos')
+const CLOUDINARY_FOLDER = 'LOC/ground-photos'
 
 export async function listGroundPhotos(req, res, next) {
   try {
@@ -24,6 +23,8 @@ export async function addGroundPhoto(req, res, next) {
     if (!imageUrl) {
       return res.status(400).json({ message: 'imageUrl is required' })
     }
+    // Externally-hosted URL, not an upload through this app — no Cloudinary
+    // asset of ours exists for it, so cloudinaryPublicId stays null.
     const photo = await createGroundPhoto({ title, imageUrl, sortOrder })
     res.status(201).json(photo)
   } catch (err) {
@@ -37,9 +38,30 @@ export async function uploadGroundPhoto(req, res, next) {
       return res.status(400).json({ message: 'photo file is required' })
     }
     const { title, sortOrder } = req.body
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/ground-photos/${req.file.filename}`
-    const photo = await createGroundPhoto({ title, imageUrl, sortOrder })
-    res.status(201).json(photo)
+    const uploaded = await uploadImageFileDetailed(req.file, CLOUDINARY_FOLDER)
+
+    try {
+      const photo = await createGroundPhoto({
+        title,
+        imageUrl: uploaded.url,
+        sortOrder,
+        cloudinaryPublicId: uploaded.publicId,
+      })
+      res.status(201).json(photo)
+    } catch (dbErr) {
+      // Cloudinary upload already succeeded — don't leave it orphaned just
+      // because the DB write failed.
+      try {
+        await deleteImageByPublicId(uploaded.publicId)
+      } catch (cleanupErr) {
+        logger.error('Failed to roll back orphaned Cloudinary asset after ground_photos insert failure', {
+          publicId: uploaded.publicId,
+          saveError: dbErr.message,
+          cleanupError: cleanupErr.message,
+        })
+      }
+      throw dbErr
+    }
   } catch (err) {
     next(err)
   }
@@ -51,9 +73,20 @@ export async function removeGroundPhoto(req, res, next) {
     if (!photo) {
       return res.status(404).json({ message: 'Ground photo not found' })
     }
-    if (photo.image_url.includes('/uploads/ground-photos/')) {
-      const filename = photo.image_url.split('/uploads/ground-photos/')[1]
-      await unlink(join(uploadsDir, filename)).catch(() => {})
+    if (photo.cloudinary_public_id) {
+      try {
+        await deleteImageByPublicId(photo.cloudinary_public_id)
+      } catch (err) {
+        // The DB row is already gone (matches this app's existing delete
+        // behavior for this table) — log rather than fail the request, so a
+        // transient Cloudinary hiccup doesn't strand an admin on a photo
+        // that's already removed from the gallery.
+        logger.error('Cloudinary delete failed during ground photo removal', {
+          id: req.params.id,
+          publicId: photo.cloudinary_public_id,
+          error: err.message,
+        })
+      }
     }
     res.json(photo)
   } catch (err) {
