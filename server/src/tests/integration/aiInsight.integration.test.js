@@ -2,28 +2,37 @@
 // correction flow, a FAKE AI provider (no live API key exists in this
 // environment — see docs/TECHNICAL_DEBT.md). Exercises the real caching/
 // fingerprint/validation/privacy/failure pipeline end to end.
+//
+// MongoDB cleanup, Phase 2: the AiInsight CACHE itself is now PostgreSQL-
+// backed (server/src/models/aiInsight.model.js) — every test below that
+// reaches into the cache directly now uses findAiInsight/deleteAiInsight
+// instead of the retired Mongoose model, and the CACHING/CRITICAL
+// CORRECTION tests no longer need a MongoDB-reachability skip guard (the
+// cache they exercise is Postgres, a hard dependency, not optional Mongo).
+// A live MongoDB connection is still opened here ONLY for the migration
+// idempotency tests at the bottom, which seed disposable legacy-format
+// documents via the retired Mongoose model
+// (aiInsightMongoLegacy.model.js) — mirroring galleryImage.integration.test.js's
+// Phase 1 pattern exactly.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { pool, connectMongo, isMongoReady } from '../../config/db.js'
+import mongoose from 'mongoose'
+import { pool, connectMongo } from '../../config/db.js'
 import * as aiInsightService from '../../services/aiInsight.service.js'
 import { getMatchSummary } from '../../services/matchSummary.service.js'
 import { finalizeMatch } from '../../services/match.service.js'
 import * as correctionService from '../../services/correction.service.js'
-import AiInsight from '../../models/aiInsight.model.js'
+import { findAiInsight, deleteAiInsight } from '../../models/aiInsight.model.js'
+import AiInsightMongo from '../../models/aiInsightMongoLegacy.model.js'
+import { runAiInsightMigration } from '../../scripts/migrateAiInsightsToPostgres.js'
 import { createTeamsFixture, playShortFinalizedMatch } from './fixtures.js'
 import { makeFakeProvider, VALID_MATCH_INSIGHT_RESPONSE, VALID_PERSON_INSIGHT_RESPONSE } from './aiFixtures.js'
 
-// Same pattern as canteenOrderConcurrency.integration.test.js — test files
-// run standalone (not through server.js), so the connection has to be
-// established here, and `mongoReady` must be captured ONCE at module load
-// (not via a live isMongoReady() call inside each `skip` option, which
-// would evaluate before any connection attempt completes).
 await connectMongo()
-const mongoReady = isMongoReady()
 
 async function cleanupAiInsight(sourceType, sourceId) {
-  if (mongoReady && sourceId != null) await AiInsight.deleteOne({ sourceType, sourceId: String(sourceId) })
+  if (sourceId != null) await deleteAiInsight({ sourceType, sourceId })
 }
 
 test('NOT_CONFIGURED — the real (unconfigured) provider never throws, degrades gracefully', async () => {
@@ -62,7 +71,7 @@ test('404 — a nonexistent match/player/team is a real 404, never a fabricated 
   await assert.rejects(() => aiInsightService.getTeamInsight(999999999), (err) => err.statusCode === 404)
 })
 
-test('CACHING — a successful insight is cached; a repeat request never calls the provider again', { skip: !mongoReady && 'MongoDB not reachable in this environment' }, async () => {
+test('CACHING — a successful insight is cached; a repeat request never calls the provider again', async () => {
   const fx = await createTeamsFixture({ squadSize: 4 })
   let played
   try {
@@ -102,7 +111,7 @@ test('CONCURRENT REQUESTS — two simultaneous requests for the same source de-d
   }
 })
 
-test('CRITICAL CORRECTION TEST — a change to the underlying authoritative data invalidates the cached insight; the stale payload is never silently served', { skip: !mongoReady && 'MongoDB not reachable in this environment' }, async () => {
+test('CRITICAL CORRECTION TEST — a change to the underlying authoritative data invalidates the cached insight; the stale payload is never silently served', async () => {
   const fx = await createTeamsFixture({ squadSize: 4 })
   let played
   try {
@@ -111,8 +120,8 @@ test('CRITICAL CORRECTION TEST — a change to the underlying authoritative data
 
     const before = await aiInsightService.getMatchInsight(played.matchId, { provider })
     assert.equal(before.available, true)
-    const cachedDoc = await AiInsight.findOne({ sourceType: 'MATCH', sourceId: String(played.matchId) })
-    const fingerprintBefore = cachedDoc.sourceFingerprint
+    const cachedDoc = await findAiInsight({ sourceType: 'MATCH', sourceId: played.matchId })
+    const fingerprintBefore = cachedDoc.source_fingerprint
 
     // Simulate the effect of a correction: a correction always bumps
     // innings.version (see correction.service.js's applyCorrection — the
@@ -129,8 +138,8 @@ test('CRITICAL CORRECTION TEST — a change to the underlying authoritative data
     assert.equal(after.cached, false, 'the fingerprint mismatch must force regeneration, never serve the stale cached payload')
     assert.equal(provider.calls.length, 2, 'exactly one regeneration must have happened')
 
-    const cachedDocAfter = await AiInsight.findOne({ sourceType: 'MATCH', sourceId: String(played.matchId) })
-    assert.notEqual(cachedDocAfter.sourceFingerprint, fingerprintBefore)
+    const cachedDocAfter = await findAiInsight({ sourceType: 'MATCH', sourceId: played.matchId })
+    assert.notEqual(cachedDocAfter.source_fingerprint, fingerprintBefore)
   } finally {
     await cleanupAiInsight('MATCH', played?.matchId)
     await fx.cleanup()
@@ -292,4 +301,100 @@ test('TEAM INSIGHT — uses the real official team profile, no independent crick
     await cleanupAiInsight('TEAM', fx.teamAId)
     await fx.cleanup()
   }
+})
+
+// ---------------------------------------------------------------------------
+// Migration script (Phase 2) — idempotency / resumability against the REAL
+// migration logic (not a reimplementation), using disposable MongoDB
+// fixtures so real cache data is never at risk. Mirrors
+// galleryImage.integration.test.js's Phase 1 pattern exactly.
+// ---------------------------------------------------------------------------
+
+// Realistic-length: a real sourceId is either a small integer (matchId/
+// teamId) or a public_player_id (VARCHAR(20) — see schema.sql), so this
+// stays well under ai_insights.source_id's VARCHAR(30) the same way real
+// data always would.
+function uniqueSourceId() {
+  return `mt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+test('migration script: running twice never creates duplicate PostgreSQL rows, and correctly reports inserted vs updated', async () => {
+  const sourceId = uniqueSourceId()
+  const fixtureDoc = await AiInsightMongo.create({
+    sourceType: 'MATCH',
+    sourceId,
+    sourceFingerprint: 'f'.repeat(64),
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+    payload: { headline: 'Migration fixture', summary: 'temporary', keyMoments: [], standoutPerformers: [] },
+  })
+
+  try {
+    const firstRun = await runAiInsightMigration()
+    const firstRecord = firstRun.results.find((r) => r.legacyMongoId === String(fixtureDoc._id))
+    assert.equal(firstRecord.status, 'inserted')
+
+    const afterFirst = await pool.query('SELECT COUNT(*)::int AS count FROM ai_insights WHERE legacy_mongo_id = $1', [
+      String(fixtureDoc._id),
+    ])
+    assert.equal(afterFirst.rows[0].count, 1)
+
+    const secondRun = await runAiInsightMigration()
+    const secondRecord = secondRun.results.find((r) => r.legacyMongoId === String(fixtureDoc._id))
+    assert.equal(secondRecord.status, 'updated')
+    assert.equal(secondRecord.postgresId, firstRecord.postgresId, 're-running must update the SAME row, not insert a new one')
+
+    const afterSecond = await pool.query('SELECT COUNT(*)::int AS count FROM ai_insights WHERE legacy_mongo_id = $1', [
+      String(fixtureDoc._id),
+    ])
+    assert.equal(afterSecond.rows[0].count, 1, 'no duplicate row was created on the second run')
+
+    // Field-by-field: the migrated row matches the MongoDB source exactly,
+    // including the JSONB payload (never flattened, never truncated).
+    const { rows } = await pool.query('SELECT * FROM ai_insights WHERE legacy_mongo_id = $1', [String(fixtureDoc._id)])
+    const migrated = rows[0]
+    assert.equal(migrated.source_type, fixtureDoc.sourceType)
+    assert.equal(migrated.source_id, fixtureDoc.sourceId)
+    assert.equal(migrated.source_fingerprint, fixtureDoc.sourceFingerprint)
+    assert.equal(migrated.provider, fixtureDoc.provider)
+    assert.equal(migrated.model, fixtureDoc.model)
+    assert.deepEqual(migrated.payload, fixtureDoc.payload)
+
+    // The migrated row is immediately usable by the live cache-read path —
+    // proves the migration didn't just write compatible-looking data, it
+    // wrote data the real service can actually serve from cache.
+    const viaService = await findAiInsight({ sourceType: 'MATCH', sourceId })
+    assert.equal(viaService.source_fingerprint, fixtureDoc.sourceFingerprint)
+  } finally {
+    await pool.query('DELETE FROM ai_insights WHERE legacy_mongo_id = $1', [String(fixtureDoc._id)])
+    await AiInsightMongo.deleteOne({ _id: fixtureDoc._id })
+  }
+})
+
+test('migration script: a document missing a required field is skipped, not failed, and does not abort the run', async () => {
+  const sourceId = uniqueSourceId()
+  const fixtureDoc = await AiInsightMongo.collection.insertOne({
+    sourceType: 'MATCH',
+    sourceId,
+    // no sourceFingerprint/provider/model/payload — simulates corrupt/incomplete legacy data
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+
+  try {
+    const run = await runAiInsightMigration()
+    const record = run.results.find((r) => r.legacyMongoId === String(fixtureDoc.insertedId))
+    assert.equal(record.status, 'skipped')
+
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM ai_insights WHERE legacy_mongo_id = $1', [
+      String(fixtureDoc.insertedId),
+    ])
+    assert.equal(rows[0].count, 0, 'an invalid document must never be written to PostgreSQL')
+  } finally {
+    await AiInsightMongo.collection.deleteOne({ _id: fixtureDoc.insertedId })
+  }
+})
+
+test.after(async () => {
+  await mongoose.connection.close()
 })

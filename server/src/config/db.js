@@ -41,6 +41,15 @@ export async function connectPostgres() {
   }
 }
 
+// MongoDB cleanup, Phase 6 — MongoDB is no longer part of the production
+// runtime startup path (server.js's start() no longer calls this). Every
+// live business feature (GalleryImage/AiInsight/MenuItem/TodayMenu/Order)
+// is PostgreSQL-backed as of Phases 1-5. These two functions are kept,
+// unchanged, ONLY for migration/rollback tooling
+// (scripts/migrate*ToPostgres.js, scripts/exportMongoBackup.js) and
+// integration tests that verify migration idempotency against disposable
+// Mongo fixtures — each of those callers invokes connectMongo() itself,
+// independently of server.js.
 export async function connectMongo() {
   try {
     await mongoose.connect(process.env.MONGO_URI)

@@ -40,9 +40,11 @@ Short name: **LOC**. (Never "CricVerse" — that name is retired.)
   authoritative replay engine — never AI, never a second cricket engine — persisted in PostgreSQL,
   correction-aware (a historical Edit Score regenerates the affected commentary automatically), and
   live over the same Socket.IO room as the score.
-- **Canteen** — a merged food-ordering system (menu, orders, live order status) for the ground.
-  "One active order per user" is enforced by a MongoDB partial unique index, not just a
-  same-process check — two near-simultaneous order requests can never both succeed (Phase 14 Part 2).
+- **Canteen** — a merged food-ordering system (menu, orders, live order status) for the ground,
+  PostgreSQL-backed since the MongoDB cleanup (Phase 5). "One active order per user" is enforced by
+  a PostgreSQL partial unique index, not just a same-process check — two near-simultaneous order
+  requests can never both succeed (originally proven with MongoDB's equivalent index in Phase 14
+  Part 2; the same guarantee, same mechanism, now on PostgreSQL).
 - **Ground Booking** — a real availability/reservation system for the ground itself: a public
   calendar (`GET /api/bookings/availability`), a homepage booking flow, "My Bookings," and staff
   schedule/blocking tools. PostgreSQL is authoritative (a `tstzrange` `EXCLUDE` constraint makes
@@ -129,8 +131,11 @@ PostgreSQL   (official cricket truth: teams, players, matches, innings,
               PLUS commentary_entries, a deterministic PROJECTION of that
               truth, Phase 12 — never a second source of it)
 
-MongoDB is used ONLY for the canteen (menu items, today's menu config,
-orders) — it never stores cricket truth.
+MongoDB cleanup (Phases 1-6): gallery images, the AI Insight cache, and the
+entire canteen module (menu items, today's menu, orders) all moved to
+PostgreSQL. MongoDB is no longer part of the runtime — the server doesn't
+connect to it at boot. It's retained only as a rollback/historical source
+and for the migration scripts themselves (`npm run migrate:*`).
 
 Socket.IO (one shared server, since before Phase 11 — canteen order/menu
 updates) now ALSO carries cricket spectator updates via match:{id} rooms:
@@ -145,17 +150,17 @@ design, the realtime transport (Socket.IO + polling fallback) design, and the co
 
 ## Tech stack
 
-- **Backend**: Node.js (ESM), Express, `pg` (PostgreSQL driver, no ORM for cricket data), Mongoose
-  (MongoDB — canteen documents and, since Phase 16, the AI Insight narrative cache),
-  `jsonwebtoken`, `bcryptjs`, Socket.IO (canteen order/menu updates + cricket spectator
-  match rooms + booking availability refresh), Cloudinary (uploads), `googleapis` (optional
-  ground-booking Google Calendar sync, service-account auth), `@anthropic-ai/sdk` (optional AI
-  Insight narrative generation, server-only), Node's built-in test runner (`node --test`).
+- **Backend**: Node.js (ESM), Express, `pg` (PostgreSQL driver, no ORM), `jsonwebtoken`, `bcryptjs`,
+  Socket.IO (canteen order/menu updates + cricket spectator match rooms + booking availability
+  refresh), Cloudinary (uploads), `googleapis` (optional ground-booking Google Calendar sync,
+  service-account auth), `@anthropic-ai/sdk` (optional AI Insight narrative generation, server-only),
+  Node's built-in test runner (`node --test`). Mongoose/MongoDB remain a dependency only for the
+  Phase 1-6 migration scripts and rollback tooling — not part of the running server.
 - **Frontend**: React 19, React Router 7 (data router), Vite, Tailwind CSS 4, axios,
   `socket.io-client`, lucide-react icons, `eslint-plugin-react-hooks` with the React Compiler rule set.
-- **Database**: PostgreSQL (cricket truth, users, canteen relational bits, ground bookings,
-  tournaments — the sole source of everything AI Insight narrates), MongoDB (canteen documents,
-  AI Insight narrative cache — never cricket truth).
+- **Database**: PostgreSQL — the sole production database (cricket truth, users, canteen, ground
+  bookings, tournaments, gallery, AI Insight cache). MongoDB is retired from the runtime (Phase 6)
+  and kept only as a historical/rollback source.
 
 ## Project structure
 
@@ -201,8 +206,9 @@ LordOfCricket/
 
 ## Local setup
 
-Prerequisites: Node.js 20+, a PostgreSQL database, (optional) a MongoDB database for canteen
-features.
+Prerequisites: Node.js 20+, a PostgreSQL database. A MongoDB database is only needed if you're
+running the Phase 1-6 migration scripts (`npm run migrate:*`) or their rollback-path tests against a
+pre-migration database — the running application no longer connects to MongoDB (see `MONGO_URI` below).
 
 ```bash
 git clone <repo>
@@ -228,7 +234,6 @@ cp client/.env.example client/.env
 | `NODE_ENV` | Set to `production` in production — gates the `JWT_SECRET`/env-validation startup checks below |
 | `PG_USER`, `PG_HOST`, `PG_DATABASE`, `PG_PASSWORD`, `PG_PORT` | PostgreSQL connection. **Required in production** — the server refuses to start with a clear error naming exactly which is missing (see `server/src/config/validateEnv.js`) |
 | `PG_POOL_MAX` | Optional — max pool connections (default 10, pg's own default) |
-| `MONGO_URI` | MongoDB connection (canteen + AI insight cache — the server still boots without it) |
 | `CLIENT_ORIGIN` | Comma-separated list of allowed CORS origins. **Required in production**, same fail-fast check as above |
 | `TRUST_PROXY` | Optional — set to `1` only when a real reverse proxy sits in front of this process (controls rate-limit/logging IP attribution) |
 | `JWT_SECRET` | Session-signing secret. **Required in production** — the server refuses to start in production without it (see `server/src/utils/jwt.js`) |
@@ -236,6 +241,7 @@ cp client/.env.example client/.env
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Canteen menu-item image uploads |
 | `GOOGLE_CALENDAR_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Optional — ground-calendar sync (Phase 14); booking works fully without it |
 | `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` | Optional — AI Match/Player/Team Insight (Phase 16). With `AI_API_KEY` unset the server boots normally and every AI Insight endpoint returns `{available:false, reason:'NOT_CONFIGURED'}`; every other page is completely unaffected. Never exposed to the client. |
+| `MONGO_URI` | **Migration tooling only** (MongoDB cleanup, Phase 6). The server no longer connects to MongoDB at boot — every feature that used to live there (gallery, AI insight cache, canteen menu/today's menu/orders) is PostgreSQL-backed as of Phases 1-5. Only needed to run `npm run migrate:*`/`npm run backup:mongo` against a pre-Phase-6 database, or the rollback-path integration tests. |
 
 See `docs/DEPLOYMENT.md` for the full production checklist, health checks, Google Calendar/AI setup
 steps, and backup/disaster-recovery guidance.
@@ -277,9 +283,13 @@ npm run test:integration --prefix server   # real-PostgreSQL integration tests
 npm test --prefix client              # the practice/umpire-testing sandbox's client-side scoring engine
 ```
 
-Current verified baseline: server **304 / 304** unit, **251 / 255** integration (4 skipped — see
-below), client **9 / 9**. Four integration tests require a reachable MongoDB and skip (not fail) when
-it's unavailable, consistent with MongoDB being an optional dependency everywhere else in this app.
+Current verified baseline: server **304 / 304** unit, client **9 / 9**. (The integration count predates
+the MongoDB cleanup — Phases 1-6 added ~70 new integration tests for the migrated features, so the old
+**251 / 255** figure is stale; a fresh baseline count is worth taking as its own documentation pass.)
+Since the MongoDB cleanup (Phase 6), the server no longer connects to MongoDB at boot — the only
+integration tests that still open a MongoDB connection are the Phase 1-6 migration-idempotency tests
+and `canteenOrderConcurrency.integration.test.js` (a rollback-path check against the retired Mongoose
+model), and they skip (not fail) if MongoDB isn't reachable.
 The integration suite occasionally shows a single non-reproducible count-assertion flake on a full
 parallel run (different file each time) — root-caused to `node --test`'s default concurrent file
 execution racing against the shared dev database, not a real regression; see `docs/TECHNICAL_DEBT.md`.
@@ -308,8 +318,10 @@ npm run commentary:rebuild --prefix server   # regenerate commentary for every i
    downstream (career stats, team records, the live view) can go stale.
 3. **The frontend never computes cricket truth.** Run rates, targets, results, and win/loss
    determination are always server-computed; React only formats strings for display.
-4. **MongoDB never becomes a second source of cricket truth.** It is used exclusively for the
-   canteen's flexible, order-lifecycle data.
+4. **PostgreSQL is the only production database.** MongoDB was, at various points before the Phase
+   1-6 cleanup, used for the canteen's flexible order-lifecycle data, gallery metadata, and the AI
+   Insight cache — but never for cricket truth, and as of Phase 6 it's retired from the runtime
+   entirely (kept only as a historical/rollback source and for the migration scripts themselves).
 5. **Public reads are explicit DTOs, never raw database rows** — no email/password/OTP/internal
    IDs are ever exposed by a public endpoint.
 6. **Realtime publishes truth, never a delta.** A Socket.IO broadcast only ever happens *after* a
@@ -328,8 +340,9 @@ npm run commentary:rebuild --prefix server   # regenerate commentary for every i
 9. **AI narrates cricket truth, it never decides it.** AI Insight (Phase 16) is fed a bounded,
    pre-computed fact set built from the same public DTOs the page already renders — it cannot query
    PostgreSQL, invent a score/player/delivery, or override an official result, and its output is
-   schema-validated before anything is shown. The only thing it ever writes is a MongoDB
-   cache document; PostgreSQL is untouched by every AI call (see docs/ARCHITECTURE.md §16).
+   schema-validated before anything is shown. The only thing it ever writes is an upsert into the
+   `ai_insights` cache table (MongoDB before the Phase 6 cleanup, PostgreSQL since) — it never
+   touches any cricket-authoritative table (see docs/ARCHITECTURE.md §16).
 10. **Analytics derives, it never decides.** Advanced Cricket Analytics (Phase 17) is a pure-function
     layer over already-authoritative data (career stats, team records, replayed innings state) — it
     never recalculates a score/wicket/result differently than the existing scoring/statistics

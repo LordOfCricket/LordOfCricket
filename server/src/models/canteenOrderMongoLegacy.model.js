@@ -1,3 +1,19 @@
+// ============================================================================
+// LEGACY MIGRATION TOOLING ONLY — NOT USED BY RUNTIME APPLICATION
+// ============================================================================
+//
+// RETIRED from the live request path (MongoDB cleanup, Phase 5 — the FINAL
+// MongoDB-backed business feature — see docs/ARCHITECTURE.md / the Phase 0
+// audit report). canteenOrder.controller.js now reads/writes PostgreSQL's
+// `orders`/`order_items` tables via models/canteenOrder.model.js instead.
+// This file is kept, unchanged, ONLY so
+// server/src/scripts/migrateOrdersToPostgres.js can read the original
+// MongoDB documents, and as a rollback reference (MongoDB's Order data
+// itself is never deleted by the migration). Do not import this from any
+// new code — the canonical `Order` model going forward is the PostgreSQL
+// one. MongoDB itself, Mongoose, connectMongo()/isMongoReady()/MONGO_URI
+// all remain fully wired per this phase's explicit instructions — only
+// Order's own runtime dependency on this specific file is retired.
 import mongoose from 'mongoose'
 
 const orderSchema = new mongoose.Schema(

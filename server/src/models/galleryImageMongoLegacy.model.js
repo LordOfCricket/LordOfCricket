@@ -1,3 +1,6 @@
+// ============================================================================
+// LEGACY MIGRATION TOOLING ONLY — NOT USED BY RUNTIME APPLICATION
+// ============================================================================
 import mongoose from 'mongoose'
 
 // RETIRED from the live request path (MongoDB cleanup, Phase 1 — see

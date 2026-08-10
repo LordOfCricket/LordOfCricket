@@ -2,7 +2,7 @@ import 'dotenv/config'
 import http from 'http'
 import { Server } from 'socket.io'
 import app from './app.js'
-import { connectPostgres, connectMongo } from './config/db.js'
+import { connectPostgres } from './config/db.js'
 import { allowedOrigins } from './config/corsOrigins.js'
 import { registerCricketRealtime } from './realtime/cricketRealtime.js'
 import { registerBookingRealtime } from './realtime/bookingRealtime.js'
@@ -67,9 +67,16 @@ registerCricketRealtime(io)
 // pattern as cricket realtime above. See server/src/realtime/bookingRealtime.js.
 registerBookingRealtime(io)
 
+// MongoDB cleanup, Phase 6 — GalleryImage/AiInsight/MenuItem/TodayMenu/Order
+// are all PostgreSQL now (Phases 1-5); no live route/controller/service
+// imports a Mongo model anymore (repo-wide search, see the Phase 6 report).
+// `connectMongo()` is deliberately NOT called here — MongoDB is no longer
+// part of the production runtime startup path. It remains fully defined and
+// exported from config/db.js (unchanged) for migration scripts
+// (scripts/migrate*ToPostgres.js, scripts/exportMongoBackup.js) and
+// integration tests to call themselves, independently, when they run.
 async function start() {
   await connectPostgres()
-  await connectMongo()
   server.listen(PORT, () => logger.info(`Server listening on port ${PORT}`))
 }
 

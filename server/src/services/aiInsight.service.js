@@ -2,8 +2,8 @@
 //
 // PostgreSQL (authoritative) -> existing services (matchSummary/statistics/
 // publicTeam, all UNCHANGED) -> domain/ai context builders (pure) ->
-// AI provider (server-only) -> structured-output validation -> MongoDB
-// cache -> API DTO.
+// AI provider (server-only) -> structured-output validation -> PostgreSQL
+// `ai_insights` cache (MongoDB cleanup, Phase 2 — was MongoDB before) -> API DTO.
 //
 // Non-negotiables enforced here, not hoped-for:
 //  - AI is NEVER on the critical path of any existing read — a provider
@@ -13,13 +13,15 @@
 //  - AI output is validated, then POST-PROCESSED to strip any key-moment
 //    candidateId or player id the model referenced that isn't actually in
 //    the supplied context (Part 11/48) — never trusted blindly.
-//  - AI never writes to PostgreSQL, ever. The only write this file performs
-//    is an upsert into the `AiInsight` Mongo cache document.
+//  - AI never writes to any cricket-authoritative PostgreSQL table, ever.
+//    The only write this file performs is an upsert into the `ai_insights`
+//    cache table — itself never a source of cricket truth (README
+//    principle #4/#9), just colocated with the facts it narrates since
+//    Phase 2.
 //  - A finalized match / a player or team with zero eligible data never
 //    gets a fabricated insight (Part 24/38/39) — returns INSUFFICIENT_DATA.
 
-import AiInsight from '../models/aiInsight.model.js'
-import { isMongoReady } from '../config/db.js'
+import { findAiInsight, upsertAiInsight } from '../models/aiInsight.model.js'
 import * as aiProvider from '../ai/aiProvider.js'
 import { validateStructuredOutput } from '../domain/ai/validateStructuredOutput.js'
 import { computeSourceFingerprint } from '../domain/ai/computeSourceFingerprint.js'
@@ -76,12 +78,15 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
 
   const { facts, fingerprintInput } = built
   const fingerprint = computeSourceFingerprint(fingerprintInput)
-  const mongoUp = isMongoReady()
 
-  if (mongoUp && !forceRegenerate) {
-    const cached = await AiInsight.findOne({ sourceType, sourceId: String(sourceId) })
-    if (cached && cached.sourceFingerprint === fingerprint) {
-      return { available: true, insight: cached.payload, generatedAt: cached.generatedAt, model: cached.model, stale: false, cached: true }
+  // PostgreSQL is a hard dependency for this whole app (connectPostgres()
+  // exits the process on failure — see config/db.js) — unlike the retired
+  // Mongo-backed version, there's no "cache store temporarily unavailable"
+  // gate needed here: if the process is running, ai_insights is reachable.
+  if (!forceRegenerate) {
+    const cached = await findAiInsight({ sourceType, sourceId })
+    if (cached && cached.source_fingerprint === fingerprint) {
+      return { available: true, insight: cached.payload, generatedAt: cached.generated_at, model: cached.model, stale: false, cached: true }
     }
   }
 
@@ -111,13 +116,15 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
       const cleaned = postProcess ? postProcess(parsed, facts) : parsed
       const generatedAt = new Date()
 
-      if (mongoUp) {
-        await AiInsight.findOneAndUpdate(
-          { sourceType, sourceId: String(sourceId) },
-          { sourceFingerprint: fingerprint, provider: process.env.AI_PROVIDER || 'anthropic', model: raw.model, payload: cleaned, generatedAt },
-          { upsert: true }
-        )
-      }
+      await upsertAiInsight({
+        sourceType,
+        sourceId,
+        sourceFingerprint: fingerprint,
+        provider: process.env.AI_PROVIDER || 'anthropic',
+        model: raw.model,
+        payload: cleaned,
+        generatedAt,
+      })
       return { available: true, insight: cleaned, generatedAt, model: raw.model, stale: false, cached: false }
     } catch (err) {
       const reason = err.code === 'AI_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : err.code === 'AI_REFUSAL' ? 'DECLINED' : 'PROVIDER_ERROR'

@@ -1,0 +1,252 @@
+import { pool } from '../config/db.js'
+import { generatePublicId } from '../utils/publicId.js'
+
+// MongoDB cleanup, Phase 5 (final feature) — Order's storage layer,
+// migrated from Mongoose to plain parameterized SQL (orders + order_items).
+// This is the last MongoDB-backed business feature; after this, MongoDB
+// itself remains wired (per this phase's explicit instructions) but no
+// live application feature depends on it anymore. The retired Mongoose
+// model (canteenOrderMongoLegacy.model.js) is kept only for the one-time
+// data migration script and rollback reference.
+
+// The exact 6 values PRESET_STATUS already enforced for every new write in
+// the retired controller — see schema.sql's CHECK constraint (same list).
+export const PRESET_STATUS = ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled']
+// Legacy display-only names the retired code's LEGACY_STATUS_MAP normalized
+// on read — never written going forward (see resolveStatus below), but
+// still meaningful for anything that predates this migration.
+export const LEGACY_STATUS_MAP = { 'Order Placed': 'Pending', Prepared: 'Ready', 'Ready for Pickup': 'Ready' }
+// Statuses considered "active" for the one-active-order-per-user rule.
+// Unlike the retired code's ACTIVE_STATUSES (which also listed the legacy
+// names defensively, since old Mongo documents could carry them verbatim),
+// every Postgres row's status is normalized at write/migration time (see
+// resolveStatus), so the legacy names can never appear here — this list is
+// intentionally the 4 non-terminal PRESET_STATUS values only.
+export const ACTIVE_STATUSES = ['Pending', 'Accepted', 'Preparing', 'Ready']
+export const FINISHED_STATUSES = ['Completed', 'Cancelled']
+
+export function resolveStatus(status) {
+  return LEGACY_STATUS_MAP[status] || status
+}
+
+function attachItems(orderRow, itemRows) {
+  return {
+    ...orderRow,
+    items: itemRows.map((row) => ({
+      id: row.raw_item_id,
+      foodId: row.raw_item_id,
+      name: row.item_name,
+      price: Number(row.unit_price),
+      qty: row.quantity,
+    })),
+  }
+}
+
+async function fetchItemsForOrders(client, orderIds) {
+  if (orderIds.length === 0) return new Map()
+  const { rows } = await client.query('SELECT * FROM order_items WHERE order_id = ANY($1) ORDER BY id', [orderIds])
+  const byOrderId = new Map()
+  for (const row of rows) {
+    if (!byOrderId.has(row.order_id)) byOrderId.set(row.order_id, [])
+    byOrderId.get(row.order_id).push(row)
+  }
+  return byOrderId
+}
+
+// Resolves one order item's raw id against menu_items — tries BOTH forms:
+// already-Postgres-format (an id a client fetched from the now-Postgres-
+// backed /canteen/menu) and the general historical case (an old Mongo
+// ObjectId string, resolvable only via legacy_mongo_id). Returns null (not
+// an error) when neither resolves — Order never validates against
+// MenuItem, at creation or afterward (proven in Phase 3's test suite), so
+// an unresolvable id is a normal, expected outcome, not a failure.
+export async function resolveMenuItemId(client, rawId) {
+  const direct = Number(rawId)
+  if (Number.isInteger(direct)) {
+    const { rows } = await client.query('SELECT id FROM menu_items WHERE id = $1', [direct])
+    if (rows[0]) return rows[0].id
+  }
+  const { rows: byLegacy } = await client.query('SELECT id FROM menu_items WHERE legacy_mongo_id = $1', [String(rawId)])
+  if (byLegacy[0]) return byLegacy[0].id
+  return null
+}
+
+// Transactional create (Step 12/17) — order + all its items commit
+// together, or neither does. The active-order guarantee itself is NOT this
+// function's job to check-then-insert (race-prone); it's the database's
+// `idx_orders_one_active_per_user` partial unique index, enforced the
+// instant the INSERT runs. A violation surfaces as a real Postgres error
+// (code 23505) that the caller (createOrder) catches and translates to the
+// same 409 the retired Mongo E11000 path already produced — never
+// swallowed or retried here.
+export async function insertOrder({ userId, customerName, seatId, items, total }) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const publicOrderId = generatePublicId('ORD', 8)
+    const { rows: orderRows } = await client.query(
+      `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status, has_active_order_flag)
+       VALUES ($1,$2,$3,$4,$5,'Pending',true)
+       RETURNING *`,
+      [publicOrderId, userId, customerName, seatId, total],
+    )
+    const order = orderRows[0]
+
+    const itemRows = []
+    for (const item of items) {
+      const rawItemId = String(item.id ?? item.foodId ?? '')
+      const menuItemId = await resolveMenuItemId(client, rawItemId)
+      const { rows } = await client.query(
+        `INSERT INTO order_items (order_id, menu_item_id, raw_item_id, item_name, unit_price, quantity)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         RETURNING *`,
+        [order.id, menuItemId, rawItemId, item.name, item.price, item.qty],
+      )
+      itemRows.push(rows[0])
+    }
+
+    await client.query('COMMIT')
+    return attachItems(order, itemRows)
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function findActiveOrderByUserId(userId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM orders WHERE user_id = $1 AND has_active_order_flag = true
+     ORDER BY ordered_at DESC, created_at DESC LIMIT 1`,
+    [userId],
+  )
+  const order = rows[0]
+  if (!order) return null
+  const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
+  return attachItems(order, itemsByOrder.get(order.id) || [])
+}
+
+export async function findOrderById(publicOrderId) {
+  const { rows } = await pool.query('SELECT * FROM orders WHERE public_order_id = $1', [publicOrderId])
+  const order = rows[0]
+  if (!order) return null
+  const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
+  return attachItems(order, itemsByOrder.get(order.id) || [])
+}
+
+export async function findLatestOrderByUserId(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [userId],
+  )
+  const order = rows[0]
+  if (!order) return null
+  const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
+  return attachItems(order, itemsByOrder.get(order.id) || [])
+}
+
+export async function findOrderHistoryByUserId(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM orders WHERE user_id = $1 ORDER BY ordered_at DESC, created_at DESC',
+    [userId],
+  )
+  if (rows.length === 0) return []
+  const itemsByOrder = await fetchItemsForOrders(pool, rows.map((r) => r.id))
+  return rows.map((order) => attachItems(order, itemsByOrder.get(order.id) || []))
+}
+
+export async function listOrdersPaginated({ activeOnly, page, limit }) {
+  const skip = (page - 1) * limit
+  const whereClause = activeOnly ? 'WHERE status = ANY($1)' : ''
+  const params = activeOnly ? [ACTIVE_STATUSES] : []
+
+  const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS count FROM orders ${whereClause}`, params)
+  const { rows } = await pool.query(
+    `SELECT * FROM orders ${whereClause} ORDER BY ordered_at DESC, created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, skip],
+  )
+  const itemsByOrder = await fetchItemsForOrders(pool, rows.map((r) => r.id))
+  return {
+    total: countRows[0].count,
+    orders: rows.map((order) => attachItems(order, itemsByOrder.get(order.id) || [])),
+  }
+}
+
+// Status transition (Step 16/25/26) — a terminal transition stamps
+// completed_at (the SAME field for both Completed and Cancelled, matching
+// the retired code exactly — no separate cancelled_at exists there) and
+// clears has_active_order_flag to NULL so the partial unique index stops
+// applying, freeing the user to place a new order.
+export async function updateOrderStatusByPublicId(publicOrderId, status) {
+  const isFinished = FINISHED_STATUSES.includes(status)
+  const { rows } = await pool.query(
+    `UPDATE orders SET
+       status = $1,
+       completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+       has_active_order_flag = CASE WHEN $2 THEN NULL ELSE has_active_order_flag END,
+       updated_at = NOW()
+     WHERE public_order_id = $3
+     RETURNING *`,
+    [status, isFinished, publicOrderId],
+  )
+  const order = rows[0]
+  if (!order) return null
+  const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
+  return attachItems(order, itemsByOrder.get(order.id) || [])
+}
+
+// Idempotent, transactional upsert keyed on the ORIGINAL MongoDB `_id` —
+// used only by the one-time Phase 5 data migration script
+// (scripts/migrateOrdersToPostgres.js), never by the live request path.
+export async function upsertOrderByLegacyMongoId({ legacyMongoId, userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, resolvedItems }) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const { rows: existing } = await client.query('SELECT id, public_order_id FROM orders WHERE legacy_mongo_id = $1', [legacyMongoId])
+    let orderId
+    let publicOrderId
+    let inserted
+    if (existing[0]) {
+      orderId = existing[0].id
+      publicOrderId = existing[0].public_order_id
+      inserted = false
+      await client.query(
+        `UPDATE orders SET user_id=$1, customer_name=$2, seat_id=$3, total=$4, status=$5,
+           has_active_order_flag=$6, ordered_at=$7, completed_at=$8, updated_at=NOW()
+         WHERE id = $9`,
+        [userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, orderId],
+      )
+    } else {
+      inserted = true
+      publicOrderId = generatePublicId('ORD', 8)
+      const row = await client.query(
+        `INSERT INTO orders (public_order_id, user_id, customer_name, seat_id, total, status,
+           has_active_order_flag, ordered_at, completed_at, created_at, updated_at, legacy_mongo_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         RETURNING id`,
+        [publicOrderId, userId, customerName, seatId, total, status, hasActiveOrderFlag, orderedAt, completedAt, createdAt, updatedAt, legacyMongoId],
+      )
+      orderId = row.rows[0].id
+    }
+
+    await client.query('DELETE FROM order_items WHERE order_id = $1', [orderId])
+    for (const item of resolvedItems) {
+      await client.query(
+        `INSERT INTO order_items (order_id, menu_item_id, raw_item_id, item_name, unit_price, quantity)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [orderId, item.menuItemId, item.rawItemId, item.itemName, item.unitPrice, item.quantity],
+      )
+    }
+
+    await client.query('COMMIT')
+    return { orderId, publicOrderId, inserted, itemCount: resolvedItems.length }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}

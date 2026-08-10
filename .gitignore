@@ -10,6 +10,9 @@ build
 # User-uploaded content (server/uploads/**) — runtime data, not source
 uploads
 
+# MongoDB backup exports (server/backups/**, Phase 6) — a data snapshot, not source
+backups
+
 # Logs
 *.log
 npm-debug.log*

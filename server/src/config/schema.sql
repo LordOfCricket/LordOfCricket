@@ -719,3 +719,327 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;
 ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
 ALTER TABLE amenities ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 1 — GalleryImage migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `GalleryImage`
+-- collection (see server/src/models/galleryImageMongoLegacy.model.js, kept
+-- only for the one-time migration script / rollback reference — no longer on
+-- the live request path). Field-for-field identical shape to
+-- ground_photos/amenities/partners above, which already proved this exact
+-- Cloudinary-URL-plus-metadata pattern; the sub-document `image.{url,
+-- publicId,width,height,format,bytes}` simply flattens to columns.
+CREATE TABLE IF NOT EXISTS gallery_images (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(150) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  category VARCHAR(20) NOT NULL DEFAULT 'ground'
+    CHECK (category IN ('ground','match','tournament','event')),
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT NOT NULL,
+  image_width INTEGER,
+  image_height INTEGER,
+  image_format VARCHAR(10),
+  image_bytes INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — maps a migrated row back to the
+  -- original MongoDB GalleryImage._id for auditability/idempotent re-runs
+  -- during the burn-in period. NULL for any row created directly in
+  -- PostgreSQL after this migration (never required). Never exposed through
+  -- the public API (see galleryImage.service.js#toPublicShape). Safe to drop
+  -- in a later cleanup phase once production is verified.
+  legacy_mongo_id TEXT
+);
+
+-- The one real query pattern this table serves (same rationale as the
+-- retired Mongo index it replaces): "active images in a category, in
+-- display order" — public gallery reads + the homepage carousel.
+CREATE INDEX IF NOT EXISTS idx_gallery_images_category_active_order
+  ON gallery_images(category, is_active, sort_order);
+
+-- Lets the migration script upsert by legacy_mongo_id (ON CONFLICT) so
+-- re-running it after a partial failure never creates duplicate rows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gallery_images_legacy_mongo_id
+  ON gallery_images(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 2 — AiInsight migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `AiInsight` cache
+-- collection (see server/src/models/aiInsightMongoLegacy.model.js, kept only
+-- for the one-time migration script / rollback reference — no longer on the
+-- live request path). This is still purely a CACHE, never a second source of
+-- cricket truth (README principle #4/#9, ARCHITECTURE.md §16.5) — colocating
+-- it in PostgreSQL doesn't change that, it only changes which database holds
+-- the cache. Deleting every row here loses nothing authoritative; the next
+-- read simply regenerates it from PostgreSQL's own cricket data.
+--
+-- `source_id` is intentionally VARCHAR, not an INTEGER FK: it's a
+-- polymorphic reference (a `matches.id` when source_type='MATCH', a
+-- `teams.id` when 'TEAM', but a `players.public_player_id` — already a
+-- VARCHAR, not `players.id` — when 'PLAYER'), so a single-column FK to three
+-- differently-shaped targets isn't expressible. Same documented tradeoff
+-- `score_corrections.target_id`/`ground_audit_log.entity_id` already accept
+-- above — resolved by application code, not a trigger.
+--
+-- `payload` stays JSONB deliberately, not because Mongo happened to store it
+-- as a nested document: it's genuinely variable-shaped, schema-validated
+-- AI-generated content (a different shape per source_type — see
+-- ai/schemas/matchInsightSchema.js vs personInsightSchema.js), never
+-- filtered/queried by its internal fields anywhere in this app — the exact
+-- same reasoning `matches.rules` and `match_events.payload` already use.
+CREATE TABLE IF NOT EXISTS ai_insights (
+  id SERIAL PRIMARY KEY,
+  source_type VARCHAR(10) NOT NULL CHECK (source_type IN ('MATCH', 'PLAYER', 'TEAM')),
+  source_id VARCHAR(30) NOT NULL,
+  -- sha256 hex digest (see domain/ai/computeSourceFingerprint.js) — always
+  -- exactly 64 hex characters, never guessed-at width.
+  source_fingerprint VARCHAR(64) NOT NULL,
+  provider VARCHAR(30) NOT NULL,
+  model VARCHAR(50) NOT NULL,
+  payload JSONB NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment above for the exact rationale, identical here.
+  legacy_mongo_id TEXT,
+  -- The actual caching key (mirrors the retired Mongo collection's unique
+  -- compound index exactly): at most one cached insight per entity at a
+  -- time — a regeneration overwrites this row in place, it never creates
+  -- history/versioning. Every live read/write goes through THIS constraint
+  -- (ON CONFLICT (source_type, source_id)), not legacy_mongo_id.
+  UNIQUE (source_type, source_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_insights_legacy_mongo_id
+  ON ai_insights(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 3 — MenuItem migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `MenuItem` collection
+-- (see server/src/models/canteenMenuItemMongoLegacy.model.js, kept only for
+-- the one-time migration script / rollback reference — no longer on the
+-- live request path). No existing PostgreSQL table could be reused for
+-- this — audited first (no canteen/menu table exists anywhere in this
+-- schema) — so this is a genuinely new table, not a duplicate of one.
+--
+-- `price` is NUMERIC, never FLOAT/REAL/DOUBLE: this is real currency (INR),
+-- and floating point cannot represent money exactly — the same reasoning
+-- every other money-shaped value in a well-modeled schema follows, even
+-- though no other LOC table happens to store a price today.
+--
+-- Deliberately NO `ground_id`/`canteen_id` column: audited first (Step 6)
+-- — the retired Mongoose schema had no such field, and this app manages
+-- exactly one physical ground/canteen today (see ARCHITECTURE.md §18.1's
+-- same "no ground_id anywhere" statement for ground_bookings). A future,
+-- dedicated multi-ground phase will need to add `canteen_id` here (and to
+-- `TodayMenu`/`Order` once THEY migrate) — intentionally not pre-built now,
+-- consistent with this project's own "audit-first, no speculative columns"
+-- discipline.
+--
+-- TodayMenu and Order remain on MongoDB this phase (unchanged, per strict
+-- scope) and continue to reference a menu item by whatever string `id` this
+-- table hands back (Mongoose's `TodayMenu.items[].id` / `Order.items[].id`/
+-- `.foodId` are plain, unconstrained String fields — never a real Mongo
+-- ObjectId ref — so a Postgres integer-as-string slots in with zero schema
+-- friction on the Mongo side). One real, documented consequence: currently
+-- PUBLISHED `TodayMenu` entries reference the OLD Mongo ObjectId string, so
+-- after this migration they will not match any *new* Postgres-backed
+-- `menu_items.id` until staff republish today's menu — see the Phase 3
+-- report's "Order relationship compatibility analysis" section.
+CREATE TABLE IF NOT EXISTS menu_items (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  price NUMERIC(8,2) NOT NULL,
+  image_url TEXT NOT NULL DEFAULT '',
+  cloudinary_public_id TEXT NOT NULL DEFAULT '',
+  default_stock INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment for the exact rationale, identical here. Also doubles as the
+  -- breadcrumb a future Order-migration phase needs: a historical Order's
+  -- `items[].foodId` (a MongoDB ObjectId string) can be resolved back to
+  -- this row via `legacy_mongo_id`, even though Order itself doesn't
+  -- migrate in this phase.
+  legacy_mongo_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_items_legacy_mongo_id
+  ON menu_items(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 4 — TodayMenu migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `TodayMenu` singleton
+-- document (see server/src/models/canteenTodayMenuMongoLegacy.model.js, kept
+-- only for the one-time migration script / rollback reference). Two tables,
+-- not one JSONB blob: `items[]` in Mongo already had a fixed, fully-typed
+-- shape (id/available/stock/dailyPrice) referencing another collection by
+-- id — exactly the relational shape `menu_items`'s own Cloudinary+Postgres
+-- siblings already use, and exactly what a real `menu_item_id` foreign key
+-- (Step 5's explicit ask) requires child ROWS for, not a nested document.
+--
+-- `today_menu` is a practical singleton — the retired code always operated
+-- on "the one document" via `findOne({})` with no filter, never a real
+-- uniqueness constraint. Application code preserves that exact convention
+-- (always the lowest/only id), so no artificial `CHECK (id = 1)` is added
+-- for a constraint the app never actually needed enforced at the DB level.
+CREATE TABLE IF NOT EXISTS today_menu (
+  id SERIAL PRIMARY KEY,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment for the exact rationale, identical here.
+  legacy_mongo_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_today_menu_legacy_mongo_id
+  ON today_menu(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- One row per published item. A REAL foreign key to menu_items (Step 5) —
+-- unlike the retired Mongo array, which could (and, prior to Phase 3A,
+-- silently did) hold an item id with no matching MenuItem, invisible only
+-- at READ time via a JS `.filter(Boolean)`. That's no longer representable
+-- here on purpose: `updateTodaysMenu`'s write path now resolves/validates
+-- ids BEFORE insert, so an unresolvable id is simply never written, instead
+-- of being written and then silently ignored later. Zero observable API
+-- difference (an unresolvable id was already invisible through every read
+-- endpoint before) — see the Phase 4 report's "Replacement semantics"
+-- section for the full reasoning.
+--
+-- `UNIQUE(today_menu_id, menu_item_id)`: the retired code's own read path
+-- (`Object.fromEntries(items.map(i => [i.id, i]))`) already collapsed
+-- duplicate ids in one publish to "last one wins" — this constraint plus a
+-- write-side dedup (same rule, keep the last occurrence) makes that
+-- pre-existing, already-observable behavior a real guarantee instead of an
+-- accident of `Object.fromEntries` key ordering.
+--
+-- `sort_order`: publish order is observably meaningful (both the staff
+-- dashboard's today's-items list and the public menu render in the order
+-- the API returns) — preserved explicitly rather than relying on insertion
+-- order, which SQL never guarantees on its own.
+CREATE TABLE IF NOT EXISTS today_menu_items (
+  id SERIAL PRIMARY KEY,
+  today_menu_id INTEGER NOT NULL REFERENCES today_menu(id) ON DELETE CASCADE,
+  menu_item_id INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+  available BOOLEAN NOT NULL DEFAULT false,
+  stock INTEGER NOT NULL DEFAULT 0,
+  daily_price NUMERIC(8,2) NOT NULL DEFAULT 0,
+  sort_order SMALLINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (today_menu_id, menu_item_id)
+);
+-- today_menu_id: every read (listMenu/getTodaysMenuConfig) fetches "this
+-- publish's items, in order" — the one real query pattern this table serves.
+CREATE INDEX IF NOT EXISTS idx_today_menu_items_today_menu_id ON today_menu_items(today_menu_id, sort_order);
+-- menu_item_id: backs deleteMenuItem's existing cross-table cleanup (remove
+-- this item's entry from today's published menu), now a real indexed
+-- lookup instead of an in-memory JS array filter.
+CREATE INDEX IF NOT EXISTS idx_today_menu_items_menu_item_id ON today_menu_items(menu_item_id);
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 5 (final feature) — Order migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `Order` collection
+-- (see server/src/models/canteenOrderMongoLegacy.model.js, kept only for
+-- the one-time migration script / rollback reference). The real identity
+-- on an order is `user_id` (an integer FK to `users` — `req.user.id` from
+-- the JWT), NOT a mobile number; the retired schema never had a mobile
+-- number field. There is also no separate `cancelled_at` — the retired
+-- code stamps the SAME `completedAt` field for both 'Completed' and
+-- 'Cancelled' (any FINISHED_STATUSES transition), never a second column —
+-- preserved exactly as `completed_at`, not split into two.
+--
+-- `public_order_id` reuses the EXACT SAME `generatePublicId()` utility
+-- already used for `ground_bookings.public_booking_id` and
+-- `tournaments.public_tournament_id` (utils/publicId.js) — the retired
+-- Mongo-backed API exposed the raw Mongo `_id` hex string as `order.id`;
+-- exposing PostgreSQL's sequential integer PK the same way would leak
+-- internal row counts, so this app's own established pattern is reused
+-- instead of inventing a new one.
+CREATE TABLE IF NOT EXISTS orders (
+  id SERIAL PRIMARY KEY,
+  public_order_id VARCHAR(20) UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  customer_name VARCHAR(150) NOT NULL DEFAULT '',
+  seat_id VARCHAR(50) NOT NULL DEFAULT 'unknown',
+  total NUMERIC(10,2) NOT NULL,
+  -- The exact 6 values PRESET_STATUS already enforces for every new write
+  -- in the retired code (canteenOrder.controller.js) — legacy display-only
+  -- names ('Order Placed'/'Prepared'/'Ready for Pickup') are normalized via
+  -- LEGACY_STATUS_MAP at migration/write time, never stored verbatim (see
+  -- the migration script) — matching how normalizeOrder() already
+  -- transparently displays them as their current equivalents today.
+  status VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (status IN (
+    'Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled'
+  )),
+  -- Direct translation of the retired Mongo `hasActiveOrderFlag` field:
+  -- NULL (not false) while inactive, so the partial unique index below only
+  -- ever applies to genuinely active orders — an UPDATE to a terminal
+  -- status must explicitly SET this NULL, mirroring the retired code's
+  -- explicit Mongo `$unset` (its own comment there: "Mongoose does not
+  -- reliably translate doc.field = undefined into a real $unset on save()").
+  has_active_order_flag BOOLEAN,
+  ordered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  legacy_mongo_id TEXT
+);
+
+-- THE concurrency guarantee (Step 11/12) — direct translation of the proven
+-- MongoDB partial unique index `{userId, hasActiveOrderFlag}`. Two
+-- transactions concurrently inserting an active order for the same user_id
+-- cannot both commit; the loser gets a 23505 unique-violation error,
+-- translated to the same HTTP 409 the Mongo E11000 path already produced.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_per_user
+  ON orders(user_id) WHERE has_active_order_flag = true;
+-- order history / active-order lookup: "this user's orders, newest first"
+-- (getOrderHistory, lookupOrderByUser) and "this user's active order"
+-- (getActiveOrder) are both this exact shape.
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id, ordered_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_legacy_mongo_id
+  ON orders(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+-- No separate index needed for public_order_id — the column's own
+-- `UNIQUE NOT NULL` constraint already creates one automatically.
+
+-- One row per ordered line item. `raw_item_id` is the AUTHORITATIVE,
+-- always-present identifier — exactly mirroring the retired schema's own
+-- `items[].id`/`.foodId` (plain, unconstrained Mongoose Strings, always
+-- kept equal to each other by normalizeItems()), because Order's own
+-- business rule (proven in Phase 3's test suite) is that it NEVER validates
+-- an item id against MenuItem, at creation or afterward — a fabricated id
+-- must remain fully representable. `menu_item_id` is a best-effort,
+-- OPTIONAL resolution of that same string against a real menu_items row
+-- (nullable — Step 15: historical orders must stay readable even if their
+-- MenuItem was later deleted, or never existed at all), useful only for
+-- analytics/future joins, never for display: `item_name`/`unit_price` are
+-- the permanent, authoritative snapshot and are NEVER re-derived from
+-- menu_items, even if the live price changes.
+CREATE TABLE IF NOT EXISTS order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  menu_item_id INTEGER REFERENCES menu_items(id) ON DELETE SET NULL,
+  raw_item_id TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  unit_price NUMERIC(8,2) NOT NULL,
+  quantity SMALLINT NOT NULL CHECK (quantity > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);

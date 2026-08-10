@@ -1,3 +1,17 @@
+// ============================================================================
+// LEGACY MIGRATION TOOLING ONLY — NOT USED BY RUNTIME APPLICATION
+// ============================================================================
+//
+// RETIRED from the live request path (MongoDB cleanup, Phase 2 — see
+// docs/ARCHITECTURE.md / the Phase 0 audit report). aiInsight.service.js
+// now reads/writes PostgreSQL's `ai_insights` table via
+// models/aiInsight.model.js instead. This file is kept, unchanged, ONLY so
+// server/src/scripts/migrateAiInsightsToPostgres.js can read the original
+// MongoDB documents, and as a rollback reference (MongoDB's AiInsight data
+// itself is never deleted by the migration). Do not import this from any
+// new code — the canonical `AiInsight` model going forward is the
+// PostgreSQL one.
+//
 // Phase 16 Part 20/21 — AI-generated narrative content is exactly the
 // "generated/unstructured content" case the Phase 15/16 spec calls out for
 // MongoDB (canteen's existing home): PostgreSQL remains authoritative for
