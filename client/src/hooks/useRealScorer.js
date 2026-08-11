@@ -70,7 +70,12 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
         setMatchPlayers(mps)
         await refresh()
       } catch (err) {
-        if (!cancelled) setLoadError(err.response?.data?.message || 'Unable to load this match.')
+        // Auth-middleware 403s (requireMatchScorer) return {error}, not
+        // {message} — checked first so a non-assigned umpire sees the real
+        // reason ("You are not assigned to umpire this match.") instead of
+        // a generic fallback (U4/U3.1: handle authorization failure
+        // gracefully, not as a broken/blank state).
+        if (!cancelled) setLoadError(err.response?.data?.error || err.response?.data?.message || 'Unable to load this match.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -94,7 +99,7 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
           setConflictNotice('The score changed on another device. Latest state has been loaded.')
           await refresh().catch(() => {})
         } else {
-          setActionError(err.response?.data?.message || 'That action was not recorded. Please try again.')
+          setActionError(err.response?.data?.error || err.response?.data?.message || 'That action was not recorded. Please try again.')
         }
       } finally {
         setPending(false)

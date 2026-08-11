@@ -64,12 +64,22 @@ export default function UmpireStatusPage() {
                   <p className="text-slate-300">Create matches, open the scorer for a live match, and finalize completed matches.</p>
                 )}
 
-                <Link
-                  to="/matches/new"
-                  className="mt-8 inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-sm font-bold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:-translate-y-0.5"
-                >
-                  Create New Match
-                </Link>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Link
+                    to="/matches/new"
+                    className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-sm font-bold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:-translate-y-0.5"
+                  >
+                    Create New Match
+                  </Link>
+                  {!isStaff && (
+                    <Link
+                      to="/umpire/dashboard"
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/15 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-white/10"
+                    >
+                      Go to Umpire Dashboard
+                    </Link>
+                  )}
+                </div>
 
                 <div className="mt-8">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Matches</p>

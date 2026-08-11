@@ -3,6 +3,8 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import Layout from '../components/layout/Layout.jsx'
 import RequireAuth from './RequireAuth.jsx'
 import RequireStaffRole from './RequireStaffRole.jsx'
+import RequireApprovedUmpire from './RequireApprovedUmpire.jsx'
+import RequireGroundOwner from './RequireGroundOwner.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
 import RouteErrorBoundary from './RouteErrorBoundary.jsx'
 import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
@@ -38,6 +40,12 @@ const PlayerDashboardPage = lazy(() => import('../pages/player-dashboard/PlayerD
 const ProfilePage = lazy(() => import('../pages/profile/ProfilePage.jsx'))
 const ProfileEditPage = lazy(() => import('../pages/profile/ProfileEditPage.jsx'))
 const UmpireStatusPage = lazy(() => import('../pages/umpire/UmpireStatusPage.jsx'))
+const UmpireDashboardPage = lazy(() => import('../pages/umpire/UmpireDashboardPage.jsx'))
+const AvailableMatchesPage = lazy(() => import('../pages/umpire/AvailableMatchesPage.jsx'))
+const MyAssignmentsPage = lazy(() => import('../pages/umpire/MyAssignmentsPage.jsx'))
+const UmpireProfilePage = lazy(() => import('../pages/umpire/UmpireProfilePage.jsx'))
+const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
+const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
 
 // Phase 5 — real, backend-authoritative match scoring
 const MatchSetupPage = lazy(() => import('../pages/match-setup/MatchSetupPage.jsx'))
@@ -121,6 +129,12 @@ const router = createBrowserRouter([
       { path: '/profile', element: <RequireAuth>{withSuspense(<ProfilePage />)}</RequireAuth> },
       { path: '/profile/edit', element: <RequireAuth>{withSuspense(<ProfileEditPage />)}</RequireAuth> },
       { path: '/umpire', element: <RequireAuth>{withSuspense(<UmpireStatusPage />)}</RequireAuth> },
+      { path: '/umpire/dashboard', element: <RequireApprovedUmpire>{withSuspense(<UmpireDashboardPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/available-matches', element: <RequireApprovedUmpire>{withSuspense(<AvailableMatchesPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/my-assignments', element: <RequireApprovedUmpire>{withSuspense(<MyAssignmentsPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/profile', element: <RequireApprovedUmpire>{withSuspense(<UmpireProfilePage />)}</RequireApprovedUmpire> },
+      { path: '/ground-owner/dashboard', element: <RequireGroundOwner>{withSuspense(<GroundOwnerDashboardPage />)}</RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner>{withSuspense(<GroundMatchesPage />)}</RequireGroundOwner> },
 
       // Phase 8 — player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: withSuspense(<PlayersDiscoveryPage />) },

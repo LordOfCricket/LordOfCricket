@@ -48,6 +48,24 @@ export async function findMembershipsByGroundId(groundId) {
   return rows
 }
 
+// U5 — the Ground Owner Dashboard's ground list: every ACTIVE membership
+// row for this role, joined out to the real ground row. No uniqueness
+// constraint restricts a user to one GROUND_OWNER row (confirmed by
+// inspecting the schema before this phase) — one owner legitimately
+// managing several grounds is already fully supported, not a new case to
+// design around.
+export async function findGroundsOwnedByUser(userId, role = 'GROUND_OWNER') {
+  const { rows } = await pool.query(
+    `SELECT g.*
+     FROM ground_users gu
+     JOIN grounds g ON g.id = gu.ground_id
+     WHERE gu.user_id = $1 AND gu.role = $2 AND gu.is_active = true
+     ORDER BY g.name`,
+    [userId, role],
+  )
+  return rows
+}
+
 export async function setMembershipActive(id, isActive) {
   const { rows } = await pool.query(
     `UPDATE ground_users SET is_active = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,

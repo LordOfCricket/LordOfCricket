@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, FlaskConical, LogOut } from 'lucide-react'
+import { ChevronDown, FlaskConical, LandPlot, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
 import { getAccountLinks } from '../../models/navLinks.model.js'
+import { useIsGroundOwner } from '../../hooks/useIsGroundOwner.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
   const MENU_LINKS = getAccountLinks(user)
+  // Not part of getAccountLinks (that function is synchronous — user.role/
+  // player_type only; ground ownership has no such signal on the user
+  // object) — U5's own self-check, same "fetch quietly in the navbar"
+  // posture NotificationBell already has.
+  const isGroundOwner = useIsGroundOwner(Boolean(user))
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -76,6 +82,19 @@ export default function AccountMenu({ user, player, onLogout }) {
               )
             })}
           </div>
+
+          {isGroundOwner && (
+            <div className="border-t border-white/10 py-2">
+              <Link
+                to="/ground-owner/dashboard"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-emerald-100/80 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <LandPlot className="h-4 w-4 text-emerald-300" />
+                Ground Owner Dashboard
+              </Link>
+            </div>
+          )}
 
           <div className="border-t border-white/10 py-2">
             <Link

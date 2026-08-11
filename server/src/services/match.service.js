@@ -6,7 +6,10 @@
 
 import { findMatchByIdWithTeams, createMatch as createMatchModel, updateMatch } from '../models/match.model.js'
 import { findTeamById } from '../models/team.model.js'
+import { findGroundById } from '../models/ground.model.js'
 import { countPlayingXiByTeam } from '../repositories/matchPlayer.repository.js'
+import { createSlotsForMatch } from '../models/matchUmpireSlot.model.js'
+import { pool } from '../config/db.js'
 
 const MIN_PLAYING_XI = 2 // absolute floor: need a striker and a non-striker to start batting
 const DEFAULT_MAX_PLAYING_XI = 11
@@ -29,7 +32,10 @@ function notFound(message) {
   return err
 }
 
-export async function createMatch({ teamAId, teamBId, venue, matchDate, oversPerInnings, ballsPerOver, rules }) {
+// groundId/requiredUmpires (U3) are optional — omitted, a match behaves
+// exactly as before (ground_id NULL, no umpire slots), matching U1's
+// no-fabricated-backfill stance for every match created before this phase.
+export async function createMatch({ teamAId, teamBId, venue, matchDate, oversPerInnings, ballsPerOver, rules, groundId, requiredUmpires }) {
   if (!Number.isInteger(teamAId) || !Number.isInteger(teamBId)) {
     throw badRequest('teamAId and teamBId are required.')
   }
@@ -45,22 +51,51 @@ export async function createMatch({ teamAId, teamBId, venue, matchDate, oversPer
   if (ballsPerOver !== undefined && (!Number.isInteger(ballsPerOver) || ballsPerOver <= 0)) {
     throw badRequest('ballsPerOver must be a positive integer.')
   }
+  if (requiredUmpires !== undefined && requiredUmpires !== null && (!Number.isInteger(requiredUmpires) || requiredUmpires < 0)) {
+    throw badRequest('requiredUmpires must be a non-negative integer.')
+  }
 
-  // Never trust frontend-supplied team identity beyond the id — confirm both rows exist.
-  const [teamA, teamB] = await Promise.all([findTeamById(teamAId), findTeamById(teamBId)])
+  // Never trust frontend-supplied team/ground identity beyond the id — confirm the rows exist.
+  const [teamA, teamB, ground] = await Promise.all([
+    findTeamById(teamAId),
+    findTeamById(teamBId),
+    groundId != null ? findGroundById(groundId) : Promise.resolve(undefined),
+  ])
   if (!teamA || !teamB) {
     throw badRequest('teamAId and teamBId must reference existing teams.')
   }
+  if (groundId != null && !ground) {
+    throw badRequest('groundId must reference an existing ground.')
+  }
 
-  return createMatchModel({
-    teamAId,
-    teamBId,
-    venue: venue || null,
-    matchDate,
-    oversPerInnings: oversPerInnings ?? null,
-    ballsPerOver: ballsPerOver ?? 6,
-    rules: rules && typeof rules === 'object' ? rules : {},
-  })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const match = await createMatchModel(
+      {
+        teamAId,
+        teamBId,
+        venue: venue || null,
+        matchDate,
+        oversPerInnings: oversPerInnings ?? null,
+        ballsPerOver: ballsPerOver ?? 6,
+        rules: rules && typeof rules === 'object' ? rules : {},
+        groundId: groundId ?? null,
+        requiredUmpires: requiredUmpires ?? 0,
+      },
+      client
+    )
+    if (match.required_umpires > 0) {
+      await createSlotsForMatch(match.id, match.required_umpires, client)
+    }
+    await client.query('COMMIT')
+    return match
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function setToss(matchId, { tossWinnerId, tossDecision }) {

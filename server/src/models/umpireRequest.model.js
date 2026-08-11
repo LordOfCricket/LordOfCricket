@@ -31,6 +31,17 @@ export async function findPendingUmpireRequests() {
   return rows
 }
 
+// Shared Gate 1 check (U2): player_type='umpire' alone is a declared intent,
+// not a grant — only a LATEST umpire_requests row of status='approved' makes
+// someone an approved umpire. Used by requireScorer (auth.js),
+// requireMatchScorer (matchScorerAccess.js), and umpireAssignment.service.js
+// so this rule is expressed in exactly one place.
+export async function isApprovedUmpireUser(user) {
+  if (user?.role !== 'player' || user?.player_type !== 'umpire') return false
+  const latest = await findLatestUmpireRequestForUser(user.id)
+  return latest?.status === 'approved'
+}
+
 export async function decideUmpireRequest(id, status, decidedBy) {
   const { rows } = await pool.query(
     `UPDATE umpire_requests

@@ -1,0 +1,38 @@
+import * as groundOwnerService from '../services/groundOwner.service.js'
+
+export async function listMyGrounds(req, res, next) {
+  try {
+    const grounds = await groundOwnerService.listMyGrounds(req.user.id)
+    res.json({ grounds })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// req.ground is resolved + authorized by requireGroundRole('GROUND_OWNER')
+// before this ever runs — req.params.publicGroundId is only ever used to
+// look up WHICH ground was requested, never trusted for the authorization
+// decision itself.
+export async function listGroundMatches(req, res, next) {
+  try {
+    const matches = await groundOwnerService.listGroundMatches(req.ground)
+    res.json({ matches })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function createGroundMatch(req, res, next) {
+  try {
+    const { teamAId, teamBId, matchDate, requiredUmpires } = req.body
+    const match = await groundOwnerService.createGroundMatch(req.ground, {
+      teamAId: Number(teamAId),
+      teamBId: Number(teamBId),
+      matchDate,
+      requiredUmpires: requiredUmpires != null ? Number(requiredUmpires) : 0,
+    })
+    res.status(201).json({ match })
+  } catch (err) {
+    next(err)
+  }
+}

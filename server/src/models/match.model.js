@@ -1,11 +1,17 @@
 import { pool } from '../config/db.js'
 
-export async function createMatch({ teamAId, teamBId, venue, matchDate, status = 'upcoming', oversPerInnings = null, ballsPerOver = 6, rules = {} }) {
-  const { rows } = await pool.query(
-    `INSERT INTO matches (team_a_id, team_b_id, venue, match_date, status, overs_per_innings, balls_per_over, rules)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+// `client` defaults to pool but accepts a transaction client — U3's
+// match.service.js createMatch inserts the match and its umpire slots
+// (matchUmpireSlot.model.js's createSlotsForMatch) as one transaction.
+export async function createMatch(
+  { teamAId, teamBId, venue, matchDate, status = 'upcoming', oversPerInnings = null, ballsPerOver = 6, rules = {}, groundId = null, requiredUmpires = 0 },
+  client = pool
+) {
+  const { rows } = await client.query(
+    `INSERT INTO matches (team_a_id, team_b_id, venue, match_date, status, overs_per_innings, balls_per_over, rules, ground_id, required_umpires)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
-    [teamAId, teamBId, venue, matchDate, status, oversPerInnings, ballsPerOver, rules]
+    [teamAId, teamBId, venue, matchDate, status, oversPerInnings, ballsPerOver, rules, groundId, requiredUmpires]
   )
   return rows[0]
 }
@@ -46,6 +52,30 @@ export async function findAllMatchesWithTeams() {
     JOIN teams tb ON tb.id = m.team_b_id
     ORDER BY m.match_date DESC
   `)
+  return rows
+}
+
+// U5 — Ground Owner's own match list for one ground. Unfiltered by
+// status/slot-availability (unlike U4's findAvailableMatchesForUmpire) — the
+// owner sees ALL of their ground's matches (upcoming/live/completed/
+// finalized), not just ones still accepting umpire applications. Slot
+// counts use the same correlated-subquery technique as U4's umpire
+// discovery query, so "0/2 filled" is always live, never stale.
+export async function findMatchesByGroundId(groundId) {
+  const { rows } = await pool.query(
+    `SELECT
+       m.id, m.match_date, m.venue, m.status, m.required_umpires,
+       ta.name AS team_a_name, ta.short_name AS team_a_short,
+       tb.name AS team_b_name, tb.short_name AS team_b_short,
+       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id) AS total_slots,
+       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status = 'ASSIGNED') AS filled_slots
+     FROM matches m
+     JOIN teams ta ON ta.id = m.team_a_id
+     JOIN teams tb ON tb.id = m.team_b_id
+     WHERE m.ground_id = $1
+     ORDER BY m.match_date DESC`,
+    [groundId],
+  )
   return rows
 }
 

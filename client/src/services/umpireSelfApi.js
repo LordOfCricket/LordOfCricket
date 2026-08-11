@@ -1,0 +1,44 @@
+// U4 — the umpire's own dashboard: available matches, my assignments,
+// apply/cancel, my profile. Kept separate from umpireApi.js (the
+// umpire_requests admin-approval-queue concern) and matchApi.js (general
+// match lifecycle) — this file is specifically "my own umpire self-service".
+import api from './api.js'
+
+export async function fetchAvailableMatches() {
+  const { data } = await api.get('/umpire/matches/available')
+  return data.matches
+}
+
+export async function fetchMyAssignments() {
+  const { data } = await api.get('/umpire/assignments')
+  return data.assignments
+}
+
+export async function applyForUmpireSlot(matchId) {
+  const { data } = await api.post(`/matches/${matchId}/umpire-slots/apply`)
+  return data.slot
+}
+
+export async function cancelUmpireAssignment(matchId) {
+  const { data } = await api.post(`/matches/${matchId}/umpire-slots/cancel`)
+  return data.slot
+}
+
+// U3's per-match slot detail (umpire name per slot) — no frontend caller
+// needed it until U5's Ground Owner match view ("show assigned umpire
+// information"). Same GET /matches/:matchId/umpire-slots route, just the
+// missing wrapper.
+export async function fetchMatchUmpireSlots(matchId) {
+  const { data } = await api.get(`/matches/${matchId}/umpire-slots`)
+  return data.slots
+}
+
+export async function fetchMyUmpireProfile() {
+  const { data } = await api.get('/umpire/profile')
+  return data.profile
+}
+
+export async function updateMyUmpireProfile(fields) {
+  const { data } = await api.patch('/umpire/profile', fields)
+  return data.profile
+}

@@ -1256,3 +1256,127 @@ CREATE INDEX IF NOT EXISTS idx_amenities_ground_id ON amenities(ground_id);
 -- NOT to index with a plain B-tree (that isn't equivalent to a spatial
 -- index and would be actively misleading to add without PostGIS).
 CREATE INDEX IF NOT EXISTS idx_grounds_status ON grounds(status);
+
+-- ============================================================================
+-- PHASE 21 — Umpire Network & Match Officiating (U1: Database Foundation)
+-- ============================================================================
+--
+-- Ground-owner "which matches are at my ground" and match-scoped umpire
+-- assignment both need a real ground<->match link, which has never existed
+-- (venue was always free text). Nullable and backward-compatible: every
+-- match created before this phase simply has ground_id = NULL and is
+-- invisible to any ground-owner query — the Phase 0 audit found no reliable
+-- way to infer which existing match belongs to which ground, so none are
+-- backfilled.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS required_umpires SMALLINT NOT NULL DEFAULT 0 CHECK (required_umpires >= 0);
+CREATE INDEX IF NOT EXISTS idx_matches_ground_id ON matches(ground_id) WHERE ground_id IS NOT NULL;
+
+-- One row PER SLOT, not a counter column (Phase 0 plan's approved Decision
+-- 3): with exactly `required_umpires` rows pre-created per match, claiming a
+-- slot is a single atomic `UPDATE ... WHERE status = 'AVAILABLE' RETURNING
+-- *`, so over-allocation is structurally impossible — there are only ever N
+-- rows to claim — rather than relying on a counted aggregate, which a plain
+-- CHECK constraint can't express across rows anyway. The assignment/claim
+-- endpoint itself is U3, not this phase; this table only lays the
+-- foundation it will claim rows from.
+CREATE TABLE IF NOT EXISTS match_umpire_slots (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  slot_number SMALLINT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
+    CHECK (status IN ('AVAILABLE', 'ASSIGNED', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  assigned_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  cancellation_reason VARCHAR(280),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (match_id, slot_number)
+);
+-- Decision 3's second guarantee ("same umpire cannot hold duplicate active
+-- assignments for the same match") — a PARTIAL unique index rather than a
+-- table-level UNIQUE(match_id, umpire_user_id), since umpire_user_id must
+-- stay reusable across a match's CANCELLED/COMPLETED history rows once a
+-- slot has passed through more than one umpire over time.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_match_umpire_slots_active_umpire
+  ON match_umpire_slots(match_id, umpire_user_id) WHERE status = 'ASSIGNED';
+-- "My Assignments" (an umpire's own slots, across every match) filters on
+-- umpire_user_id without match_id — UNIQUE(match_id, slot_number) above only
+-- indexes match_id first, so this query shape needs its own index (same
+-- reasoning as idx_ground_users_ground_id elsewhere in this file).
+CREATE INDEX IF NOT EXISTS idx_match_umpire_slots_umpire_user_id
+  ON match_umpire_slots(umpire_user_id) WHERE umpire_user_id IS NOT NULL;
+
+-- Umpire-specific extended profile — never duplicates users/players (name,
+-- email, photo already live there). user_id IS the primary key: a true 1:1,
+-- created lazily (on umpire-request approval or first slot claim, both a
+-- later phase) rather than backfilled for every existing user.
+CREATE TABLE IF NOT EXISTS umpire_profiles (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  bio VARCHAR(500),
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  matches_officiated INTEGER NOT NULL DEFAULT 0,
+  matches_cancelled INTEGER NOT NULL DEFAULT 0,
+  matches_no_show INTEGER NOT NULL DEFAULT 0,
+  rating_avg NUMERIC(3,2) CHECK (rating_avg BETWEEN 0 AND 5),
+  rating_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Approved Decision 4 — one row per (match, participant), not three separate
+-- Ground/Umpire/LOC tables: it's naturally a single progressive submission,
+-- and one UNIQUE constraint enforces "once per match per person" instead of
+-- three. umpire_user_id/umpire_* stay NULL when the match had no assigned
+-- umpire (required_umpires can be 0). No ground_id column here — a ground's
+-- aggregate rating is computed by joining through matches.ground_id,
+-- avoiding a second column that could drift from it. Eligibility ("did this
+-- user actually play in this match") is enforced by application code against
+-- the existing match_players relationship, not by anything in this table.
+CREATE TABLE IF NOT EXISTS match_feedback (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  submitted_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ground_rating SMALLINT NOT NULL CHECK (ground_rating BETWEEN 1 AND 5),
+  ground_comment_liked VARCHAR(500),
+  ground_comment_improve VARCHAR(500),
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  umpire_rating SMALLINT CHECK (umpire_rating BETWEEN 1 AND 5),
+  umpire_comment_liked VARCHAR(500),
+  umpire_comment_improve VARCHAR(500),
+  app_rating SMALLINT NOT NULL CHECK (app_rating BETWEEN 1 AND 5),
+  app_comment VARCHAR(500),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (match_id, submitted_by)
+);
+CREATE INDEX IF NOT EXISTS idx_match_feedback_umpire_user_id
+  ON match_feedback(umpire_user_id) WHERE umpire_user_id IS NOT NULL;
+
+-- Cached aggregates, recomputed from match_feedback (joined through
+-- matches.ground_id) by application code once feedback submission exists
+-- (a later phase) — never written here. rating_count = 0 / rating_avg = NULL
+-- means "no reviews yet", the same honest-absence convention GroundCard has
+-- followed throughout this project rather than a placeholder value.
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS rating_avg NUMERIC(3,2) CHECK (rating_avg BETWEEN 0 AND 5);
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS rating_count INTEGER NOT NULL DEFAULT 0;
+
+-- Notifications need to reference the umpire's match, not a booking —
+-- related_match_id is a new, separate nullable FK mirroring the existing
+-- related_booking_id column rather than overloading it. Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS" (established at Phase 10 above), so the
+-- type CHECK is widened the same idempotent drop-then-add way the
+-- ground_audit_log FK was fixed earlier in this file.
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_match_id INTEGER REFERENCES matches(id) ON DELETE CASCADE;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED'));

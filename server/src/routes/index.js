@@ -22,6 +22,9 @@ import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistic
 import groundBookingRoutes from './groundBooking.routes.js'
 import groundOpsRoutes from './groundOps.routes.js'
 import matchAvailabilityRoutes, { meAvailabilityRoutes } from './matchAvailability.routes.js'
+import umpireAssignmentRoutes from './umpireAssignment.routes.js'
+import umpireSelfRoutes from './umpireSelf.routes.js'
+import groundOwnerRoutes from './groundOwner.routes.js'
 import tournamentRoutes from './tournament.routes.js'
 import { matchAIInsightRoutes, playerAIInsightRoutes, teamAIInsightRoutes } from './aiInsight.routes.js'
 import { playerAnalyticsRoutes, teamAnalyticsRoutes, matchAnalyticsRoutes, tournamentAnalyticsRoutes } from './analytics.routes.js'
@@ -52,6 +55,15 @@ router.use('/teams', teamRoutes)
 // Phase 14 Part 1 — player match availability/RSVP.
 router.use('/matches', matchAvailabilityRoutes)
 router.use('/me', meAvailabilityRoutes)
+
+// Phase 21 (U3) — umpire match-slot application/assignment.
+router.use('/matches', umpireAssignmentRoutes)
+// Phase 21 (U4) — the umpire's own dashboard reads (available matches, my
+// assignments, my profile).
+router.use('/umpire', umpireSelfRoutes)
+// Phase 21 (U5) — Ground Owner match management (own grounds, own matches,
+// creating a match scoped to an owned ground).
+router.use('/ground-owner', groundOwnerRoutes)
 
 // Phase 14 Part 3 — ground booking.
 router.use('/bookings', groundBookingRoutes)

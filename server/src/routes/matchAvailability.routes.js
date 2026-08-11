@@ -1,10 +1,11 @@
 import { Router } from 'express'
-import { requireAuth, requireScorer } from '../middlewares/auth.js'
+import { requireAuth } from '../middlewares/auth.js'
+import { requireMatchScorerByParam } from '../middlewares/matchScorerAccess.js'
 import { getMyAvailability, setMyAvailability, listMatchAvailability } from '../controllers/matchAvailability.controller.js'
 
 // Mounted at /api/matches
 const router = Router()
-router.get('/:matchId/availability', requireAuth, requireScorer, listMatchAvailability)
+router.get('/:matchId/availability', requireAuth, requireMatchScorerByParam('matchId'), listMatchAvailability)
 export default router
 
 // Mounted at /api/me

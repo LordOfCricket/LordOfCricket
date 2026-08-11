@@ -14,8 +14,8 @@ const MAX_CARDS = 8
 // rather than faking them). Revisit once real reviews exist.
 function BookGroundCard({ ground, onBookNow }) {
   return (
-    <div className="flex w-80 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-emerald-400/15 bg-white/5 shadow-lg shadow-black/20 sm:w-96">
-      <Link to={`/grounds/${ground.publicGroundId}`} className="group relative block h-64 w-full overflow-hidden bg-loc-card-dark">
+    <div className="flex w-88 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-emerald-400/15 bg-white/5 shadow-lg shadow-black/20 sm:w-104">
+      <Link to={`/grounds/${ground.publicGroundId}`} className="group relative block h-72 w-full overflow-hidden bg-loc-card-dark">
         {ground.primaryPhoto ? (
           <img
             src={ground.primaryPhoto}
@@ -82,7 +82,7 @@ export default function BookGroundSection() {
 
       <div className="flex w-full max-w-6xl gap-6 overflow-x-auto px-1 pb-2 snap-x snap-mandatory">
         {loading &&
-          Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-84 w-80 shrink-0 animate-pulse rounded-2xl border border-emerald-400/10 bg-white/5 sm:w-96" />)}
+          Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-92 w-88 shrink-0 animate-pulse rounded-2xl border border-emerald-400/10 bg-white/5 sm:w-104" />)}
         {!loading && !error && grounds.map((ground) => <BookGroundCard key={ground.publicGroundId} ground={ground} onBookNow={() => setBookingOpen(true)} />)}
       </div>
 
