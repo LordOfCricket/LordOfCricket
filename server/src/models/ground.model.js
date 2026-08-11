@@ -108,6 +108,16 @@ export async function findPublicActiveGroundByPublicId(publicGroundId) {
 // mirroring tournament.repository.js's own per-row subquery for team_count.
 const EARTH_RADIUS_KM = 6371 // mean radius, standard haversine constant
 
+// Homepage redesign (Stage 1) — a correlated `array_agg` for each ground's
+// real amenity names, same cost/scale reasoning as the existing
+// primary_photo subquery right above each use (one extra correlated
+// subquery per row; fine at current row counts, see this file's EXPLAIN
+// findings). This is what lets GroundCard show real facility chips and the
+// Facilities filter build itself from real data instead of a hardcoded
+// list. NULL when a ground has zero amenities (array_agg over no rows);
+// controllers coalesce that to [] before it reaches the client.
+const AMENITY_NAMES_SUBQUERY = `(SELECT array_agg(a.name) FROM amenities a WHERE a.ground_id = g.id) AS amenity_names`
+
 export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, limit, offset }) {
   const { rows } = await pool.query(
     `WITH candidate_grounds AS (
@@ -117,6 +127,7 @@ export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, l
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
           LIMIT 1) AS primary_photo,
+         ${AMENITY_NAMES_SUBQUERY},
          ${2 * EARTH_RADIUS_KM} * asin(
            sqrt(
              power(sin(radians(latitude - $1) / 2), 2)
@@ -162,7 +173,8 @@ export async function findActiveGroundsByCity({ city, limit, offset }) {
          (SELECT gp.image_url FROM ground_photos gp
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
-          LIMIT 1) AS primary_photo
+          LIMIT 1) AS primary_photo,
+         ${AMENITY_NAMES_SUBQUERY}
        FROM grounds g
        WHERE status = 'ACTIVE' AND city ILIKE '%' || $1 || '%'
      )
@@ -182,23 +194,66 @@ export async function findActiveGroundsByCity({ city, limit, offset }) {
 // findAllGrounds() above (Phase 8) — that one is SELECT * with no status
 // filter, used internally by admin-facing code; this is the explicit,
 // public-safe, paginated equivalent for the discovery API.
-export async function findAllActiveGrounds({ limit, offset }) {
+// `sort` is a fixed, internal enum (never interpolated from client input
+// directly into SQL) — 'name' (default, alphabetical browse), 'newest'
+// (FeaturedGrounds.jsx's "most recently added" selection — real data, not
+// a fabricated "featured" flag the schema doesn't have), or 'city' (the
+// Grounds page's primary sort — "first sort by city").
+const ALL_GROUNDS_SORTS = {
+  name: 'name ASC',
+  newest: 'created_at DESC',
+  city: 'city ASC, name ASC',
+}
+
+export async function findAllActiveGrounds({ limit, offset, sort = 'name' }) {
+  const orderBy = ALL_GROUNDS_SORTS[sort] || ALL_GROUNDS_SORTS.name
   const { rows } = await pool.query(
     `WITH candidate_grounds AS (
        SELECT
-         public_ground_id, slug, name, city, state, country,
+         public_ground_id, slug, name, city, state, country, created_at,
          (SELECT gp.image_url FROM ground_photos gp
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
-          LIMIT 1) AS primary_photo
+          LIMIT 1) AS primary_photo,
+         ${AMENITY_NAMES_SUBQUERY}
        FROM grounds g
        WHERE status = 'ACTIVE'
      )
      SELECT *, COUNT(*) OVER()::int AS total_count
      FROM candidate_grounds
-     ORDER BY name ASC
+     ORDER BY ${orderBy}
      LIMIT $1 OFFSET $2`,
     [limit, offset],
   )
   return { rows, total: rows[0]?.total_count ?? 0 }
+}
+
+// Self-serve ground registration (POST /grounds) — submitted grounds start
+// as DRAFT and need a super_admin to review them before they're publicly
+// discoverable. findGroundsByStatus powers the admin "pending" queue;
+// decideGroundStatus is deliberately scoped to DRAFT -> {ACTIVE,SUSPENDED}
+// only (the `AND status = 'DRAFT'` guard) — this is specifically "decide a
+// pending submission," not a general status-editing endpoint, which wasn't
+// asked for and doesn't exist as a feature.
+export async function findGroundsByStatus(status) {
+  const { rows } = await pool.query('SELECT * FROM grounds WHERE status = $1 ORDER BY created_at DESC', [status])
+  return rows
+}
+
+export async function decideGroundStatus(publicGroundId, nextStatus) {
+  const { rows } = await pool.query(
+    `UPDATE grounds SET status = $2, updated_at = NOW() WHERE public_ground_id = $1 AND status = 'DRAFT' RETURNING *`,
+    [publicGroundId, nextStatus],
+  )
+  return rows[0] || null
+}
+
+// Homepage redesign (Stage 1) — real, distinct city names that currently
+// have at least one ACTIVE ground, for the searchable CitySelector. Never
+// a hardcoded "possible cities" list — this is what actually exists.
+export async function findDistinctActiveCities() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT city FROM grounds WHERE status = 'ACTIVE' AND city IS NOT NULL ORDER BY city`,
+  )
+  return rows.map((r) => r.city)
 }

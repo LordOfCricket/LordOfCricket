@@ -68,3 +68,11 @@ export const analyticsLimiter = makeLimiter({
   max: 120,
   message: 'Too many analytics requests. Please slow down.',
 })
+
+// Ground registration (POST /grounds) — a rare, heavy, one-per-real-ground
+// action, tighter than bookingWriteLimiter's 30/10min.
+export const groundWriteLimiter = makeLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  message: 'Too many ground registration attempts. Please try again shortly.',
+})

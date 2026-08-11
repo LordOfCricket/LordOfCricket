@@ -68,6 +68,22 @@ test('LEADERBOARD L3 — batting-average qualification enforced against real DB 
   }
 })
 
+test('LEADERBOARD "highest-score" — real DB wiring: a real not-out innings ranks with the correct runs/notOut, and a never-scored player never appears', async () => {
+  const fx = await createTeamsFixture({ squadSize: 4 })
+  try {
+    // squadA[2] ends each match not out on 7 (fixtures.js's documented, deterministic score).
+    await playShortFinalizedMatch(fx, { finalize: true })
+    await playShortFinalizedMatch(fx, { finalize: true })
+
+    const board = await statisticsService.getLeaderboard('highest-score', { limit: 10, teamId: fx.teamAId })
+    const a2 = board.items.find((i) => i.player.publicPlayerId === fx.squadA[2].public_player_id)
+    assert.ok(a2, 'a real finalized not-out innings must appear on the highest-score leaderboard')
+    assert.deepEqual(a2.value, { runs: 7, notOut: true })
+  } finally {
+    await fx.cleanup()
+  }
+})
+
 test('LEADERBOARD L4 — invalid metric returns a structured 400, not a server error', async () => {
   await assert.rejects(
     () => statisticsService.getLeaderboard('not-a-real-metric'),

@@ -1,45 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronLeft, ChevronRight, ImageIcon, ArrowRight } from 'lucide-react'
 import { EASE } from '../../lib/motion.js'
-import usePointerCapability from '../../hooks/usePointerCapability.js'
+import useTiltHover from '../../hooks/useTiltHover.js'
 
 const AUTO_ADVANCE_MS = 5500
-
-// Local to this file, deliberately not routed through the shared Hero
-// parallax context — this needs bounds/resolution scoped to the gallery
-// region itself (hover-to-inspect-the-photo), not the whole Hero viewport.
-function useGalleryTilt(maxTiltDeg = 5, maxScale = 1.015) {
-  const enabled = usePointerCapability()
-  const rotateX = useMotionValue(0)
-  const rotateY = useMotionValue(0)
-  const scale = useMotionValue(1)
-  const spring = { stiffness: 200, damping: 20, mass: 0.4 }
-  const springRotateX = useSpring(rotateX, spring)
-  const springRotateY = useSpring(rotateY, spring)
-  const springScale = useSpring(scale, spring)
-
-  const onPointerMove = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const px = (event.clientX - rect.left) / rect.width
-    const py = (event.clientY - rect.top) / rect.height
-    rotateY.set((px - 0.5) * 2 * maxTiltDeg)
-    rotateX.set((0.5 - py) * 2 * maxTiltDeg)
-    scale.set(maxScale)
-  }
-  const onPointerLeave = () => {
-    rotateX.set(0)
-    rotateY.set(0)
-    scale.set(1)
-  }
-
-  return {
-    enabled,
-    style: { rotateX: springRotateX, rotateY: springRotateY, scale: springScale, transformPerspective: 800 },
-    onPointerMove,
-    onPointerLeave,
-  }
-}
 
 function GalleryFrame({ children, className = '' }) {
   return (
@@ -110,7 +75,7 @@ export default function GroundGallery({ className = '', photos = [], groundName 
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const count = photos?.length ?? 0
-  const tilt = useGalleryTilt()
+  const tilt = useTiltHover()
 
   useEffect(() => {
     if (reduceMotion || paused || count <= 1) return undefined

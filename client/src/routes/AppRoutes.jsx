@@ -15,6 +15,8 @@ import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
 // Phase 13 — Level 1 (LOC platform homepage, ground discovery) and Level 2
 // (the reusable per-ground template) replace the old single-ground HomePage.
 const DiscoveryPage = lazy(() => import('../pages/discovery/DiscoveryPage.jsx'))
+const GroundsPage = lazy(() => import('../pages/grounds/GroundsPage.jsx'))
+const RegisterGroundPage = lazy(() => import('../pages/register-ground/RegisterGroundPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
 const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
@@ -24,6 +26,7 @@ const AdminPartnersPage = lazy(() => import('../pages/admin-partners/AdminPartne
 // Super Admin Staff Dashboard
 const AdminDashboardPage = lazy(() => import('../pages/admin-dashboard/AdminDashboardPage.jsx'))
 const AdminUmpireRequestsPage = lazy(() => import('../pages/admin-umpire-requests/AdminUmpireRequestsPage.jsx'))
+const AdminGroundRegistrationsPage = lazy(() => import('../pages/admin-ground-registrations/AdminGroundRegistrationsPage.jsx'))
 const AdminPhotosHubPage = lazy(() => import('../pages/admin-photos-hub/AdminPhotosHubPage.jsx'))
 const CreateStaffPage = lazy(() => import('../pages/admin-staff/CreateStaffPage.jsx'))
 
@@ -95,6 +98,8 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/', element: withSuspense(<DiscoveryPage />) },
+      { path: '/grounds', element: withSuspense(<GroundsPage />) },
+      { path: '/register-ground', element: <RequireAuth>{withSuspense(<RegisterGroundPage />)}</RequireAuth> },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
       { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosPage />)}</RequireStaffRole> },
       { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGalleryPage />)}</RequireStaffRole> },
@@ -104,6 +109,7 @@ const router = createBrowserRouter([
       // Super Admin Staff Dashboard
       { path: '/admin/dashboard', element: <RequireStaffRole allow={['super_admin', 'admin']}>{withSuspense(<AdminDashboardPage />)}</RequireStaffRole> },
       { path: '/admin/umpire-requests', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminUmpireRequestsPage />)}</RequireStaffRole> },
+      { path: '/admin/ground-registrations', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGroundRegistrationsPage />)}</RequireStaffRole> },
       { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosHubPage />)}</RequireStaffRole> },
       { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<CreateStaffPage />)}</RequireStaffRole> },
 

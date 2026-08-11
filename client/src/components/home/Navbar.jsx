@@ -40,6 +40,7 @@ function MagneticCta({ to, children }) {
 // active route gets a small gold underline rather than a filled "tab".
 const NAV_LINKS = [
   { label: 'Home', to: '/', end: true },
+  { label: 'Grounds', to: '/grounds' },
   { label: 'Matches', to: '/matches' },
   { label: 'Players', to: '/players' },
   { label: 'Teams', to: '/teams' },

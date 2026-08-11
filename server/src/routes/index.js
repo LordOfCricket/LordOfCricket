@@ -8,6 +8,8 @@ import matchRoutes from './match.routes.js'
 import indiaMatchRoutes from './indiaMatch.routes.js'
 import partnerRoutes from './partner.routes.js'
 import groundRoutes from './ground.routes.js'
+import groundReviewRoutes from './groundReview.routes.js'
+import geocodeRoutes from './geocode.routes.js'
 import canteenMenuRoutes, { groundScopedRouter as groundScopedCanteenMenuRoutes } from './canteenMenu.routes.js'
 import canteenOrderRoutes, { groundScopedRouter as groundScopedCanteenOrderRoutes } from './canteenOrder.routes.js'
 import authRoutes from './auth.routes.js'
@@ -110,5 +112,15 @@ router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/orders', groundSc
 // '/GRD-x/canteens/CAN-y/menu' never matches here and falls through to the
 // canteen-scoped mounts above, regardless of registration order.
 router.use('/grounds', groundRoutes)
+
+// Admin review queue for self-serve ground registrations (POST /grounds) —
+// its own top-level route, not under /grounds, same reasoning as
+// umpireRequestRoutes: an admin queue, not a public ground resource.
+router.use('/ground-review', groundReviewRoutes)
+
+// Grounds page — landmark search (free-text -> real lat/lng via OpenStreetMap
+// Nominatim, no paid geocoding service). Its own top-level route, not under
+// /grounds, since it geocodes an arbitrary place name, not a ground.
+router.use('/geocode', geocodeRoutes)
 
 export default router

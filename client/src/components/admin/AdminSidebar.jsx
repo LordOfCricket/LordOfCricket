@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, UtensilsCrossed, ClipboardCheck, Images, UserPlus, LogOut } from 'lucide-react'
+import { LayoutDashboard, UtensilsCrossed, ClipboardCheck, MapPinPlus, Images, UserPlus, LogOut } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 
 const LINKS = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, allow: ['super_admin', 'admin'] },
   { to: '/canteen/staff', label: 'Canteen', icon: UtensilsCrossed, allow: ['super_admin', 'admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
+  { to: '/admin/ground-registrations', label: 'Ground Registrations', icon: MapPinPlus, allow: ['super_admin'] },
   { to: '/admin/photos-hub', label: 'Edit Photos', icon: Images, allow: ['super_admin'] },
   { to: '/admin/staff/new', label: 'Create Staff', icon: UserPlus, allow: ['super_admin'] },
 ]

@@ -107,7 +107,7 @@ export default function GroundHomePage() {
         </div>
 
         {/* Amenities */}
-        <div className="flex w-full flex-col items-center gap-10 px-6 py-6">
+        <div id="amenities" className="flex w-full scroll-mt-24 flex-col items-center gap-10 px-6 py-6">
           <SectionHeading
             eyebrow="Facilities"
             title="Amenities"

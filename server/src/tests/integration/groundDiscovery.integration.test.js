@@ -441,6 +441,113 @@ test('LIST ALL: pagination is enforced (maximum limit clamped, page/limit honore
   await server.close()
 })
 
+test('LIST ALL: sort=newest orders by created_at DESC; an unrecognized sort value falls back to name ASC, never a 500', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const older = await createGroundFixture({ label: 'sort-older', ...FAR, city: `SortCity-${tag}` })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const newer = await createGroundFixture({ label: 'sort-newer', ...FAR, city: `SortCity-${tag}` })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds?sort=newest&limit=50`)
+    const body = await res.json()
+    const ids = body.grounds.map((g) => g.publicGroundId)
+    const olderIndex = ids.indexOf(older.ground.public_ground_id)
+    const newerIndex = ids.indexOf(newer.ground.public_ground_id)
+    assert.ok(olderIndex !== -1 && newerIndex !== -1, 'both fixtures must be present')
+    assert.ok(newerIndex < olderIndex, 'sort=newest must put the more recently created ground first')
+
+    const bogus = await fetch(`${server.baseUrl}/grounds?sort=drop-table-grounds`)
+    assert.equal(bogus.status, 200, 'an unrecognized sort value must never 500 or be passed through to SQL')
+  } finally {
+    await older.cleanup()
+    await newer.cleanup()
+    await server.close()
+  }
+})
+
+test('LIST ALL: sort=city groups by city alphabetically, then name within a city (Grounds page\'s "first sort by city")', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  // Cities deliberately out of alphabetical creation order, to prove the
+  // sort is real (not just insertion order coinciding with city order).
+  const zCity = await createGroundFixture({ label: 'aaa-name', ...NEAR, city: `ZZZCity-${tag}` })
+  const aCityB = await createGroundFixture({ label: 'zzz-name', ...NEAR, city: `AAACity-${tag}` })
+  const aCityA = await createGroundFixture({ label: 'aaa-name-2', ...NEAR, city: `AAACity-${tag}` })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds?sort=city&limit=50`)
+    const body = await res.json()
+    const ids = body.grounds.map((g) => g.publicGroundId)
+    const aCityAIndex = ids.indexOf(aCityA.ground.public_ground_id)
+    const aCityBIndex = ids.indexOf(aCityB.ground.public_ground_id)
+    const zCityIndex = ids.indexOf(zCity.ground.public_ground_id)
+    assert.ok(aCityAIndex !== -1 && aCityBIndex !== -1 && zCityIndex !== -1, 'all three fixtures must be present')
+    assert.ok(aCityAIndex < zCityIndex && aCityBIndex < zCityIndex, 'AAACity grounds must sort before ZZZCity grounds')
+    assert.ok(aCityAIndex < aCityBIndex, 'within the same city, name ASC is the tie-break')
+  } finally {
+    await zCity.cleanup()
+    await aCityB.cleanup()
+    await aCityA.cleanup()
+    await server.close()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Real amenities in list responses (homepage redesign, Stage 1)
+// ---------------------------------------------------------------------------
+
+test('nearby/search/all-list responses include each ground\'s own real amenity names, never another ground\'s, and [] when it has none', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const withAmenities = await createGroundFixture({ label: 'amenities-a', ...NEAR, city: `AmenityCity-${tag}` })
+  const withoutAmenities = await createGroundFixture({ label: 'amenities-b', ...NEAR, city: `AmenityCity-${tag}` })
+  await withAmenities.addAmenity(`Floodlights-${tag}`)
+  await withAmenities.addAmenity(`Parking-${tag}`)
+  try {
+    const searchRes = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`AmenityCity-${tag}`)}`)
+    const searchBody = await searchRes.json()
+    const a = searchBody.grounds.find((g) => g.publicGroundId === withAmenities.ground.public_ground_id)
+    const b = searchBody.grounds.find((g) => g.publicGroundId === withoutAmenities.ground.public_ground_id)
+    assert.deepEqual(new Set(a.amenities), new Set([`Floodlights-${tag}`, `Parking-${tag}`]))
+    assert.deepEqual(b.amenities, [], 'a ground with zero amenities must get an empty array, never null/undefined')
+
+    const allRes = await fetch(`${server.baseUrl}/grounds?limit=50`)
+    const allBody = await allRes.json()
+    const aFromAll = allBody.grounds.find((g) => g.publicGroundId === withAmenities.ground.public_ground_id)
+    assert.deepEqual(new Set(aFromAll.amenities), new Set([`Floodlights-${tag}`, `Parking-${tag}`]), 'the browse-all list must carry the same real amenities')
+  } finally {
+    await withAmenities.cleanup()
+    await withoutAmenities.cleanup()
+    await server.close()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Real distinct cities (GET /grounds/cities — homepage redesign, Stage 1)
+// ---------------------------------------------------------------------------
+
+test('GET /grounds/cities returns real distinct ACTIVE-ground cities only, excludes DRAFT/SUSPENDED, no duplicates', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const cityA = `CitiesTestA-${tag}`
+  const active1 = await createGroundFixture({ label: 'cities-active-1', ...NEAR, city: cityA })
+  const active2 = await createGroundFixture({ label: 'cities-active-2', ...NEAR, city: cityA })
+  const draft = await createGroundFixture({ label: 'cities-draft', ...NEAR, city: `CitiesTestDraft-${tag}`, status: 'DRAFT' })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds/cities`)
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(Array.isArray(body.cities))
+    const occurrences = body.cities.filter((c) => c === cityA)
+    assert.equal(occurrences.length, 1, 'a city with 2 active grounds must appear exactly once, not duplicated')
+    assert.ok(!body.cities.includes(`CitiesTestDraft-${tag}`), 'a city whose only ground is DRAFT must not appear')
+  } finally {
+    await active1.cleanup()
+    await active2.cleanup()
+    await draft.cleanup()
+    await server.close()
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Real-data sanity (read-only — never mutates the real SS Cricket Ground)
 // ---------------------------------------------------------------------------

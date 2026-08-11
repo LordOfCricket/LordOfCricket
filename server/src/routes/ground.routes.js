@@ -1,5 +1,7 @@
 import express from 'express'
-import { listNearbyGrounds, listGroundsByCity, listAllGrounds, getGroundProfile } from '../controllers/ground.controller.js'
+import { listNearbyGrounds, listGroundsByCity, listAllGrounds, listGroundCities, getGroundProfile, registerGround } from '../controllers/ground.controller.js'
+import { requireAuth } from '../middlewares/auth.js'
+import { groundWriteLimiter } from '../middlewares/rateLimit.js'
 
 const router = express.Router()
 
@@ -17,9 +19,17 @@ router.get('/nearby', listNearbyGrounds)
 // primary path now (listNearbyGrounds/lat-lng above is left intact but
 // unused by the frontend — see ground.model.js's findActiveGroundsByCity).
 router.get('/search', listGroundsByCity)
-// "Grounds already registered on LOC" — the platform homepage's default
-// browse list below the hero, no search required.
+// Homepage redesign (Stage 1) — real distinct cities for the searchable
+// CitySelector. Also needs to be registered before /:publicGroundId.
+router.get('/cities', listGroundCities)
+// "Grounds already registered on LOC" — Featured Grounds (sort=newest) and
+// any future full-browse view.
 router.get('/', listAllGrounds)
+// Self-serve ground registration — "want to register your ground on LOC."
+// Any logged-in user, not staff-only; creates a DRAFT ground pending
+// super_admin review (see GET/PATCH /ground-review). Method-distinct from
+// the GET '/' above so there's no path-ordering concern.
+router.post('/', groundWriteLimiter, requireAuth, registerGround)
 router.get('/:publicGroundId', getGroundProfile)
 
 export default router

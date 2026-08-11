@@ -3,19 +3,22 @@ import { fetchAllGrounds } from '../services/groundsApi.js'
 import { DEFAULT_PAGE_SIZE } from '../models/groundDiscovery.model.js'
 
 /** GET /api/grounds — "grounds already registered on LOC," fetched once on
- * mount (no search input needed, unlike useGroundsByCity.js). `loading` is
+ * mount (no search input needed, unlike useGroundSearch.js). `loading` is
  * DERIVED (`pagination === null && error === null`), matching useGround.js's
  * convention, so the initial fetch never needs a synchronous setState at
  * the top of the effect (react-hooks/set-state-in-effect). `loadMore`/
- * `retry` are click handlers, free to set `loadingMore` synchronously. */
-export function useAllGrounds() {
+ * `retry` are click handlers, free to set `loadingMore` synchronously.
+ *
+ * `sort`/`limit` let callers like BookGroundSection.jsx and GroundsPage.jsx
+ * reuse this exact hook with their own params instead of writing a second one. */
+export function useAllGrounds({ sort, limit = DEFAULT_PAGE_SIZE } = {}) {
   const [grounds, setGrounds] = useState([])
   const [pagination, setPagination] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
 
   const fetchPage = useCallback((page, { append }) => {
-    fetchAllGrounds({ page, limit: DEFAULT_PAGE_SIZE })
+    fetchAllGrounds({ page, limit, sort })
       .then((data) => {
         setGrounds((prev) => (append ? [...prev, ...data.grounds] : data.grounds))
         setPagination(data.pagination)
@@ -25,7 +28,7 @@ export function useAllGrounds() {
         setError(err.response?.data?.error || "Couldn't load registered grounds.")
       })
       .finally(() => setLoadingMore(false))
-  }, [])
+  }, [limit, sort])
 
   useEffect(() => {
     fetchPage(1, { append: false })
