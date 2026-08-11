@@ -7,12 +7,11 @@ import NextMatchCard from '../../components/dashboard/NextMatchCard.jsx'
 import CareerOverview from '../../components/dashboard/CareerOverview.jsx'
 import MyTeams from '../../components/dashboard/MyTeams.jsx'
 import RecentMatches from '../../components/dashboard/RecentMatches.jsx'
-import CanteenSummary from '../../components/dashboard/CanteenSummary.jsx'
 import QuickActions from '../../components/dashboard/QuickActions.jsx'
 import OnboardingBanner from '../../components/dashboard/OnboardingBanner.jsx'
 
 export default function PlayerDashboardPage() {
-  const { user, player, team, isNewPlayer, activeOrder, recentOrders, canteenLoading, canteenError } = usePlayerDashboard()
+  const { user, player, team, isNewPlayer } = usePlayerDashboard()
   const location = useLocation()
 
   useEffect(() => {
@@ -58,12 +57,6 @@ export default function PlayerDashboardPage() {
               <div id="teams">
                 <MyTeams team={team} player={player} />
               </div>
-              <CanteenSummary
-                activeOrder={activeOrder}
-                recentOrders={recentOrders}
-                loading={canteenLoading}
-                error={canteenError}
-              />
             </div>
           </div>
         </div>

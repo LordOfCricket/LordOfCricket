@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as authApi from '../services/authApi.js'
-import { fetchMyPlayer, updateMyPlayer } from '../services/playerApi.js'
+import { fetchMyPlayer, updateMyPlayer, uploadMyPlayerPhoto } from '../services/playerApi.js'
 import { getStoredToken, setStoredToken, clearStoredToken } from '../utils/authToken.js'
 import { AuthContext } from './authContext.js'
 
@@ -65,6 +65,12 @@ export function AuthProvider({ children }) {
     return updated
   }
 
+  const uploadPlayerPhoto = async (file) => {
+    const updated = await uploadMyPlayerPhoto(file)
+    setPlayer(updated)
+    return updated
+  }
+
   const selectRole = async (role) => {
     const updated = await authApi.selectRole(role)
     setUser(updated)
@@ -77,7 +83,7 @@ export function AuthProvider({ children }) {
     return updated
   }
 
-  const value = { user, player, status, login, signup, logout, selectRole, selectPlayerType, refreshPlayer, savePlayer }
+  const value = { user, player, status, login, signup, logout, selectRole, selectPlayerType, refreshPlayer, savePlayer, uploadPlayerPhoto }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

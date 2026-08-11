@@ -136,3 +136,69 @@ export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, l
   )
   return { rows, total: rows[0]?.total_count ?? 0 }
 }
+
+// Phase 13 (post-report revision) — city-based discovery replaces
+// distance-based discovery as the primary frontend flow (product decision:
+// most grounds don't have real latitude/longitude set yet — see the Phase
+// 13 report's "remaining risks" — so searching by the `city` text column
+// grounds already have is the more honest, dependency-free match: no
+// geocoding service, no coordinates required at all). findNearbyActiveGrounds
+// above is left fully intact, just no longer called by the frontend.
+//
+// `city ILIKE '%' || $1 || '%'` is a partial, case-insensitive match (typing
+// "delhi" should find "New Delhi") — the wildcard is built into the bound
+// parameter value in JS, never string-concatenated into the SQL text, so
+// this stays fully parameterized (Step 28). A leading wildcard means a
+// plain B-tree index on `city` couldn't be used for a range scan anyway;
+// at current row counts Postgres correctly prefers a Seq Scan regardless
+// (same reasoning as the rest of this file's EXPLAIN findings) — a trigram
+// (pg_trgm) index is the documented future option if/when this needs to
+// scale, not added now (no new extension this phase).
+export async function findActiveGroundsByCity({ city, limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         public_ground_id, slug, name, city, state, country,
+         (SELECT gp.image_url FROM ground_photos gp
+          WHERE gp.ground_id = g.id
+          ORDER BY gp.sort_order, gp.created_at
+          LIMIT 1) AS primary_photo
+       FROM grounds g
+       WHERE status = 'ACTIVE' AND city ILIKE '%' || $1 || '%'
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     ORDER BY name ASC
+     LIMIT $2 OFFSET $3`,
+    [city, limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}
+
+// Unscoped browse — "grounds already registered on LOC," shown on the
+// platform homepage below the hero without requiring a city search first.
+// Same public card shape/ACTIVE-only filter as findActiveGroundsByCity,
+// just without the WHERE city clause. NOT the same function as
+// findAllGrounds() above (Phase 8) — that one is SELECT * with no status
+// filter, used internally by admin-facing code; this is the explicit,
+// public-safe, paginated equivalent for the discovery API.
+export async function findAllActiveGrounds({ limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         public_ground_id, slug, name, city, state, country,
+         (SELECT gp.image_url FROM ground_photos gp
+          WHERE gp.ground_id = g.id
+          ORDER BY gp.sort_order, gp.created_at
+          LIMIT 1) AS primary_photo
+       FROM grounds g
+       WHERE status = 'ACTIVE'
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     ORDER BY name ASC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}

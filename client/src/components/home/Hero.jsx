@@ -19,7 +19,7 @@ const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 // is "show the ground and the scores fast", not stage a headline moment.
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 
-export default function Hero() {
+export default function Hero({ ground, onViewGallery }) {
   const reduceMotion = useReducedMotion()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
   // Phase 4 — Hero is the pointer "source": one listener here drives the
@@ -108,7 +108,7 @@ export default function Hero() {
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:h-140 lg:grid-cols-[2fr_1fr] lg:gap-5 xl:h-155">
             <motion.div {...motionProps(DELAY.gallery)} className="lg:h-full">
               <ParallaxLayer strength={10} tilt tiltStrength={3} className="lg:h-full">
-                <GroundGallery className="lg:h-full" />
+                <GroundGallery className="lg:h-full" photos={ground.photos} groundName={ground.name} onViewGallery={onViewGallery} />
               </ParallaxLayer>
             </motion.div>
 

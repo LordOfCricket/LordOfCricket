@@ -1,9 +1,8 @@
-import { useState } from 'react'
-import { Mail, MapPin, Phone } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import logo from '../../assets/logo.png'
 import Navbar from '../../components/home/Navbar.jsx'
 import Hero from '../../components/home/Hero.jsx'
-import ImageSlider from '../../components/common/ImageSlider.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
@@ -12,20 +11,18 @@ import PublicAvailabilityPreview from '../../components/booking/PublicAvailabili
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
 import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
-import { useHomePage } from '../../hooks/useHomePage.js'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
-import StatCounter from '../../components/homepage/StatCounter.jsx'
+import GroundAbout from '../../components/ground/GroundAbout.jsx'
+import GroundContact from '../../components/ground/GroundContact.jsx'
+import GroundNotFound from '../../components/ground/GroundNotFound.jsx'
+import GalleryModal from '../../components/ground/GalleryModal.jsx'
+import { useGround } from '../../hooks/useGround.js'
 import {
-  atmosphereReveal,
   fadeUpSoft,
-  mapReveal,
   settleFade,
   spotlightReveal,
-  staggerContainer,
 } from '../../lib/revealVariants.js'
 
-// Phase 5 — headings get their own (soft, quick) reveal, separate from
-// whatever content sits below them, so the two never move in lockstep.
 function SectionHeading({ eyebrow, title, subtitle }) {
   return (
     <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex flex-col items-center gap-3 text-center">
@@ -43,9 +40,55 @@ function SectionHeading({ eyebrow, title, subtitle }) {
   )
 }
 
-export default function HomePage() {
-  const { stats, groundAddress, currentYear } = useHomePage()
+function PageLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-loc-dark" role="status" aria-label="Loading ground">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+    </div>
+  )
+}
+
+function PageError({ message, onRetry }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-loc-dark px-6 text-center">
+      <p className="text-red-300/80">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-full bg-emerald-500 px-6 py-2.5 font-semibold text-emerald-950 transition hover:bg-emerald-400"
+      >
+        Retry
+      </button>
+    </div>
+  )
+}
+
+// Phase 13 — Level 2: the reusable per-ground template (Step 17). Every
+// section reads from `ground` (GET /api/grounds/:publicGroundId, Phase 12);
+// nothing here is specific to any one ground's id/name — a second ground
+// renders through this exact same component (see Phase 13 report's
+// two-fixture verification). The URL's :publicGroundId is the ONLY tenancy
+// signal (Step 28) — no global "current ground" state exists anywhere.
+export default function GroundHomePage() {
+  const { publicGroundId } = useParams()
+  const { ground, loading, error, notFound, retry } = useGround(publicGroundId)
   const [bookingOpen, setBookingOpen] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+
+  useEffect(() => {
+    document.title = ground ? `${ground.name} — LOC` : 'Lord Of Cricket'
+  }, [ground])
+
+  if (loading) return <PageLoading />
+  if (notFound) return <GroundNotFound />
+  if (error) return <PageError message={error} onRetry={retry} />
+  if (!ground) return null
+
+  const currentYear = new Date().getFullYear()
+  // Canteen nav visibility is driven by the ground's amenities list, not
+  // the canteens table directly — a ground only gets a "Canteen" nav link
+  // once staff have actually listed "Canteen" as one of its amenities.
+  const hasCanteenAmenity = ground.amenities?.some((a) => a.name.trim().toLowerCase() === 'canteen')
 
   return (
     <div id="home" className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
@@ -53,23 +96,11 @@ export default function HomePage() {
         <BackgroundSystem />
         <CursorGlow />
 
-        <Navbar />
-        <Hero />
+        <Navbar onOpenGallery={() => setGalleryOpen(true)} canteenHref={hasCanteenAmenity ? '/canteen/menu' : null} />
+        <Hero ground={ground} onViewGallery={() => setGalleryOpen(true)} />
       </MouseParallaxProvider>
 
       <div className="relative flex flex-col items-center gap-16 pb-16">
-        {/* Full gallery — the hero above shows a compact rotating preview of
-            these same ground photos; this is the expanded view its "View
-            Gallery" link scrolls to. India's score now lives in the hero,
-            so this row is gallery-only (no more duplicate India card). */}
-        <div id="gallery" className="w-full scroll-mt-24 px-6 lg:px-10">
-          <ScrollReveal as="div" variant={atmosphereReveal} amount={0.2} className="w-full">
-            <div className="h-64 w-full sm:h-80 md:h-112 lg:h-128">
-              <ImageSlider />
-            </div>
-          </ScrollReveal>
-        </div>
-
         {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
         <div id="matches" className="w-full scroll-mt-24">
           <MatchActivitySection />
@@ -82,54 +113,17 @@ export default function HomePage() {
             title="Amenities"
             subtitle="Everything you need for a comfortable, hassle-free day at the ground."
           />
-          <AmenitiesGrid />
+          <AmenitiesGrid amenities={ground.amenities} />
         </div>
 
         {/* About */}
         <div id="about" className="flex w-full scroll-mt-24 flex-col items-center gap-10 px-6 py-6">
-          <SectionHeading eyebrow="Est. 2011" title="About the Ground" />
-
-          <div className="grid w-full gap-6 lg:grid-cols-3">
-            <ScrollReveal
-              variant={fadeUpSoft}
-              amount={0.4}
-              className="flex flex-col justify-center rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent p-6 shadow-lg shadow-black/20"
-            >
-              <p className="text-emerald-100/70">
-                LOC has been the home ground for local cricket for over a decade — from weekend
-                nets to league finals. A well-kept outfield, true-bouncing pitches, and a
-                welcoming pavilion make it the ground players come back to.
-              </p>
-            </ScrollReveal>
-
-            <ScrollReveal
-              variant={staggerContainer(0.12)}
-              amount={0.4}
-              className="flex flex-wrap content-center justify-center gap-6"
-            >
-              {stats.map((stat) => (
-                <StatCounter key={stat.label} stat={stat} />
-              ))}
-            </ScrollReveal>
-
-            <ScrollReveal
-              variant={mapReveal}
-              amount={0.3}
-              className="min-h-64 overflow-hidden rounded-2xl border border-emerald-400/15 shadow-lg shadow-black/20"
-            >
-              <iframe
-                title="Ground location"
-                src={`https://maps.google.com/maps?q=${encodeURIComponent(groundAddress)}&output=embed`}
-                className="h-full min-h-64 w-full border-0"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                allowFullScreen
-              />
-            </ScrollReveal>
-          </div>
+          <SectionHeading eyebrow={ground.name} title="About This Ground" />
+          <GroundAbout ground={ground} />
         </div>
 
-        {/* Partners */}
+        {/* Partners — platform-wide, not ground-specific (Phase 12 never
+            scoped partners to a ground; unchanged here). */}
         <div className="flex w-full flex-col items-center gap-10 px-6 py-6">
           <SectionHeading
             eyebrow="Our Network"
@@ -139,11 +133,9 @@ export default function HomePage() {
           <PartnersGrid />
         </div>
 
-
-        {/* Booking — the homepage's primary CTA, so it gets the strongest
-            single entrance (spotlightReveal) plus a soft decorative glow
-            behind the card that fades in with it. Not a new lighting
-            layer — just one low-opacity radial, scoped to this section. */}
+        {/* Booking — the ground's booking system isn't ground-scoped on the
+            backend yet (out of scope, same boundary Phase 8-12 drew), so
+            this stays exactly as it was: a single, global booking flow. */}
         <div id="booking" className="relative w-full scroll-mt-24 px-6 py-6">
           <div
             aria-hidden="true"
@@ -160,7 +152,7 @@ export default function HomePage() {
             className="relative mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-emerald-400/20 bg-linear-to-b from-emerald-400/10 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm"
           >
             <h2 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-              Book Our Cricket Ground
+              Book {ground.name}
             </h2>
             <span className="h-1 w-16 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600" />
             <p className="max-w-xl text-emerald-100/60">
@@ -178,7 +170,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Footer — the atmosphere gently settles: fade only, no rise. */}
+      {/* Footer */}
       <ScrollReveal
         as="footer"
         variant={settleFade}
@@ -195,31 +187,16 @@ export default function HomePage() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-sm text-emerald-100/60">
-            <span className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-emerald-400" />
-              {groundAddress}
-            </span>
-            <a
-              href="mailto:booking@loc-ground.com"
-              className="flex items-center gap-2 transition-colors hover:text-white"
-            >
-              <Mail className="h-4 w-4 text-emerald-400" />
-              booking@loc-ground.com
-            </a>
-            <a href="tel:+910000000000" className="flex items-center gap-2 transition-colors hover:text-white">
-              <Phone className="h-4 w-4 text-emerald-400" />
-              +91 00000 00000
-            </a>
-          </div>
+          <GroundContact ground={ground} />
         </div>
 
         <p className="mt-8 text-center text-xs text-emerald-100/40">
-          © {currentYear} LOC — Lord of Cricket Ground. All rights reserved.
+          © {currentYear} {ground.name} — Powered by LOC. All rights reserved.
         </p>
       </ScrollReveal>
 
       <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
+      <GalleryModal open={galleryOpen} onClose={() => setGalleryOpen(false)} photos={ground.photos} groundName={ground.name} />
     </div>
   )
 }

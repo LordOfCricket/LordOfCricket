@@ -12,7 +12,10 @@ import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
 // one ~870KB JS chunk regardless of which single page a visitor actually
 // landed on. Each page is now its own chunk, fetched only when its route is
 // visited — a build-time change only, no page's own logic is touched.
-const HomePage = lazy(() => import('../pages/homepage/HomePage.jsx'))
+// Phase 13 — Level 1 (LOC platform homepage, ground discovery) and Level 2
+// (the reusable per-ground template) replace the old single-ground HomePage.
+const DiscoveryPage = lazy(() => import('../pages/discovery/DiscoveryPage.jsx'))
+const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
 const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
 const AdminAmenitiesPage = lazy(() => import('../pages/admin-amenities/AdminAmenitiesPage.jsx'))
@@ -91,7 +94,8 @@ const router = createBrowserRouter([
     element: <Layout />,
     errorElement: <RouteErrorBoundary />,
     children: [
-      { path: '/', element: withSuspense(<HomePage />) },
+      { path: '/', element: withSuspense(<DiscoveryPage />) },
+      { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
       { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosPage />)}</RequireStaffRole> },
       { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGalleryPage />)}</RequireStaffRole> },
       { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminAmenitiesPage />)}</RequireStaffRole> },

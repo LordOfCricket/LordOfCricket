@@ -10,12 +10,13 @@ import { ReactLenis } from 'lenis/react'
  * its mobile menu overlay, BookingModal, etc. all stay exactly as they are).
  *
  * Options, and why each one is set:
- * - `anchors: true` — Lenis's own same-page hash-link handling (used today
- *   by GroundGallery's "View Gallery" link to #gallery). It reads each
+ * - `anchors: true` — Lenis's own same-page hash-link handling (used by the
+ *   ground homepage's #matches/#about/#booking section links). It reads each
  *   target's `scroll-margin-top` via computed style — the same
- *   `scroll-mt-24` already on #gallery/#matches/#about/#booking — so it
- *   lands exactly where the native anchor jump already did. No navbar-height
- *   offset is duplicated here.
+ *   `scroll-mt-24` already on those sections — so it lands exactly where the
+ *   native anchor jump already did. No navbar-height offset is duplicated
+ *   here. (The gallery used to be one of these anchor targets too — it's now
+ *   a modal opened from the navbar's "Gallery" button instead.)
  * - `respectReducedMotion: true` (library default, set explicitly for
  *   clarity) — under prefers-reduced-motion, Lenis disables wheel smoothing
  *   (tracks input 1:1) and makes every scrollTo, including the anchor jumps

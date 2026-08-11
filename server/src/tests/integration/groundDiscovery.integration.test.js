@@ -329,6 +329,119 @@ test('PROFILE: response never leaks internal numeric ids, ground_users, or staff
 })
 
 // ---------------------------------------------------------------------------
+// City-based discovery (Phase 13 post-report revision — GET /grounds/search)
+// ---------------------------------------------------------------------------
+
+test('CITY SEARCH: an active ground in the searched city is returned, a ground in a different city is not', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const match = await createGroundFixture({ label: 'city-match', ...NEAR, city: `Springfield-${tag}` })
+  const other = await createGroundFixture({ label: 'city-other', ...NEAR, city: `Shelbyville-${tag}` })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`Springfield-${tag}`)}`)
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    const ids = body.grounds.map((g) => g.publicGroundId)
+    assert.ok(ids.includes(match.ground.public_ground_id), 'a ground in the searched city must be returned')
+    assert.ok(!ids.includes(other.ground.public_ground_id), 'a ground in a different city must not be returned')
+    assert.equal(body.grounds.find((g) => g.publicGroundId === match.ground.public_ground_id).distanceKm, undefined, 'city search results carry no distanceKm — no coordinates are involved')
+  } finally {
+    await match.cleanup()
+    await other.cleanup()
+    await server.close()
+  }
+})
+
+test('CITY SEARCH: matching is case-insensitive and partial (substring)', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const fx = await createGroundFixture({ label: 'city-partial', ...NEAR, city: `New Delhi-${tag}` })
+  try {
+    const lower = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`new delhi-${tag}`)}`)
+    const lowerBody = await lower.json()
+    assert.ok(lowerBody.grounds.some((g) => g.publicGroundId === fx.ground.public_ground_id), 'search must be case-insensitive')
+
+    const partial = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`Delhi-${tag}`)}`)
+    const partialBody = await partial.json()
+    assert.ok(partialBody.grounds.some((g) => g.publicGroundId === fx.ground.public_ground_id), 'a substring of the city name must match')
+  } finally {
+    await fx.cleanup()
+    await server.close()
+  }
+})
+
+test('CITY SEARCH: DRAFT/SUSPENDED grounds never appear, even in a matching city', async () => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const draft = await createGroundFixture({ label: 'city-draft', ...NEAR, city: `Riverdale-${tag}`, status: 'DRAFT' })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`Riverdale-${tag}`)}`)
+    const body = await res.json()
+    assert.ok(!body.grounds.some((g) => g.publicGroundId === draft.ground.public_ground_id), 'a DRAFT ground must never appear in city search')
+  } finally {
+    await draft.cleanup()
+    await server.close()
+  }
+})
+
+test('CITY SEARCH: missing/blank city is rejected with 400; an unmatched city returns an empty, valid result', async () => {
+  const server = await startTestApp()
+  try {
+    const missing = await fetch(`${server.baseUrl}/grounds/search`)
+    assert.equal(missing.status, 400)
+
+    const blank = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent('   ')}`)
+    assert.equal(blank.status, 400)
+
+    const tooLong = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent('x'.repeat(101))}`)
+    assert.equal(tooLong.status, 400)
+
+    const noMatch = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(`Nowhereville-${uniqueTag()}`)}`)
+    assert.equal(noMatch.status, 200)
+    const body = await noMatch.json()
+    assert.deepEqual(body.grounds, [])
+    assert.equal(body.pagination.total, 0)
+  } finally {
+    await server.close()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Browse-all listing (GET /grounds — "grounds already registered on LOC")
+// ---------------------------------------------------------------------------
+
+test('LIST ALL: an active ground is returned regardless of city; DRAFT/SUSPENDED are excluded', async () => {
+  const server = await startTestApp()
+  const active = await createGroundFixture({ label: 'list-active', ...FAR, city: `Faraway-${uniqueTag()}` })
+  const draft = await createGroundFixture({ label: 'list-draft', ...NEAR, status: 'DRAFT' })
+  const suspended = await createGroundFixture({ label: 'list-suspended', ...NEAR, status: 'SUSPENDED' })
+  try {
+    const res = await fetch(`${server.baseUrl}/grounds`)
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    const ids = body.grounds.map((g) => g.publicGroundId)
+    assert.ok(ids.includes(active.ground.public_ground_id), 'an ACTIVE ground must be listed regardless of distance/city')
+    assert.ok(!ids.includes(draft.ground.public_ground_id), 'DRAFT must never be listed')
+    assert.ok(!ids.includes(suspended.ground.public_ground_id), 'SUSPENDED must never be listed')
+    assert.equal(body.grounds.find((g) => g.publicGroundId === active.ground.public_ground_id).distanceKm, undefined, 'the browse-all list carries no distanceKm')
+  } finally {
+    await active.cleanup()
+    await draft.cleanup()
+    await suspended.cleanup()
+    await server.close()
+  }
+})
+
+test('LIST ALL: pagination is enforced (maximum limit clamped, page/limit honored)', async () => {
+  const server = await startTestApp()
+  const oversizedLimit = await fetch(`${server.baseUrl}/grounds?limit=999999`)
+  const body = await oversizedLimit.json()
+  assert.equal(oversizedLimit.status, 200)
+  assert.ok(body.pagination.limit <= 50, 'the maximum limit must be clamped, never honored as-is')
+  await server.close()
+})
+
+// ---------------------------------------------------------------------------
 // Real-data sanity (read-only — never mutates the real SS Cricket Ground)
 // ---------------------------------------------------------------------------
 
@@ -346,6 +459,34 @@ test('REAL DATA SANITY: the real SS Cricket Ground is discoverable and its profi
     assert.ok(Array.isArray(body.photos))
     assert.ok(Array.isArray(body.amenities))
     assert.ok(Array.isArray(body.canteens))
+  } finally {
+    await server.close()
+  }
+})
+
+test('REAL DATA SANITY: the real SS Cricket Ground is discoverable by its real city via city search', async () => {
+  const server = await startTestApp()
+  try {
+    const real = (await pool.query(`SELECT * FROM grounds WHERE status = 'ACTIVE' ORDER BY id LIMIT 1`)).rows[0]
+    assert.ok(real?.city, 'the real seeded ground must have a city for this sanity check to mean anything')
+
+    const res = await fetch(`${server.baseUrl}/grounds/search?city=${encodeURIComponent(real.city)}`)
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(body.grounds.some((g) => g.publicGroundId === real.public_ground_id), 'the real ground must be findable by its own real city')
+  } finally {
+    await server.close()
+  }
+})
+
+test('REAL DATA SANITY: the real SS Cricket Ground appears in the browse-all listing', async () => {
+  const server = await startTestApp()
+  try {
+    const real = (await pool.query(`SELECT * FROM grounds WHERE status = 'ACTIVE' ORDER BY id LIMIT 1`)).rows[0]
+    const res = await fetch(`${server.baseUrl}/grounds`)
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(body.grounds.some((g) => g.publicGroundId === real.public_ground_id), 'the real ground must appear in the unfiltered browse-all list')
   } finally {
     await server.close()
   }

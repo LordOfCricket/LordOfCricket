@@ -1,5 +1,8 @@
 import { createPlayer, findPlayerByUserId, updatePlayer } from '../models/player.model.js'
 import { PLAYING_ROLES, BATTING_STYLES, BOWLING_STYLES } from '../domain/player/playerEnums.js'
+import { uploadImageFileDetailed } from '../utils/cloudinaryUpload.js'
+
+const PLAYER_PHOTO_CLOUDINARY_FOLDER = 'LOC/player-photos'
 
 const EDITABLE_FIELDS = ['name', 'jersey_number', 'role', 'batting_style', 'bowling_style', 'city', 'bio', 'photo_url']
 
@@ -83,6 +86,35 @@ export async function updateMyPlayer(req, res, next) {
     } else if (Object.keys(fields).length > 0) {
       player = await updatePlayer(player.id, fields)
     }
+
+    res.json({ player })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Choose-from-device upload for the profile photo, mirroring the
+// groundPhoto/amenity upload pattern (multer memory storage -> Cloudinary
+// stream -> store the resulting URL). Replaces the old plain-text
+// "Profile Photo URL" field — players never had to know/paste a URL by
+// hand. The old photo_url isn't deleted from Cloudinary on replace: it may
+// be an arbitrary external URL never uploaded through this app, and
+// players has no column tracking a Cloudinary public_id to safely
+// distinguish the two cases (same reasoning as addGroundPhoto's
+// external-URL path).
+export async function uploadMyPlayerPhoto(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'photo file is required' })
+    }
+
+    const uploaded = await uploadImageFileDetailed(req.file, PLAYER_PHOTO_CLOUDINARY_FOLDER)
+
+    let player = await findPlayerByUserId(req.user.id)
+    if (!player) {
+      player = await createPlayer({ name: req.user.name, teamId: null, role: null, userId: req.user.id })
+    }
+    player = await updatePlayer(player.id, { photo_url: uploaded.url })
 
     res.json({ player })
   } catch (err) {

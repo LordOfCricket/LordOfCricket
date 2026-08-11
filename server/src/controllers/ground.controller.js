@@ -1,4 +1,4 @@
-import { findNearbyActiveGrounds, findPublicActiveGroundByPublicId } from '../models/ground.model.js'
+import { findNearbyActiveGrounds, findActiveGroundsByCity, findAllActiveGrounds, findPublicActiveGroundByPublicId } from '../models/ground.model.js'
 import { findGroundPhotosByGroundId } from '../models/groundPhoto.model.js'
 import { findAmenitiesByGroundId } from '../models/amenity.model.js'
 import { findCanteensByGroundId } from '../models/canteen.model.js'
@@ -51,6 +51,21 @@ function roundDistance(km) {
   return Math.round(Number(km) * 100) / 100
 }
 
+// Shared row -> public card mapping for all three discovery flows (nearby/
+// city/all) — one place defines "what a ground card looks like on the
+// wire" instead of three near-identical object literals drifting apart.
+function serializeGroundCard(row) {
+  return {
+    publicGroundId: row.public_ground_id,
+    slug: row.slug,
+    name: row.name,
+    city: row.city,
+    state: row.state,
+    country: row.country,
+    primaryPhoto: row.primary_photo,
+  }
+}
+
 export async function listNearbyGrounds(req, res, next) {
   try {
     const lat = parseCoordinate(req.query.lat, -90, 90)
@@ -71,16 +86,50 @@ export async function listNearbyGrounds(req, res, next) {
     })
 
     res.json({
-      grounds: rows.map((row) => ({
-        publicGroundId: row.public_ground_id,
-        slug: row.slug,
-        name: row.name,
-        city: row.city,
-        state: row.state,
-        country: row.country,
-        distanceKm: roundDistance(row.distance_km),
-        primaryPhoto: row.primary_photo,
-      })),
+      grounds: rows.map((row) => ({ ...serializeGroundCard(row), distanceKm: roundDistance(row.distance_km) })),
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+const MAX_CITY_LENGTH = 100
+
+// Phase 13 (post-report revision) — city replaces lat/lng as the primary
+// discovery input (product decision — most grounds don't have real
+// coordinates yet). No distanceKm in the response: city matching involves
+// no coordinates at all, so there's nothing honest to compute a distance
+// from. listNearbyGrounds above is untouched and still reachable, just no
+// longer the frontend's primary path.
+export async function listGroundsByCity(req, res, next) {
+  try {
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : ''
+    if (!city) return res.status(400).json({ error: 'city is required.' })
+    if (city.length > MAX_CITY_LENGTH) return res.status(400).json({ error: `city must be ${MAX_CITY_LENGTH} characters or fewer.` })
+
+    const { limit, page, offset } = parsePagination(req.query)
+    const { rows, total } = await findActiveGroundsByCity({ city, limit, offset })
+
+    res.json({
+      grounds: rows.map(serializeGroundCard),
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// "Grounds already registered on LOC" — the platform homepage's default
+// browse list, shown below the hero without requiring a city search first.
+// No filter at all beyond ACTIVE status.
+export async function listAllGrounds(req, res, next) {
+  try {
+    const { limit, page, offset } = parsePagination(req.query)
+    const { rows, total } = await findAllActiveGrounds({ limit, offset })
+
+    res.json({
+      grounds: rows.map(serializeGroundCard),
       pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
     })
   } catch (err) {
