@@ -8,6 +8,7 @@ import NotificationBell from '../layout/NotificationBell.jsx'
 import AccountMenu from '../layout/AccountMenu.jsx'
 import { EASE, SPRING } from '../../lib/motion.js'
 import useMagneticHover from '../../hooks/useMagneticHover.js'
+import { getPrimaryNavLinks } from '../../models/navLinks.model.js'
 
 const CTA_CLASSNAME =
   'group inline-flex h-11 items-center gap-2 rounded-sm bg-loc-stadium px-5 font-loc-display text-[13px] font-semibold tracking-[0.03em] text-loc-warmwhite uppercase transition-colors duration-200 hover:bg-loc-stadium-hover'
@@ -138,6 +139,10 @@ export default function Navbar({ onOpenGallery, canteenHref } = {}) {
   }
 
   const panelTransition = { duration: reduceMotion ? 0 : 0.28, ease: EASE }
+  // Same array feeds both the desktop nav row and the mobile panel below —
+  // an approved umpire sees exactly "Grounds for Umpire" wherever the
+  // primary nav is presented, never the player/general LOC links.
+  const navLinks = getPrimaryNavLinks(user, NAV_LINKS)
 
   return (
     <motion.header
@@ -178,7 +183,7 @@ export default function Navbar({ onOpenGallery, canteenHref } = {}) {
 
         <nav aria-label="Primary" className="hidden justify-center lg:flex">
           <div className="flex items-center gap-9">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link) => (
               <NavItem key={link.label} link={link} />
             ))}
             {canteenHref && <NavItem link={{ label: 'Canteen', to: canteenHref }} />}
@@ -261,7 +266,7 @@ export default function Navbar({ onOpenGallery, canteenHref } = {}) {
               )}
 
               <div className="flex flex-col">
-                {NAV_LINKS.map((link) => (
+                {navLinks.map((link) => (
                   <NavItem
                     key={link.label}
                     link={link}

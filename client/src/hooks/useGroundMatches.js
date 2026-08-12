@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchGroundMatches, createGroundMatch } from '../services/groundOwnerApi.js'
+import { fetchGroundMatches, createGroundMatch, startGroundMatch, completeGroundMatch } from '../services/groundOwnerApi.js'
 
 export function useGroundMatches(publicGroundId) {
   const [matches, setMatches] = useState([])
@@ -7,6 +7,10 @@ export function useGroundMatches(publicGroundId) {
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
+  // Keyed by match id — {type:'understaffed'|'error', message, filledSlots,
+  // totalSlots} — lets one card show its own outcome without a global toast.
+  const [lifecycleBusyId, setLifecycleBusyId] = useState(null)
+  const [lifecycleResults, setLifecycleResults] = useState({})
 
   const load = useCallback(async () => {
     if (!publicGroundId) return
@@ -42,5 +46,62 @@ export function useGroundMatches(publicGroundId) {
     }
   }
 
-  return { matches, loading, error, creating, createError, create, refresh: load }
+  // `confirmUnderstaffed` re-sends the same request once the caller has
+  // seen the soft-block (startMatch's own 409 + {understaffed,
+  // filledSlots, totalSlots} — never a hard failure, matches U9's existing
+  // "start anyway?" UX) and chosen to proceed anyway.
+  const start = async (matchId, { confirmUnderstaffed = false } = {}) => {
+    setLifecycleBusyId(matchId)
+    setLifecycleResults((prev) => ({ ...prev, [matchId]: null }))
+    try {
+      await startGroundMatch(publicGroundId, matchId, { confirmUnderstaffed })
+      await load()
+      return true
+    } catch (err) {
+      const details = err.response?.data?.details
+      if (details?.understaffed) {
+        setLifecycleResults((prev) => ({ ...prev, [matchId]: { type: 'understaffed', ...details } }))
+      } else {
+        setLifecycleResults((prev) => ({
+          ...prev,
+          [matchId]: { type: 'error', message: err.response?.data?.error || err.response?.data?.message || 'Unable to start this match.' },
+        }))
+      }
+      return false
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
+  const complete = async (matchId) => {
+    setLifecycleBusyId(matchId)
+    setLifecycleResults((prev) => ({ ...prev, [matchId]: null }))
+    try {
+      await completeGroundMatch(publicGroundId, matchId)
+      await load()
+      return true
+    } catch (err) {
+      setLifecycleResults((prev) => ({
+        ...prev,
+        [matchId]: { type: 'error', message: err.response?.data?.error || err.response?.data?.message || 'Unable to complete this match.' },
+      }))
+      return false
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
+  return {
+    matches,
+    loading,
+    error,
+    creating,
+    createError,
+    create,
+    refresh: load,
+    start,
+    complete,
+    lifecycleBusyId,
+    lifecycleResults,
+  }
 }

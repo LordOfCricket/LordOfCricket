@@ -227,6 +227,66 @@ test('owner CAN create a match for their own ground; it gets the correct ground_
   }
 })
 
+// U8 hardening regression — createGroundMatch used to silently drop
+// oversPerInnings/ballsPerOver entirely, so every ground-owner-created
+// match got oversPerInnings=NULL ("no overs limit"), making it impossible
+// for an innings to ever auto-complete from a real over count. Found by
+// U8's end-to-end lifecycle test actually playing a match out.
+test('owner-created match honors oversPerInnings/ballsPerOver when provided', async () => {
+  const server = await startTestApp()
+  const gf = await createGround('overs-format')
+  const owner = await createUser('overs-format')
+  const teams = await makeTeams('overs-format')
+  try {
+    await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+
+    const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
+      method: 'POST',
+      token: owner.token,
+      body: {
+        teamAId: teams.teamA.id,
+        teamBId: teams.teamB.id,
+        matchDate: new Date(Date.now() + 86400000).toISOString(),
+        requiredUmpires: 0,
+        oversPerInnings: 5,
+        ballsPerOver: 6,
+      },
+    })
+    assert.equal(status, 201, JSON.stringify(data))
+    assert.equal(data.match.overs_per_innings, 5)
+    assert.equal(data.match.balls_per_over, 6)
+  } finally {
+    await owner.cleanup()
+    await gf.cleanup()
+    await teams.cleanup()
+    await server.close()
+  }
+})
+
+test('owner-created match omitting oversPerInnings keeps the prior (unlimited) default — no forced behavior change', async () => {
+  const server = await startTestApp()
+  const gf = await createGround('overs-format-omitted')
+  const owner = await createUser('overs-format-omitted')
+  const teams = await makeTeams('overs-format-omitted')
+  try {
+    await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+
+    const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
+      method: 'POST',
+      token: owner.token,
+      body: { teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 86400000).toISOString(), requiredUmpires: 0 },
+    })
+    assert.equal(status, 201, JSON.stringify(data))
+    assert.equal(data.match.overs_per_innings, null)
+    assert.equal(data.match.balls_per_over, 6, 'ballsPerOver still defaults to 6 exactly as match.service.js already did')
+  } finally {
+    await owner.cleanup()
+    await gf.cleanup()
+    await teams.cleanup()
+    await server.close()
+  }
+})
+
 test('cannot create a match for a DRAFT (not yet ACTIVE) ground', async () => {
   const server = await startTestApp()
   const gf = await createGround('draft-ground', { status: 'DRAFT' })

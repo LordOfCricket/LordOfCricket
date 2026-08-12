@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Trophy } from 'lucide-react'
+import { Trophy } from 'lucide-react'
+import BackButton from '../../components/common/BackButton.jsx'
 import { useMatchSummary } from '../../hooks/useMatchSummary.js'
 import { useLiveMatch } from '../../hooks/useLiveMatch.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -107,10 +108,7 @@ export default function MatchSummaryPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/matches" />
 
         <div className="mt-4 space-y-4">
           {/* Phase 15 Part 55 — only present for a tournament-linked match; never clutters a normal match. */}

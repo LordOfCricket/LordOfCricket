@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { Search, ArrowLeft, Users } from 'lucide-react'
+import { useSearchParams, Link } from 'react-router-dom'
+import { Search, Users } from 'lucide-react'
 import { searchPlayers } from '../../services/statisticsApi.js'
 import { fetchTeams } from '../../services/playerApi.js'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import { PLAYING_ROLE_LABELS } from '../../models/player.model.js'
 import PlayerCard from '../../components/players/PlayerCard.jsx'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const ROLE_OPTIONS = [{ value: '', label: 'All' }, ...Object.entries(PLAYING_ROLE_LABELS).map(([value, label]) => ({ value, label }))]
 const PAGE_SIZE = 12
 
 export default function PlayersDiscoveryPage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(searchParams.get('q') || '')
   const [role, setRole] = useState(searchParams.get('role') || '')
@@ -83,14 +83,7 @@ export default function PlayersDiscoveryPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.82), rgba(2,6,23,0.82)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-6xl">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>

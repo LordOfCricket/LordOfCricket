@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Camera } from 'lucide-react'
+import { Camera } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import Input from '../../components/ui/Input.jsx'
 import Button from '../../components/ui/Button.jsx'
 import Avatar from '../../components/ui/Avatar.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 import { PLAYING_ROLE_LABELS, BATTING_STYLE_LABELS, BOWLING_STYLE_LABELS } from '../../models/player.model.js'
 
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
@@ -161,14 +162,7 @@ export default function ProfileEditPage() {
       }}
     >
       <div className="mx-auto max-w-2xl">
-        <button
-          type="button"
-          onClick={() => navigate('/profile')}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Profile
-        </button>
+        <BackButton label="Back to Profile" fallback="/profile" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">Edit Profile</h1>
         <p className="mt-1 text-sm text-slate-300">Update your cricket identity. Statistics are derived from official matches and can't be edited here.</p>

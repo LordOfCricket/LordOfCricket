@@ -47,18 +47,25 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
   const needsBowlerSelection = Boolean(state) && !state.isAllOut && !state.isOversComplete && pendingBowlerOverNumber !== state?.score?.overNumber
 
   const refresh = useCallback(async () => {
-    const [nextState, nextTimeline, nextShots, nextCorrections] = await Promise.all([
+    const [nextState, nextTimeline, nextShots, nextCorrections, nextMatch] = await Promise.all([
       scoringApi.getInningsState(inningsId),
       scoringApi.getInningsTimeline(inningsId),
       scoringApi.getWagonWheel(inningsId),
       scoringApi.getCorrectionHistory(inningsId),
+      // Cheap single-row fetch, refreshed after every write — without this,
+      // `match` stays whatever it was at page load, so a delivery that
+      // actually decides the match (target reached / all out / overs
+      // complete on the second innings) could never be reflected in
+      // match.status/result_type/winner_team_id on this page.
+      fetchMatch(matchId),
     ])
     setState(nextState)
     setTimeline(nextTimeline)
     setWagonWheelShots(nextShots)
     setCorrections(nextCorrections)
+    setMatch(nextMatch)
     return nextState
-  }, [inningsId])
+  }, [inningsId, matchId])
 
   useEffect(() => {
     let cancelled = false

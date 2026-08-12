@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Trophy, CalendarRange, Users2, ListOrdered } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+import { Trophy, CalendarRange, Users2, ListOrdered } from 'lucide-react'
 import { useTournamentDetail } from '../../hooks/useTournamentDetail.js'
 import { useAuth } from '../../hooks/useAuth.js'
 import { formatLabel, statusLabel, stageLabel, formatDateRange, formatMatchDateTime, nrrDisplay } from '../../models/tournament.model.js'
@@ -8,6 +8,7 @@ import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import BracketView from '../../components/tournaments/BracketView.jsx'
 import OrganizerPanel from '../../components/tournaments/OrganizerPanel.jsx'
 import TournamentAnalyticsPanel from '../../components/tournaments/TournamentAnalyticsPanel.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const TABS_BASE = ['Overview', 'Fixtures', 'Results', 'Teams', 'Statistics']
 
@@ -83,7 +84,6 @@ function StandingsTable({ rows, title }) {
 
 export default function TournamentPage() {
   const { publicTournamentId } = useParams()
-  const navigate = useNavigate()
   const { user } = useAuth()
   const detail = useTournamentDetail(publicTournamentId)
   const [tab, setTab] = useState('Overview')
@@ -120,10 +120,7 @@ export default function TournamentPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.88), rgba(2,6,23,0.88)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-5xl">
-        <button type="button" onClick={() => navigate('/tournaments')} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          All Tournaments
-        </button>
+        <BackButton label="All Tournaments" fallback="/tournaments" />
 
         {/* Hero */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 p-6">

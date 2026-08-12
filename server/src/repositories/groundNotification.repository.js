@@ -3,12 +3,15 @@ import { pool } from '../config/db.js'
 // Phase 18 Feature 17 — in-app notifications only (no email/SMS — explicitly
 // out of scope). One row per addressed notification.
 
-export async function insertNotification(client, { userId, type, title, body = null, relatedBookingId = null }) {
+// relatedMatchId (Phase 21/U7) mirrors relatedBookingId — a second,
+// separate nullable FK rather than overloading the booking one, matching
+// how the column was added to the schema in U1.
+export async function insertNotification(client, { userId, type, title, body = null, relatedBookingId = null, relatedMatchId = null }) {
   const { rows } = await client.query(
-    `INSERT INTO ground_notifications (user_id, type, title, body, related_booking_id)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO ground_notifications (user_id, type, title, body, related_booking_id, related_match_id)
+     VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING *`,
-    [userId, type, title, body, relatedBookingId]
+    [userId, type, title, body, relatedBookingId, relatedMatchId]
   )
   return rows[0]
 }

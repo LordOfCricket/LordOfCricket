@@ -85,12 +85,12 @@ async function makeTeams() {
   }
 }
 
-async function createMatchWithSlots(teams, requiredUmpires = 1) {
+async function createMatchWithSlots(teams, requiredUmpires = 1, matchDate = new Date().toISOString()) {
   return matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,
     venue: 'U3 Test Ground',
-    matchDate: new Date().toISOString(),
+    matchDate,
     requiredUmpires,
   })
 }
@@ -359,8 +359,13 @@ test('Assignment 12 — the same umpire can be assigned to different matches', a
   const teams = await makeTeams()
   const umpire = await approvedUmpire('assign12')
   try {
+    // A day apart — the umpire double-booking check (added alongside the
+    // ground-owner lifecycle phase) correctly treats two same-instant
+    // matches as a real conflict; this test's own point is "no artificial
+    // one-assignment-ever restriction exists", which needs two genuinely
+    // non-overlapping matches to demonstrate under the new rule.
     const matchA = await createMatchWithSlots(teams, 1)
-    const matchB = await createMatchWithSlots(teams, 1)
+    const matchB = await createMatchWithSlots(teams, 1, new Date(Date.now() + 86400000).toISOString())
     const a = await json(`${server.baseUrl}/matches/${matchA.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     const b = await json(`${server.baseUrl}/matches/${matchB.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     assert.equal(a.status, 201)

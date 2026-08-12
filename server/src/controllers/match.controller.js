@@ -70,7 +70,7 @@ export async function setToss(req, res, next) {
 
 export async function startMatch(req, res, next) {
   try {
-    const match = await matchService.startMatch(req.params.id)
+    const match = await matchService.startMatch(req.params.id, { confirmUnderstaffed: req.body?.confirmUnderstaffed === true })
     res.json({ match })
     // Phase 11: lets a spectator already sitting on an upcoming match's page
     // see the upcoming -> live transition immediately (Part 20 of the Phase

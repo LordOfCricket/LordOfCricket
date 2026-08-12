@@ -8,7 +8,7 @@ import { findMatchByIdWithTeams, createMatch as createMatchModel, updateMatch } 
 import { findTeamById } from '../models/team.model.js'
 import { findGroundById } from '../models/ground.model.js'
 import { countPlayingXiByTeam } from '../repositories/matchPlayer.repository.js'
-import { createSlotsForMatch } from '../models/matchUmpireSlot.model.js'
+import { createSlotsForMatch, findSlotsByMatch } from '../models/matchUmpireSlot.model.js'
 import { pool } from '../config/db.js'
 
 const MIN_PLAYING_XI = 2 // absolute floor: need a striker and a non-striker to start batting
@@ -20,9 +20,15 @@ function badRequest(message) {
   return err
 }
 
-function conflict(message) {
+// `details` (U9) mirrors the shape domain error classes already expose —
+// errorHandler.js's generic statusCode branch passes it through the same
+// way, so a plain match-setup conflict can still carry structured data
+// (e.g. slot counts) for the frontend without borrowing a domain's error
+// codes, matching this file's own stated reason for staying plain Errors.
+function conflict(message, details = {}) {
   const err = new Error(message)
   err.statusCode = 409
+  err.details = details
   return err
 }
 
@@ -122,7 +128,15 @@ export function battingTeamFromToss(match) {
   return match.toss_decision === 'bat' ? match.toss_winner_id : otherTeamId
 }
 
-export async function startMatch(matchId) {
+// U9 — a match with unfilled required umpire slots (U8's discovered gap) is
+// no longer silently startable, but it's a warning, not a hard block:
+// omitting confirmUnderstaffed (or sending it false) on a genuinely
+// understaffed match returns 409 with the real fill counts so the caller
+// can show "1 of 2 umpire slots filled — start anyway?"; sending it true
+// proceeds exactly as before. A match with required_umpires=0 has
+// filledSlots===totalSlots===0 by construction, so it can never be
+// "understaffed" and this is always a no-op for it — no special case needed.
+export async function startMatch(matchId, { confirmUnderstaffed = false } = {}) {
   const match = await findMatchByIdWithTeams(matchId)
   if (!match) throw notFound('Match not found.')
   if (match.status !== 'upcoming') {
@@ -147,7 +161,46 @@ export async function startMatch(matchId) {
     }
   }
 
+  const slots = await findSlotsByMatch(match.id)
+  const totalSlots = slots.length
+  const filledSlots = slots.filter((s) => s.status === 'ASSIGNED').length
+  if (filledSlots < totalSlots && !confirmUnderstaffed) {
+    throw conflict(`Only ${filledSlots} of ${totalSlots} required umpire slots are filled.`, { understaffed: true, filledSlots, totalSlots })
+  }
+
   return updateMatch(match.id, { status: 'live' })
+}
+
+// Ground Owner "Match is Over" — the common case is that the scoring engine
+// already auto-completed the match (scoring.service.js::maybeCompleteInnings
+// writes status='completed' + the real winner/margin the instant a target is
+// chased or a side is all out, in the same transaction as the deciding
+// delivery). This function's job is narrower than that: (a) if the match is
+// already 'completed', it's an idempotent no-op — never a double transition,
+// never overwrites a real result with a manual one — so the Ground Owner's
+// button is always safe to press regardless of whether scoring already got
+// there; (b) if the match is still 'live' (stopped early — rain, forfeit,
+// any reason cricket itself never decided a result), it manually transitions
+// to 'completed' using the schema's own existing, otherwise-unused
+// result_type='NO_RESULT' value — the honest answer for "a result the
+// match itself never produced", not an invented new state.
+export async function completeMatchManually(matchId) {
+  const match = await findMatchByIdWithTeams(matchId)
+  if (!match) throw notFound('Match not found.')
+  if (match.status === 'completed' || match.status === 'finalized') {
+    return { match, transitioned: false }
+  }
+  if (match.status !== 'live') {
+    throw conflict(`Cannot complete a match that is '${match.status}' — it must be live first.`)
+  }
+
+  const updated = await updateMatch(match.id, {
+    status: 'completed',
+    completed_at: new Date(),
+    result_type: 'NO_RESULT',
+    result: 'Match ended without a result.',
+  })
+  return { match: updated, transitioned: true }
 }
 
 /** Locks the official record. Only reachable once a result exists — a

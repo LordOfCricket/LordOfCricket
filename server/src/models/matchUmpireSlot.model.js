@@ -28,12 +28,29 @@ export async function findSlotsByMatch(matchId) {
   return rows
 }
 
-export async function hasActiveSlotAssignment(matchId, userId) {
-  const { rows } = await pool.query(`SELECT 1 FROM match_umpire_slots WHERE match_id = $1 AND umpire_user_id = $2 AND status = 'ASSIGNED' LIMIT 1`, [
+export async function hasActiveSlotAssignment(matchId, userId, client = pool) {
+  const { rows } = await client.query(`SELECT 1 FROM match_umpire_slots WHERE match_id = $1 AND umpire_user_id = $2 AND status = 'ASSIGNED' LIMIT 1`, [
     matchId,
     userId,
   ])
   return rows.length > 0
+}
+
+// Overlap-prevention read — every OTHER match this umpire currently holds an
+// ASSIGNED slot on (CANCELLED/NO_SHOW/COMPLETED are never "active" here,
+// matching hasActiveSlotAssignment's own exact definition of "active" —
+// same notion reused, not redefined). `client` accepts the same-transaction
+// connection applyForSlot's advisory lock runs in, so this read is
+// serialized against any concurrent apply by the same umpire.
+export async function findActiveAssignedMatchesForUmpire(userId, excludeMatchId = null, client = pool) {
+  const { rows } = await client.query(
+    `SELECT m.id, m.match_date, m.overs_per_innings, m.balls_per_over
+     FROM match_umpire_slots s
+     JOIN matches m ON m.id = s.match_id
+     WHERE s.umpire_user_id = $1 AND s.status = 'ASSIGNED' AND ($2::int IS NULL OR m.id != $2)`,
+    [userId, excludeMatchId],
+  )
+  return rows
 }
 
 // The atomic claim (U1 Decision 3 / Phase 0's slot-row design): the subquery
@@ -44,8 +61,8 @@ export async function hasActiveSlotAssignment(matchId, userId) {
 // for a match, over-allocation is structurally impossible — there is no
 // count to race on. Eligible rows are AVAILABLE (never claimed) or
 // CANCELLED (claimed once, then released) — both are open capacity.
-export async function claimAvailableSlot(matchId, userId) {
-  const { rows } = await pool.query(
+export async function claimAvailableSlot(matchId, userId, client = pool) {
+  const { rows } = await client.query(
     `UPDATE match_umpire_slots
      SET status = 'ASSIGNED', umpire_user_id = $2, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
      WHERE id = (
@@ -99,6 +116,37 @@ export async function findAvailableMatchesForUmpire() {
      WHERE m.status = 'upcoming'
        AND EXISTS (SELECT 1 FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status IN ('AVAILABLE', 'CANCELLED'))
      ORDER BY m.match_date ASC`,
+  )
+  return rows
+}
+
+// Umpire ground-wise discovery read — one batched query across every
+// candidate ground (WHERE ground_id = ANY($1)), not a loop per ground, so
+// this stays two DB round-trips total for the whole discovery endpoint
+// regardless of how many grounds are nearby. Deliberately NOT filtered by
+// slot availability or required_umpires>0 (unlike findAvailableMatchesForUmpire
+// above) — a fully-staffed match and a required_umpires=0 match must still
+// appear here so the ground itself still renders with those rows; the
+// frontend derives each row's state/button from the real numbers instead
+// of a row being silently dropped. current_user_assigned lets the frontend
+// show "you're assigned" instead of an apply button, without a separate
+// lookup.
+export async function findUpcomingMatchesForGrounds(groundIds, userId) {
+  if (!groundIds.length) return []
+  const { rows } = await pool.query(
+    `SELECT
+       m.id, m.ground_id, m.match_date, m.venue, m.required_umpires,
+       ta.name AS team_a_name, ta.short_name AS team_a_short,
+       tb.name AS team_b_name, tb.short_name AS team_b_short,
+       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id) AS total_slots,
+       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status = 'ASSIGNED') AS filled_slots,
+       EXISTS (SELECT 1 FROM match_umpire_slots s WHERE s.match_id = m.id AND s.umpire_user_id = $2 AND s.status = 'ASSIGNED') AS current_user_assigned
+     FROM matches m
+     JOIN teams ta ON ta.id = m.team_a_id
+     JOIN teams tb ON tb.id = m.team_b_id
+     WHERE m.ground_id = ANY($1::int[]) AND m.status = 'upcoming'
+     ORDER BY m.match_date ASC`,
+    [groundIds, userId],
   )
   return rows
 }

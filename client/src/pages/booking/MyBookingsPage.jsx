@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, Clock } from 'lucide-react'
+import { CalendarDays, Clock } from 'lucide-react'
 import { useMyBookings } from '../../hooks/useMyBookings.js'
 import { formatBookingDate, formatSlotTime } from '../../models/booking.model.js'
 import Button from '../../components/ui/Button.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const STATUS_BADGE = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-300',
@@ -56,10 +57,7 @@ export default function MyBookingsPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-3xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">My Bookings</h1>
 

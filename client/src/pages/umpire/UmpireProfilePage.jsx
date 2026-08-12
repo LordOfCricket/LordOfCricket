@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Star } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useUmpireProfile } from '../../hooks/useUmpireProfile.js'
 import UmpireLayout from '../../components/umpire-dashboard/UmpireLayout.jsx'
@@ -95,7 +96,23 @@ export default function UmpireProfilePage() {
 
           <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
             <h2 className="text-xl font-semibold text-white">Rating</h2>
-            <p className="mt-2 text-sm text-slate-400">Not available yet — umpire feedback and ratings are coming in a future update.</p>
+            {/* U6 — profile.rating_avg/rating_count are real, recomputed from
+                match_feedback_umpire_ratings on every new submission (never
+                fabricated). rating_count === 0 means genuinely no feedback
+                yet, shown honestly rather than a placeholder star value. */}
+            {profile.rating_count > 0 ? (
+              <div className="mt-3 flex items-center gap-3">
+                <span className="flex items-center gap-1.5 text-2xl font-bold text-amber-300">
+                  <Star className="h-6 w-6 fill-amber-400 text-amber-400" />
+                  {Number(profile.rating_avg).toFixed(2)}
+                </span>
+                <span className="text-sm text-slate-400">
+                  from {profile.rating_count} review{profile.rating_count === 1 ? '' : 's'}
+                </span>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-400">Not available yet — no umpire feedback has been submitted for you.</p>
+            )}
           </div>
         </div>
       )}

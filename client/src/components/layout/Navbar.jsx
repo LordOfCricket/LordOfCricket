@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, X, LogIn, LogOut, UtensilsCrossed, FlaskConical, Users, Search, Trophy, CalendarClock, ShieldCheck } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, UtensilsCrossed, Flag, Users, Search, Trophy, CalendarClock, ShieldCheck } from 'lucide-react'
 import logo from '../../assets/logo.png'
 import { useAuth } from '../../hooks/useAuth.js'
 import Avatar from '../ui/Avatar.jsx'
 import NotificationBell from './NotificationBell.jsx'
 import AccountMenu from './AccountMenu.jsx'
 import { roleLabel } from '../../models/player.model.js'
-import { getAccountLinks } from '../../models/navLinks.model.js'
+import { getAccountLinks, getUmpireAccountLinks, isUmpireMode } from '../../models/navLinks.model.js'
 
 const NAV_LINKS = [
   { label: 'Home', href: '#home' },
@@ -93,23 +93,30 @@ export default function Navbar() {
 
         {/* CTA */}
         <div className="hidden items-center gap-3 lg:flex">
+          {/* Always visible, logged in or not — logged out goes straight to
+              the Umpire Login tab. Logged in goes straight to the ground-wise
+              match availability page (/umpire/find-matches); RequireApprovedUmpire
+              already redirects a not-yet-approved user back to the status
+              hub (/umpire) and an unauthenticated one to /login on its own,
+              so this one link is always safe to point at the real
+              destination instead of routing everyone through the status
+              hub first. */}
+          <Link
+            to={user ? '/umpire/find-matches' : '/login?as=umpire'}
+            className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-amber-200 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-400/60 hover:bg-white/10"
+          >
+            <Flag className="h-5 w-5" />
+            Umpire
+          </Link>
+
           {!user && (
-            <>
-              <Link
-                to="/testing"
-                className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-amber-200 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-400/60 hover:bg-white/10"
-              >
-                <FlaskConical className="h-5 w-5" />
-                Umpire Testing
-              </Link>
-              <Link
-                to="/canteen"
-                className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-emerald-100 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-white/10"
-              >
-                <UtensilsCrossed className="h-5 w-5" />
-                Canteen
-              </Link>
-            </>
+            <Link
+              to="/canteen"
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-white/5 px-6 py-3 text-base font-semibold text-emerald-100 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-white/10"
+            >
+              <UtensilsCrossed className="h-5 w-5" />
+              Canteen
+            </Link>
           )}
 
           {user ? (
@@ -151,10 +158,12 @@ export default function Navbar() {
               <Avatar name={user.name} photoUrl={player?.photo_url} size="lg" />
               <div className="min-w-0">
                 <p className="truncate text-base font-bold text-white">{user.name}</p>
-                {player?.public_player_id && (
+                {!isUmpireMode(user) && player?.public_player_id && (
                   <p className="text-xs font-semibold tracking-wide text-emerald-300">{player.public_player_id}</p>
                 )}
-                <p className="text-xs text-emerald-100/60">{roleLabel(player?.role) || 'Complete your profile'}</p>
+                <p className="text-xs text-emerald-100/60">
+                  {isUmpireMode(user) ? 'Approved Umpire' : roleLabel(player?.role) || 'Complete your profile'}
+                </p>
               </div>
             </div>
           )}
@@ -189,7 +198,7 @@ export default function Navbar() {
 
           {user && (
             <div className="mt-2 border-t border-white/10 pt-2">
-              {getAccountLinks(user).map((link) => {
+              {(isUmpireMode(user) ? getUmpireAccountLinks() : getAccountLinks(user)).map((link) => {
                 const Icon = link.icon
                 return (
                   <Link
@@ -207,12 +216,12 @@ export default function Navbar() {
           )}
 
           <Link
-            to="/testing"
+            to={user ? '/umpire/find-matches' : '/login?as=umpire'}
             onClick={() => setIsOpen(false)}
             className="mt-2 inline-flex items-center justify-center gap-2 rounded-full border border-amber-400/30 bg-white/5 px-5 py-3 text-sm font-semibold text-amber-200 transition-all hover:border-amber-400/60 hover:bg-white/10"
           >
-            <FlaskConical className="h-4 w-4" />
-            Umpire Testing
+            <Flag className="h-4 w-4" />
+            Umpire
           </Link>
 
           {!user && (

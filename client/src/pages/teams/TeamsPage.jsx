@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { Search, ArrowLeft, Shield } from 'lucide-react'
+import { useSearchParams, Link } from 'react-router-dom'
+import { Search, Shield } from 'lucide-react'
 import { usePublicTeams } from '../../hooks/usePublicTeams.js'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import TeamCard from '../../components/teams/TeamCard.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const PAGE_SIZE = 12
 
@@ -19,7 +20,6 @@ function CardSkeleton() {
 }
 
 export default function TeamsPage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(searchParams.get('search') || '')
   const [offset, setOffset] = useState(0)
@@ -47,10 +47,7 @@ export default function TeamsPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-5xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>

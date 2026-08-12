@@ -27,7 +27,7 @@ export default function MyAssignmentsPage() {
   const hasAny = upcoming.length + live.length + completed.length > 0
 
   return (
-    <UmpireLayout title="My Assignments" subtitle="Matches you're assigned to umpire.">
+    <UmpireLayout title="My Matches" subtitle="Matches assigned to you as umpire.">
       {loading && (
         <div className="grid gap-4 sm:grid-cols-2">
           {Array.from({ length: 2 }).map((_, i) => (

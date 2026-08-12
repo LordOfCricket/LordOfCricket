@@ -1,4 +1,5 @@
 import UmpireSidebar from './UmpireSidebar.jsx'
+import BackButton from '../common/BackButton.jsx'
 
 // Mirrors AdminLayout.jsx exactly.
 export default function UmpireLayout({ title, subtitle, children }) {
@@ -19,6 +20,8 @@ export default function UmpireLayout({ title, subtitle, children }) {
         <UmpireSidebar />
 
         <div className="min-w-0 flex-1">
+          <BackButton fallback="/umpire" className="mb-4" />
+
           {(title || subtitle) && (
             <div className="mb-6">
               {title && <h1 className="text-3xl font-extrabold text-white sm:text-4xl">{title}</h1>}

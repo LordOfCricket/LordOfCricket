@@ -6,6 +6,7 @@ import { useUmpireStatus } from '../../hooks/useUmpireStatus.js'
 import { useAuth } from '../../hooks/useAuth.js'
 import { listMatches } from '../../services/matchApi.js'
 import { matchActionForStatus } from '../../models/matchOperations.model.js'
+import BackButton from '../../components/common/BackButton.jsx'
 
 export default function UmpireStatusPage() {
   const { user } = useAuth()
@@ -13,10 +14,12 @@ export default function UmpireStatusPage() {
   const [matches, setMatches] = useState([])
 
   const isStaff = user?.role === 'staff'
-  // Only super_admin staff carry "Scorer" access server-side (requireScorer
-  // accepts staff_role='super_admin' OR an approved umpire) — admin/
-  // canteen_staff are staff but must not see match-operations links they'd
-  // just get a 403 from.
+  // Only super_admin staff carry match-operations access server-side —
+  // admin/canteen_staff are staff but must not see match-operations links
+  // they'd just get a 403 from. Match CREATION (POST /matches) is now
+  // super_admin-only as of U5.1; an approved umpire can still open the
+  // scorer/finalize a match they're assigned to (requireMatchScorer, U3/
+  // U3.1), which is what `canOperate` below still needs to allow.
   const isSuperAdminStaff = isStaff && user?.staff_role === 'super_admin'
   const status = request?.status
   const copy = status ? STATUS_COPY[status] : null
@@ -47,6 +50,7 @@ export default function UmpireStatusPage() {
     >
       <section className="mx-auto flex min-h-screen max-w-7xl items-center px-8 lg:px-16">
         <div className="w-full max-w-2xl">
+          <BackButton fallback="/" className="mb-4" />
           <h1 className="text-5xl font-extrabold text-white">{isSuperAdminStaff ? 'Match Operations' : 'Umpire Access'}</h1>
 
           <div className="mt-10 rounded-[36px] border border-white/15 bg-slate-900/35 p-10 shadow-2xl backdrop-blur-2xl">
@@ -60,17 +64,36 @@ export default function UmpireStatusPage() {
                     <p className="mt-3 text-slate-300">{copy.detail}</p>
                   </>
                 )}
-                {isStaff && (
+                {isSuperAdminStaff && (
                   <p className="text-slate-300">Create matches, open the scorer for a live match, and finalize completed matches.</p>
+                )}
+                {!isStaff && (
+                  <p className="text-slate-300">
+                    Open the scorer for a match you're assigned to, and finalize it once complete. Match creation now happens through a ground
+                    owner's own dashboard.
+                  </p>
                 )}
 
                 <div className="mt-8 flex flex-wrap gap-3">
-                  <Link
-                    to="/matches/new"
-                    className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-sm font-bold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:-translate-y-0.5"
-                  >
-                    Create New Match
-                  </Link>
+                  {/* U5.1 — match creation is now super_admin-only (was: any
+                      approved umpire too). Only super_admin sees this link;
+                      it would otherwise lead an umpire to a form that now 403s. */}
+                  {isSuperAdminStaff && (
+                    <Link
+                      to="/matches/new"
+                      className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-sm font-bold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:-translate-y-0.5"
+                    >
+                      Create New Match
+                    </Link>
+                  )}
+                  {!isStaff && (
+                    <Link
+                      to="/umpire/find-matches"
+                      className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-emerald-400 to-emerald-600 px-6 py-3 text-sm font-bold text-emerald-950 shadow-md shadow-emerald-500/30 transition-all hover:-translate-y-0.5"
+                    >
+                      Find Umpiring Opportunities
+                    </Link>
+                  )}
                   {!isStaff && (
                     <Link
                       to="/umpire/dashboard"

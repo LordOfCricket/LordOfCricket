@@ -34,21 +34,21 @@ function isFiniteNumber(value) {
 // Step 5 — reject missing/NaN/Infinity/non-numeric/out-of-range values.
 // Query params always arrive as strings; Number('') is 0 (a false pass) and
 // Number('abc') is NaN, so both must be checked explicitly.
-function parseCoordinate(raw, min, max) {
+export function parseCoordinate(raw, min, max) {
   if (raw === undefined || raw === '') return { error: true }
   const value = Number(raw)
   if (!isFiniteNumber(value) || value < min || value > max) return { error: true }
   return { value }
 }
 
-function parseRadiusKm(raw) {
+export function parseRadiusKm(raw) {
   if (raw === undefined || raw === '') return { value: DEFAULT_RADIUS_KM }
   const value = Number(raw)
   if (!isFiniteNumber(value) || value <= 0) return { error: true }
   return { value: Math.min(value, MAX_RADIUS_KM) }
 }
 
-function parsePagination(query) {
+export function parsePagination(query) {
   const rawLimit = query.limit === undefined ? DEFAULT_LIMIT : Number(query.limit)
   const rawPage = query.page === undefined ? 1 : Number(query.page)
   const limit = Math.max(1, Math.min(isFiniteNumber(rawLimit) ? Math.trunc(rawLimit) : DEFAULT_LIMIT, MAX_LIMIT))
@@ -58,7 +58,7 @@ function parsePagination(query) {
 
 // Step 8 — round only at the presentation boundary; filtering (in the SQL
 // query itself) already used the full-precision value.
-function roundDistance(km) {
+export function roundDistance(km) {
   return Math.round(Number(km) * 100) / 100
 }
 

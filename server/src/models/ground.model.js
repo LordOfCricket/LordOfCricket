@@ -187,6 +187,96 @@ export async function findActiveGroundsByCity({ city, limit, offset }) {
   return { rows, total: rows[0]?.total_count ?? 0 }
 }
 
+// Umpire ground-wise discovery — same eligibility/shape as the two
+// public discovery queries above, but scoped to grounds that currently
+// have at least one 'upcoming' match (a ground with no upcoming matches
+// has nothing for an umpire to see, so it's excluded at the SQL level
+// rather than returned and then hidden client-side), plus the FULL photo
+// gallery (not just one primary_photo — the umpire card needs a
+// carousel) and the internal `g.id` (needed to batch-fetch matches for
+// these grounds in a second query; never sent to the wire, only
+// public_ground_id is).
+const GROUND_PHOTOS_SUBQUERY = `
+  (SELECT COALESCE(json_agg(json_build_object('imageUrl', gp.image_url, 'title', gp.title) ORDER BY gp.sort_order, gp.created_at), '[]')
+   FROM ground_photos gp WHERE gp.ground_id = g.id) AS photos
+`
+
+const UPCOMING_MATCH_EXISTS = `EXISTS (SELECT 1 FROM matches m WHERE m.ground_id = g.id AND m.status = 'upcoming')`
+
+export async function findNearbyGroundsWithUpcomingMatches({ latitude, longitude, radiusKm, limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         g.id, public_ground_id, slug, name, city, state, country, latitude, longitude,
+         ${GROUND_PHOTOS_SUBQUERY},
+         ${AMENITY_NAMES_SUBQUERY},
+         ${2 * EARTH_RADIUS_KM} * asin(
+           sqrt(
+             power(sin(radians(latitude - $1) / 2), 2)
+             + cos(radians($1)) * cos(radians(latitude))
+               * power(sin(radians(longitude - $2) / 2), 2)
+           )
+         ) AS distance_km
+       FROM grounds g
+       WHERE status = 'ACTIVE' AND latitude IS NOT NULL AND longitude IS NOT NULL
+         AND ${UPCOMING_MATCH_EXISTS}
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     WHERE distance_km <= $3
+     ORDER BY distance_km ASC
+     LIMIT $4 OFFSET $5`,
+    [latitude, longitude, radiusKm, limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}
+
+export async function findGroundsByCityWithUpcomingMatches({ city, limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         g.id, public_ground_id, slug, name, city, state, country,
+         ${GROUND_PHOTOS_SUBQUERY},
+         ${AMENITY_NAMES_SUBQUERY}
+       FROM grounds g
+       WHERE status = 'ACTIVE' AND city ILIKE '%' || $1 || '%'
+         AND ${UPCOMING_MATCH_EXISTS}
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     ORDER BY name ASC
+     LIMIT $2 OFFSET $3`,
+    [city, limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}
+
+// Cheap existence-only probes (no matches filter) — fired only when the
+// two queries above return zero grounds, to tell "no grounds at all
+// nearby/in this city" apart from "grounds exist but none have upcoming
+// matches" without paying the matches-EXISTS cost on every request.
+export async function anyActiveGroundNearby({ latitude, longitude, radiusKm }) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM grounds g
+     WHERE status = 'ACTIVE' AND latitude IS NOT NULL AND longitude IS NOT NULL
+       AND ${2 * EARTH_RADIUS_KM} * asin(
+         sqrt(
+           power(sin(radians(latitude - $1) / 2), 2)
+           + cos(radians($1)) * cos(radians(latitude))
+             * power(sin(radians(longitude - $2) / 2), 2)
+         )
+       ) <= $3
+     LIMIT 1`,
+    [latitude, longitude, radiusKm],
+  )
+  return rows.length > 0
+}
+
+export async function anyActiveGroundInCity({ city }) {
+  const { rows } = await pool.query(`SELECT 1 FROM grounds WHERE status = 'ACTIVE' AND city ILIKE '%' || $1 || '%' LIMIT 1`, [city])
+  return rows.length > 0
+}
+
 // Unscoped browse — "grounds already registered on LOC," shown on the
 // platform homepage below the hero without requiring a city search first.
 // Same public card shape/ACTIVE-only filter as findActiveGroundsByCity,

@@ -41,9 +41,11 @@ const ProfilePage = lazy(() => import('../pages/profile/ProfilePage.jsx'))
 const ProfileEditPage = lazy(() => import('../pages/profile/ProfileEditPage.jsx'))
 const UmpireStatusPage = lazy(() => import('../pages/umpire/UmpireStatusPage.jsx'))
 const UmpireDashboardPage = lazy(() => import('../pages/umpire/UmpireDashboardPage.jsx'))
+const UmpireGroundDiscoveryPage = lazy(() => import('../pages/umpire/UmpireGroundDiscoveryPage.jsx'))
 const AvailableMatchesPage = lazy(() => import('../pages/umpire/AvailableMatchesPage.jsx'))
 const MyAssignmentsPage = lazy(() => import('../pages/umpire/MyAssignmentsPage.jsx'))
 const UmpireProfilePage = lazy(() => import('../pages/umpire/UmpireProfilePage.jsx'))
+const UmpireStatisticsPage = lazy(() => import('../pages/umpire/UmpireStatisticsPage.jsx'))
 const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
 const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
 
@@ -63,6 +65,7 @@ const TeamComparePage = lazy(() => import('../pages/teams/TeamComparePage.jsx'))
 
 // Phase 9 — public match summary/scorecard (public read, no auth wall)
 const MatchSummaryPage = lazy(() => import('../pages/match-summary/MatchSummaryPage.jsx'))
+const MatchFeedbackPage = lazy(() => import('../pages/match-feedback/MatchFeedbackPage.jsx'))
 
 // Phase 10 Part 1 — public match discovery (public read, no auth wall)
 const MatchesPage = lazy(() => import('../pages/matches/MatchesPage.jsx'))
@@ -130,9 +133,11 @@ const router = createBrowserRouter([
       { path: '/profile/edit', element: <RequireAuth>{withSuspense(<ProfileEditPage />)}</RequireAuth> },
       { path: '/umpire', element: <RequireAuth>{withSuspense(<UmpireStatusPage />)}</RequireAuth> },
       { path: '/umpire/dashboard', element: <RequireApprovedUmpire>{withSuspense(<UmpireDashboardPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/find-matches', element: <RequireApprovedUmpire>{withSuspense(<UmpireGroundDiscoveryPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/available-matches', element: <RequireApprovedUmpire>{withSuspense(<AvailableMatchesPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/my-assignments', element: <RequireApprovedUmpire>{withSuspense(<MyAssignmentsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/profile', element: <RequireApprovedUmpire>{withSuspense(<UmpireProfilePage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/statistics', element: <RequireApprovedUmpire>{withSuspense(<UmpireStatisticsPage />)}</RequireApprovedUmpire> },
       { path: '/ground-owner/dashboard', element: <RequireGroundOwner>{withSuspense(<GroundOwnerDashboardPage />)}</RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner>{withSuspense(<GroundMatchesPage />)}</RequireGroundOwner> },
 
@@ -152,9 +157,13 @@ const router = createBrowserRouter([
 
       // Phase 9 — public match summary/scorecard
       { path: '/matches/:matchId/summary', element: withSuspense(<MatchSummaryPage />) },
+      { path: '/matches/:matchId/feedback', element: <RequireAuth>{withSuspense(<MatchFeedbackPage />)}</RequireAuth> },
 
       // Phase 5 — real match scoring
-      { path: '/matches/new', element: <RequireAuth>{withSuspense(<MatchSetupPage />)}</RequireAuth> },
+      // U5.1 — match creation is now super_admin-only (Ground Owners create
+      // through /ground-owner instead); was RequireAuth-only, which let an
+      // approved umpire reach a form the backend now 403s.
+      { path: '/matches/new', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<MatchSetupPage />)}</RequireStaffRole> },
       { path: '/matches/:matchId/setup', element: <RequireAuth>{withSuspense(<MatchRosterPage />)}</RequireAuth> },
       { path: '/matches/:matchId/score', element: <RequireAuth>{withSuspense(<RealScorerPage />)}</RequireAuth> },
 

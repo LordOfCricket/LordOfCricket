@@ -1,17 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Calendar, XCircle, AlertTriangle, Clock } from 'lucide-react'
+import { Bell, Calendar, XCircle, AlertTriangle, Clock, UserCheck, UserX, ClipboardCheck } from 'lucide-react'
 import { useNotifications } from '../../hooks/useNotifications.js'
 
 // Phase 18 Feature 17 — wired to the real, persisted, in-app notification
 // store (ground_notifications). No email/SMS — every notification here is
-// generated server-side by groundBooking.service.js on booking confirm/
-// cancel (see docs/ARCHITECTURE.md's Phase 18 section).
+// generated server-side: booking confirm/cancel (groundBooking.service.js,
+// see docs/ARCHITECTURE.md's Phase 18 section), and umpire slot assign/
+// cancel + umpire request decisions (U7 — umpireAssignment.service.js /
+// umpireRequest.controller.js). Unrecognized types fall back to the plain
+// Bell icon below, so a future notification type never needs a frontend
+// change just to render.
 
 const TYPE_ICON = {
   BOOKING_APPROVED: Calendar,
   BOOKING_CANCELLED: XCircle,
   BOOKING_REMINDER: Clock,
   GROUND_CLOSED: AlertTriangle,
+  UMPIRE_SLOT_ASSIGNED: UserCheck,
+  UMPIRE_SLOT_CANCELLED: UserX,
+  UMPIRE_REQUEST_DECIDED: ClipboardCheck,
 }
 
 function timeAgo(iso) {

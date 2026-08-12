@@ -33,6 +33,23 @@ export async function fetchMatchUmpireSlots(matchId) {
   return data.slots
 }
 
+// Ground-wise discovery — one large card per ground, each carrying its
+// own upcoming matches + real umpire-slot status. Two entry points
+// mirroring groundsApi.js's nearby/city split: nearby needs coordinates
+// (from useGeolocation, click-to-request only), city is the manual
+// fallback when location is denied/unavailable.
+export async function fetchNearbyGroundsForUmpire({ latitude, longitude, radiusKm, page, limit }) {
+  const { data } = await api.get('/umpire/grounds/nearby', {
+    params: { lat: latitude, lng: longitude, radiusKm, page, limit },
+  })
+  return data
+}
+
+export async function fetchGroundsByCityForUmpire({ city, page, limit }) {
+  const { data } = await api.get('/umpire/grounds/by-city', { params: { city, page, limit } })
+  return data
+}
+
 export async function fetchMyUmpireProfile() {
   const { data } = await api.get('/umpire/profile')
   return data.profile

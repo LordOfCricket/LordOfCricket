@@ -54,6 +54,18 @@ export async function findMembershipsByGroundId(groundId) {
 // inspecting the schema before this phase) — one owner legitimately
 // managing several grounds is already fully supported, not a new case to
 // design around.
+// U7 — the inverse of findGroundsOwnedByUser: every user actively holding
+// GROUND_OWNER for a given ground (there is no uniqueness constraint on
+// ground_id alone in ground_users, so more than one legitimate co-owner is
+// already representable — this returns all of them, not just one).
+export async function findActiveGroundOwnerUserIds(groundId) {
+  const { rows } = await pool.query(
+    `SELECT user_id FROM ground_users WHERE ground_id = $1 AND role = 'GROUND_OWNER' AND is_active = true`,
+    [groundId],
+  )
+  return rows.map((r) => r.user_id)
+}
+
 export async function findGroundsOwnedByUser(userId, role = 'GROUND_OWNER') {
   const { rows } = await pool.query(
     `SELECT g.*

@@ -9,6 +9,7 @@ import MyTeams from '../../components/dashboard/MyTeams.jsx'
 import RecentMatches from '../../components/dashboard/RecentMatches.jsx'
 import QuickActions from '../../components/dashboard/QuickActions.jsx'
 import OnboardingBanner from '../../components/dashboard/OnboardingBanner.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 export default function PlayerDashboardPage() {
   const { user, player, team, isNewPlayer } = usePlayerDashboard()
@@ -34,6 +35,7 @@ export default function PlayerDashboardPage() {
       }}
     >
       <div className="mx-auto max-w-6xl">
+        <BackButton fallback="/" className="mb-4" />
         <DashboardHeader name={user?.name} />
 
         <div className="mt-8 space-y-6">

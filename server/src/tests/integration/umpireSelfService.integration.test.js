@@ -77,12 +77,12 @@ async function makeTeams() {
   }
 }
 
-async function createMatchWithSlots(teams, requiredUmpires = 1) {
+async function createMatchWithSlots(teams, requiredUmpires = 1, matchDate = new Date().toISOString()) {
   return matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,
     venue: 'U4 Test Ground',
-    matchDate: new Date().toISOString(),
+    matchDate,
     requiredUmpires,
   })
 }
@@ -181,14 +181,19 @@ test('profile: stats reflect real assignment/match state, not a stale cache', as
   const teams = await makeTeams()
   const umpire = await approvedUmpire('profile-stats')
   try {
+    // Each a day apart — this umpire holds (or held) an ASSIGNED slot on
+    // all three simultaneously in spirit; the double-booking check treats
+    // an ASSIGNED slot as active regardless of the match's own status
+    // (nothing ever demotes it away from ASSIGNED once officiated), so
+    // same-instant matches here would now be a genuine, correct conflict.
     const upcomingMatch = await createMatchWithSlots(teams, 1)
     await json(`${server.baseUrl}/matches/${upcomingMatch.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
 
-    const officiatedMatch = await createMatchWithSlots(teams, 1)
+    const officiatedMatch = await createMatchWithSlots(teams, 1, new Date(Date.now() + 86400000).toISOString())
     await json(`${server.baseUrl}/matches/${officiatedMatch.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     await pool.query(`UPDATE matches SET status = 'finalized' WHERE id = $1`, [officiatedMatch.id])
 
-    const cancelledMatch = await createMatchWithSlots(teams, 1)
+    const cancelledMatch = await createMatchWithSlots(teams, 1, new Date(Date.now() + 2 * 86400000).toISOString())
     await json(`${server.baseUrl}/matches/${cancelledMatch.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     await json(`${server.baseUrl}/matches/${cancelledMatch.id}/umpire-slots/cancel`, { method: 'POST', token: umpire.token })
 

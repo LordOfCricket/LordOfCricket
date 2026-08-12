@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 function GroundCard({ ground }) {
   return (
@@ -58,6 +59,7 @@ export default function GroundOwnerDashboardPage() {
 
   return (
     <GroundOwnerLayout title="Ground Owner Dashboard">
+      <BackButton fallback="/" className="mb-4" />
       <h2 className="text-xl font-semibold text-white">My Grounds</h2>
 
       <div className="mt-4">

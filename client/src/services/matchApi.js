@@ -23,8 +23,12 @@ export async function setToss(matchId, payload) {
   return data.match
 }
 
-export async function startMatch(matchId) {
-  const { data } = await api.post(`/matches/${matchId}/start`)
+// U9 — confirmUnderstaffed lets the caller re-send after the user
+// explicitly confirms starting with unfilled umpire slots (the backend
+// returns 409 + { details: { understaffed, filledSlots, totalSlots } } on
+// the first, unconfirmed attempt for a genuinely understaffed match).
+export async function startMatch(matchId, { confirmUnderstaffed = false } = {}) {
+  const { data } = await api.post(`/matches/${matchId}/start`, { confirmUnderstaffed })
   return data.match
 }
 

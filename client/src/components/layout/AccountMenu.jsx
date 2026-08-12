@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, FlaskConical, LandPlot, LogOut } from 'lucide-react'
+import { ChevronDown, LandPlot, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
-import { getAccountLinks } from '../../models/navLinks.model.js'
+import { getAccountLinks, getUmpireAccountLinks, isUmpireMode } from '../../models/navLinks.model.js'
 import { useIsGroundOwner } from '../../hooks/useIsGroundOwner.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
-  const MENU_LINKS = getAccountLinks(user)
+  const umpireMode = isUmpireMode(user)
+  const MENU_LINKS = umpireMode ? getUmpireAccountLinks() : getAccountLinks(user)
   // Not part of getAccountLinks (that function is synchronous — user.role/
   // player_type only; ground ownership has no such signal on the user
   // object) — U5's own self-check, same "fetch quietly in the navbar"
@@ -59,10 +60,10 @@ export default function AccountMenu({ user, player, onLogout }) {
             <Avatar name={user?.name} photoUrl={player?.photo_url} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-base font-bold text-white">{user?.name}</p>
-              {player?.public_player_id && (
+              {!umpireMode && player?.public_player_id && (
                 <p className="text-xs font-semibold tracking-wide text-emerald-300">{player.public_player_id}</p>
               )}
-              <p className="text-xs text-emerald-100/60">{role || 'Complete your profile to set a role'}</p>
+              <p className="text-xs text-emerald-100/60">{umpireMode ? 'Approved Umpire' : role || 'Complete your profile to set a role'}</p>
             </div>
           </div>
 
@@ -95,17 +96,6 @@ export default function AccountMenu({ user, player, onLogout }) {
               </Link>
             </div>
           )}
-
-          <div className="border-t border-white/10 py-2">
-            <Link
-              to="/testing"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-amber-200/90 transition-colors hover:bg-white/5 hover:text-amber-100"
-            >
-              <FlaskConical className="h-4 w-4" />
-              Umpire Testing
-            </Link>
-          </div>
 
           <div className="border-t border-white/10 py-2">
             <button

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { fetchPublicPlayerInfo } from '../../services/statisticsApi.js'
 import { useCareerStats } from '../../hooks/useCareerStats.js'
 import Avatar from '../../components/ui/Avatar.jsx'
@@ -14,6 +13,7 @@ import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchPlayerInsight } from '../../services/aiInsightApi.js'
 import PlayerAnalyticsSection from '../../components/analytics/PlayerAnalyticsSection.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ANALYTICS']
 
@@ -80,14 +80,7 @@ export default function PublicPlayerProfilePage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.78), rgba(2,6,23,0.78)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-5xl">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/players" />
 
         {playerLoading && <div className="mt-6"><StatsLoadingGrid tiles={4} /></div>}
         {!playerLoading && playerError && (

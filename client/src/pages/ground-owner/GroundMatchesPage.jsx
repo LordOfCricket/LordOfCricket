@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { CalendarDays, ChevronDown, ChevronUp, Trophy } from 'lucide-react'
+import BackButton from '../../components/common/BackButton.jsx'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import { useGroundMatches } from '../../hooks/useGroundMatches.js'
 import { useMatchUmpireSlots } from '../../hooks/useMatchUmpireSlots.js'
 import { fetchTeams } from '../../services/playerApi.js'
-import { formatMatchDate, formatMatchTime, statusLabel } from '../../models/matchDiscovery.model.js'
+import { formatMatchDate, formatMatchTime, statusLabel, formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 import { slotStatusInfo, describeSlot } from '../../models/groundOwnerDashboard.model.js'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -147,8 +148,19 @@ function SlotDetail({ matchId, slots, loading, error, onExpand }) {
   )
 }
 
-function MatchCard({ match, slotsHook }) {
+function MatchCard({ match, slotsHook, lifecycleHook }) {
   const status = slotStatusInfo(match)
+  const busy = lifecycleHook.lifecycleBusyId === match.id
+  const result = lifecycleHook.lifecycleResults[match.id]
+  const isDecided = match.status === 'completed' || match.status === 'finalized'
+  const resultLine = isDecided
+    ? formatMatchResultLine(
+        match.result_type ? { resultType: match.result_type, winnerTeamId: match.winner_team_id, text: match.result } : null,
+        { id: match.team_a_id, name: match.team_a_name },
+        { id: match.team_b_id, name: match.team_b_name },
+      )
+    : null
+
   return (
     <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-5 shadow-sm backdrop-blur-sm">
       <div className="flex items-start justify-between gap-3">
@@ -184,6 +196,49 @@ function MatchCard({ match, slotsHook }) {
           onExpand={slotsHook.load}
         />
       )}
+
+      {isDecided && resultLine && (
+        <p className="mt-4 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200">
+          <Trophy className="h-4 w-4 shrink-0 text-amber-300" />
+          {resultLine}
+        </p>
+      )}
+
+      {result?.type === 'understaffed' && (
+        <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          Only {result.filledSlots} of {result.totalSlots} umpire slots are filled.
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => lifecycleHook.start(match.id, { confirmUnderstaffed: true })}
+            className="ml-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Start anyway
+          </button>
+        </div>
+      )}
+      {result?.type === 'error' && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-rose-300">{result.message}</p>}
+
+      {match.status === 'upcoming' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => lifecycleHook.start(match.id)}
+          className="mt-4 h-11 w-full rounded-2xl bg-linear-to-r from-green-700 via-green-500 to-lime-500 text-sm font-semibold text-white shadow-md shadow-green-900/40 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? 'Starting…' : 'Match is Starting'}
+        </button>
+      )}
+      {match.status === 'live' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => lifecycleHook.complete(match.id)}
+          className="mt-4 h-11 w-full rounded-2xl border border-rose-400/30 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? 'Ending…' : 'Match is Over'}
+        </button>
+      )}
     </div>
   )
 }
@@ -191,18 +246,16 @@ function MatchCard({ match, slotsHook }) {
 export default function GroundMatchesPage() {
   const { publicGroundId } = useParams()
   const { grounds, loading: groundsLoading } = useMyGrounds()
-  const { matches, loading, error, creating, createError, create, refresh } = useGroundMatches(publicGroundId)
-  const slotsHook = useMatchUmpireSlots()
+  const groundMatches = useGroundMatches(publicGroundId)
+  const { matches, loading, error, creating, createError, create, refresh } = groundMatches
+  const slotsHook = useMatchUmpireSlots(publicGroundId)
   const [showForm, setShowForm] = useState(false)
 
   const ground = grounds.find((g) => g.public_ground_id === publicGroundId)
 
   return (
     <GroundOwnerLayout>
-      <Link to="/ground-owner/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Dashboard
-      </Link>
+      <BackButton label="Back to Dashboard" fallback="/ground-owner/dashboard" />
 
       <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">{groundsLoading ? 'Loading…' : ground?.name || 'Ground'}</h1>
 
@@ -245,7 +298,7 @@ export default function GroundMatchesPage() {
         {!loading && !error && matches.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
             {matches.map((match) => (
-              <MatchCard key={match.id} match={match} slotsHook={slotsHook} />
+              <MatchCard key={match.id} match={match} slotsHook={slotsHook} lifecycleHook={groundMatches} />
             ))}
           </div>
         )}

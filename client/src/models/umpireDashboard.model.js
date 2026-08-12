@@ -53,6 +53,8 @@ export function applyErrorMessage(code, fallback) {
       return 'Your umpire approval is no longer active.'
     case 'MATCH_NOT_FOUND':
       return 'This match no longer exists.'
+    case 'OVERLAPPING_ASSIGNMENT':
+      return 'You already have an umpire assignment that overlaps with this match\'s time — an umpire can only officiate one match at a time.'
     default:
       return fallback || 'Unable to apply for this match.'
   }

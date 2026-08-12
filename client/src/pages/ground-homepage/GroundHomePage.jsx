@@ -16,6 +16,7 @@ import GroundAbout from '../../components/ground/GroundAbout.jsx'
 import GroundContact from '../../components/ground/GroundContact.jsx'
 import GroundNotFound from '../../components/ground/GroundNotFound.jsx'
 import GalleryModal from '../../components/ground/GalleryModal.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 import { useGround } from '../../hooks/useGround.js'
 import {
   fadeUpSoft,
@@ -101,6 +102,10 @@ export default function GroundHomePage() {
       </MouseParallaxProvider>
 
       <div className="relative flex flex-col items-center gap-16 pb-16">
+        <div className="w-full px-6 pt-6">
+          <BackButton label="Back to Grounds" fallback="/grounds" />
+        </div>
+
         {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
         <div id="matches" className="w-full scroll-mt-24">
           <MatchActivitySection />

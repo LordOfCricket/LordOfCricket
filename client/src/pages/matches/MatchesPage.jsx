@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { usePublicMatches } from '../../hooks/usePublicMatches.js'
 import { CATEGORIES } from '../../models/matchDiscovery.model.js'
 import MatchCard from '../../components/matches/MatchCard.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const PAGE_SIZE = 12
 
@@ -26,7 +26,6 @@ function CardSkeleton() {
 }
 
 export default function MatchesPage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [offset, setOffset] = useState(0)
 
@@ -54,10 +53,7 @@ export default function MatchesPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <h1 className="mt-4 text-3xl font-bold text-white">Matches</h1>
         <p className="mt-1 text-sm text-slate-300">Follow cricket happening on Lord Of Cricket.</p>

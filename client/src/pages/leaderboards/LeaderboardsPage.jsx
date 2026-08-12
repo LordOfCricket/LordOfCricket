@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Trophy } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Trophy } from 'lucide-react'
 import { fetchLeaderboard } from '../../services/statisticsApi.js'
 import { fetchTeams } from '../../services/playerApi.js'
 import { PLAYING_ROLE_LABELS } from '../../models/player.model.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import LeaderboardPodium from '../../components/leaderboards/LeaderboardPodium.jsx'
 import LeaderboardRow from '../../components/leaderboards/LeaderboardRow.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const METRIC_GROUPS = {
   batting: [
@@ -50,7 +51,6 @@ function qualificationText(qualification) {
 }
 
 export default function LeaderboardsPage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialMetric = searchParams.get('metric') || 'runs'
   const [category, setCategory] = useState(metricCategory(initialMetric))
@@ -122,14 +122,7 @@ export default function LeaderboardsPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.82), rgba(2,6,23,0.82)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <div className="mt-4 flex items-center gap-3">
           <Trophy className="h-7 w-7 text-amber-300" />

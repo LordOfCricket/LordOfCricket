@@ -6,9 +6,9 @@ import { logger } from '../utils/logger.js'
 // never blocks the primary action" posture as audit logging (§ groundAuditLog
 // .service.js) and Google Calendar sync — a notification failing to write
 // must never fail the booking/cancellation that triggered it.
-export async function createNotification({ userId, type, title, body = null, relatedBookingId = null }) {
+export async function createNotification({ userId, type, title, body = null, relatedBookingId = null, relatedMatchId = null }) {
   try {
-    return await notificationRepo.insertNotification(pool, { userId, type, title, body, relatedBookingId })
+    return await notificationRepo.insertNotification(pool, { userId, type, title, body, relatedBookingId, relatedMatchId })
   } catch (err) {
     logger.error('Ground notification write failed', { userId, type, error: err.message })
     return null

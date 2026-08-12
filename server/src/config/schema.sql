@@ -1350,8 +1350,11 @@ CREATE TABLE IF NOT EXISTS match_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (match_id, submitted_by)
 );
-CREATE INDEX IF NOT EXISTS idx_match_feedback_umpire_user_id
-  ON match_feedback(umpire_user_id) WHERE umpire_user_id IS NOT NULL;
+-- (idx_match_feedback_umpire_user_id, the original index on this table's
+-- since-removed umpire_user_id column, was dropped in Phase 22/U6 below —
+-- removed from here too, not just left dangling, since re-running this
+-- CREATE INDEX against a column Phase 22 has since dropped would break a
+-- fresh migrate on an already-migrated database.)
 
 -- Cached aggregates, recomputed from match_feedback (joined through
 -- matches.ground_id) by application code once feedback submission exists
@@ -1380,3 +1383,96 @@ END $$;
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED'));
+
+-- ============================================================================
+-- PHASE 22 (U6) — Feedback & Rating System
+-- ============================================================================
+--
+-- match_feedback stays the single "one row per (match, submitted_by)"
+-- submission shell (U1's own design, unchanged) for the two categories that
+-- really are 1:1 with a submission — Ground and LOC/App. Both rating
+-- columns become nullable: U6's eligibility model means not every eligible
+-- submitter is eligible for every category (a Ground Owner reviewing their
+-- own ground would be a self-rating loophole, so they submit Umpire+App
+-- only), so "every category populated" can no longer be assumed the way
+-- the original NOT NULL implied.
+ALTER TABLE match_feedback ALTER COLUMN ground_rating DROP NOT NULL;
+ALTER TABLE match_feedback ALTER COLUMN app_rating DROP NOT NULL;
+
+-- app_comment -> app_comment_liked (symmetry with ground_comment_liked/
+-- umpire_comment_liked — this category never had a "what improved" field,
+-- unlike the other two) + a new app_comment_improve. Renamed rather than
+-- left as a lone oddly-named column — safe because this feature has not
+-- shipped yet (no real rows depend on the old name).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'match_feedback' AND column_name = 'app_comment')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'match_feedback' AND column_name = 'app_comment_liked') THEN
+    ALTER TABLE match_feedback RENAME COLUMN app_comment TO app_comment_liked;
+  END IF;
+END $$;
+ALTER TABLE match_feedback ADD COLUMN IF NOT EXISTS app_comment_improve VARCHAR(500);
+-- One structured field for "which LOC feature did you like most" — a fixed,
+-- small taxonomy validated at the service layer (app.controller-level list,
+-- not a DB CHECK/enum — matches this schema's existing convention of plain
+-- VARCHAR + application validation for small option sets, e.g.
+-- umpire_requests.status). Free text stays covered by app_comment_liked/
+-- app_comment_improve; this is additive, not a replacement.
+ALTER TABLE match_feedback ADD COLUMN IF NOT EXISTS app_feature_liked VARCHAR(50);
+
+-- The one real schema gap U1 flagged for a future phase to resolve: a match
+-- can have more than one assigned umpire (required_umpires, U1/U3), but the
+-- old umpire_user_id/umpire_rating/umpire_comment_* columns on
+-- match_feedback could only ever hold ONE. Rather than force multiple
+-- match_feedback rows per submitter (destroying the UNIQUE(match_id,
+-- submitted_by) "one submission" rule) or cram an array into one column,
+-- per-umpire ratings are normalized into their own child table — the same
+-- one-row-per-relationship principle match_umpire_slots already established
+-- for "more than one umpire on a match". match_feedback remains the single
+-- submission shell; this table is the one-to-many part of it.
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_user_id;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_rating;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_comment_liked;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_comment_improve;
+DROP INDEX IF EXISTS idx_match_feedback_umpire_user_id;
+
+CREATE TABLE IF NOT EXISTS match_feedback_umpire_ratings (
+  id SERIAL PRIMARY KEY,
+  match_feedback_id INTEGER NOT NULL REFERENCES match_feedback(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment_liked VARCHAR(500),
+  comment_improve VARCHAR(500),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- The same submitter can rate two different assigned umpires within one
+  -- submission, but never the same umpire twice.
+  UNIQUE (match_feedback_id, umpire_user_id)
+);
+-- recalculateUmpireRating(umpireUserId)'s query shape: "every rating for
+-- this umpire, across every submission" — filters on umpire_user_id alone.
+CREATE INDEX IF NOT EXISTS idx_match_feedback_umpire_ratings_umpire ON match_feedback_umpire_ratings(umpire_user_id);
+
+-- ============================================================================
+-- Ground Owner match lifecycle + umpire staffing notifications
+-- ============================================================================
+--
+-- Three new notification types, same idempotent drop-then-add widening of
+-- ground_notifications_type_check already used once above (Phase 21):
+-- UMPIRE_SLOTS_FULLY_STAFFED (distinct from UMPIRE_SLOT_ASSIGNED — fires
+-- once, only when the assignment that just landed brought a match to
+-- fully-staffed, not on every assignment), MATCH_STARTING and
+-- MATCH_COMPLETED (a Ground-Owner-controlled lifecycle action notifying the
+-- assigned umpire — no existing type covers either).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
+                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED'));

@@ -229,7 +229,15 @@ test('match_feedback rejects an out-of-range rating', async () => {
   }
 })
 
-test('match_feedback allows umpire_rating to be omitted (matches with no assigned umpire)', async () => {
+// U6 note: this originally asserted match_feedback.umpire_rating/
+// umpire_user_id were null when omitted. U6 moved per-umpire ratings to a
+// dedicated child table (match_feedback_umpire_ratings) — see U6's report
+// for why (a match can have more than one assigned umpire, which a single
+// nullable column on match_feedback could never represent) — so those two
+// columns no longer exist on match_feedback at all. Updated to assert the
+// equivalent, schema-current fact: a feedback row with no umpire rating
+// simply has zero matching child-table rows.
+test('match_feedback allows a submission with no umpire rating at all (matches with no assigned umpire)', async () => {
   const { teamA, teamB } = await makeTeams()
   const match = await makeMatch(teamA, teamB)
   const participant = await makeUser('feedback-no-umpire')
@@ -238,8 +246,8 @@ test('match_feedback allows umpire_rating to be omitted (matches with no assigne
       `INSERT INTO match_feedback (match_id, submitted_by, ground_rating, app_rating) VALUES ($1, $2, 5, 5) RETURNING *`,
       [match.id, participant.id],
     )
-    assert.equal(rows[0].umpire_rating, null)
-    assert.equal(rows[0].umpire_user_id, null)
+    const { rows: umpireRatingRows } = await pool.query(`SELECT * FROM match_feedback_umpire_ratings WHERE match_feedback_id = $1`, [rows[0].id])
+    assert.equal(umpireRatingRows.length, 0)
   } finally {
     await cleanupMatch(match.id)
     await cleanupTeams(teamA, teamB)

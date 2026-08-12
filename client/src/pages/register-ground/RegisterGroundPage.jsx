@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, LocateFixed } from 'lucide-react'
+import { LocateFixed } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
 import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import { submitGroundRegistration } from '../../services/groundRegistrationApi.js'
 import { useGeolocation } from '../../hooks/useGeolocation.js'
+import BackButton from '../../components/common/BackButton.jsx'
 
 function Field({ label, optional, children }) {
   return (
@@ -93,10 +94,7 @@ export default function RegisterGroundPage() {
       </MouseParallaxProvider>
 
       <main className="relative mx-auto flex max-w-2xl flex-col gap-6 px-6 pt-32 pb-20 lg:px-10">
-        <Link to="/" className="inline-flex w-fit items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back to LOC
-        </Link>
+        <BackButton label="Back to LOC" fallback="/" className="w-fit" />
 
         {submitted ? (
           <div className="flex flex-col items-start gap-3 rounded-2xl border border-emerald-400/20 bg-white/5 p-8">

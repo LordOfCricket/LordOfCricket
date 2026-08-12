@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { UtensilsCrossed, ClipboardCheck, Images, UserPlus } from 'lucide-react'
 import AdminLayout from '../../components/admin/AdminLayout.jsx'
 import { useAuth } from '../../hooks/useAuth.js'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const ALL_CARDS = [
   {
@@ -44,6 +45,7 @@ export default function AdminDashboardPage() {
 
   return (
     <AdminLayout title="Super Admin Dashboard" subtitle="Manage canteen operations, umpire approvals, site photos and staff accounts.">
+      <BackButton fallback="/" className="mb-4" />
       <div className="grid gap-6 sm:grid-cols-2">
         {cards.map(({ to, icon: Icon, title, description, cta }) => (
           <article key={to} className="flex flex-col justify-between rounded-[28px] border border-white/10 bg-white/10 p-6 shadow-lg shadow-slate-950/20 backdrop-blur-sm">

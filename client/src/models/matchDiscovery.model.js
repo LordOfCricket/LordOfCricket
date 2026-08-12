@@ -34,3 +34,15 @@ export function formatMatchTime(dateStr) {
 export function formatOversFormat(oversPerInnings) {
   return oversPerInnings != null ? `${oversPerInnings} overs` : null
 }
+
+// One source of truth for "Team X won by Y" / "Match Tied" (previously
+// inlined only in MatchHero.jsx) — result.text is the backend's own
+// pre-formatted margin string (domain/scoring/matchResult.js::
+// deriveMatchResult, e.g. "won by 7 wickets"/"won by 12 runs"), this only
+// decides which team name prefixes it, or returns the tie text as-is.
+export function formatMatchResultLine(result, teamA, teamB) {
+  if (!result) return null
+  if (result.resultType === 'TIE') return result.text
+  const winnerName = result.winnerTeamId === teamA.id ? teamA.name : teamB.name
+  return `${winnerName} ${result.text.charAt(0).toLowerCase()}${result.text.slice(1)}`
+}

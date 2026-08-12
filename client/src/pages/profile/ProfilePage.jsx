@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useCareerStats } from '../../hooks/useCareerStats.js'
 import { fetchTeam } from '../../services/playerApi.js'
 import Avatar from '../../components/ui/Avatar.jsx'
 import Button from '../../components/ui/Button.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 import { roleLabel, battingStyleLabel, bowlingStyleLabel, statPriorityForRole } from '../../models/player.model.js'
 import { StatsLoadingGrid, StatsErrorState, StatsEmptyState } from '../../components/stats/StatsStates.jsx'
 import BattingStatsPanel from '../../components/stats/BattingStatsPanel.jsx'
@@ -80,14 +80,7 @@ export default function ProfilePage() {
       }}
     >
       <div className="mx-auto max-w-5xl">
-        <button
-          type="button"
-          onClick={() => navigate('/player/dashboard')}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </button>
+        <BackButton label="Back to Dashboard" fallback="/player/dashboard" />
 
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-6">
