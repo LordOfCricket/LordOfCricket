@@ -9,26 +9,38 @@ import { pool } from '../config/db.js'
 // Idempotent — safe to call from every match-completion write path AND as a
 // lazy defensive backstop on every read, mirroring the "recompute live,
 // never trust one write path" convention Reputation 2.0 already
-// established (buildReputationSummaries). No-ops entirely if the match
-// never had a fee set (never a fabricated ₹0 earning).
+// established (buildReputationSummaries).
+//
+// Umpire Proposals — each completed slot's own amount is now
+// base fee + that slot's own incentive_amount (0 unless an accepted
+// proposal set it), not a flat match-wide amount. Only rows whose real
+// total is > 0 are ever created — a match with no fee AND no accepted
+// bonus for a given slot still creates nothing there (never a fabricated
+// ₹0 earning), but a slot with ONLY an accepted bonus (no base fee ever
+// set) now correctly still earns for that bonus alone.
 export async function ensureEarningRecordsForMatch(matchId, client = pool) {
   const { rows: matchRows } = await client.query(`SELECT umpire_fee_amount, umpire_fee_currency FROM matches WHERE id = $1`, [matchId])
   const match = matchRows[0]
-  if (!match || match.umpire_fee_amount == null) return []
+  if (!match) return []
+  const baseFee = match.umpire_fee_amount != null ? Number(match.umpire_fee_amount) : 0
+  const currency = match.umpire_fee_currency || 'INR'
 
   const { rows: completedSlots } = await client.query(
-    `SELECT id, umpire_user_id FROM match_umpire_slots WHERE match_id = $1 AND status = 'COMPLETED' AND umpire_user_id IS NOT NULL`,
+    `SELECT id, umpire_user_id, incentive_amount FROM match_umpire_slots WHERE match_id = $1 AND status = 'COMPLETED' AND umpire_user_id IS NOT NULL`,
     [matchId],
   )
-  if (!completedSlots.length) return []
+  const eligible = completedSlots
+    .map((s) => ({ ...s, total: baseFee + Number(s.incentive_amount || 0) }))
+    .filter((s) => s.total > 0)
+  if (!eligible.length) return []
 
   const { rows } = await client.query(
     `INSERT INTO umpire_earnings (match_id, match_umpire_slot_id, umpire_user_id, amount, currency)
-     SELECT $1, slot_id, umpire_id, $2, $3
-     FROM unnest($4::int[], $5::int[]) AS t(slot_id, umpire_id)
+     SELECT $1, slot_id, umpire_id, amount, $2
+     FROM unnest($3::int[], $4::int[], $5::numeric[]) AS t(slot_id, umpire_id, amount)
      ON CONFLICT (match_umpire_slot_id) DO NOTHING
      RETURNING *`,
-    [matchId, match.umpire_fee_amount, match.umpire_fee_currency, completedSlots.map((s) => s.id), completedSlots.map((s) => s.umpire_user_id)],
+    [matchId, currency, eligible.map((s) => s.id), eligible.map((s) => s.umpire_user_id), eligible.map((s) => s.total)],
   )
   return rows
 }

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loc-backend
+  namespace: loc
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: loc-backend
+
+  template:
+    metadata:
+      labels:
+        app: loc-backend
+
+    spec:
+      containers:
+        - name: loc-backend
+          image: loc-backend:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 5000
+
+          envFrom:
+            - secretRef:
+                name: loc-backend-env
+
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3

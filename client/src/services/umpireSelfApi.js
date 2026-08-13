@@ -38,6 +38,13 @@ export async function fetchMatchUmpireSlots(matchId) {
 // mirroring groundsApi.js's nearby/city split: nearby needs coordinates
 // (from useGeolocation, click-to-request only), city is the manual
 // fallback when location is denied/unavailable.
+// Default "Grounds for Umpire" view — every ground with an upcoming match,
+// unfiltered, so the page shows real content the instant it's opened.
+export async function fetchAllGroundsForUmpire({ page, limit }) {
+  const { data } = await api.get('/umpire/grounds/all', { params: { page, limit } })
+  return data
+}
+
 export async function fetchNearbyGroundsForUmpire({ latitude, longitude, radiusKm, page, limit }) {
   const { data } = await api.get('/umpire/grounds/nearby', {
     params: { lat: latitude, lng: longitude, radiusKm, page, limit },

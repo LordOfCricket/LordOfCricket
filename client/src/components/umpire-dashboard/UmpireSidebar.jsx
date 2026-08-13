@@ -18,23 +18,25 @@ export default function UmpireSidebar() {
   }
 
   return (
-    <aside className="flex w-full flex-col gap-6 rounded-[32px] border border-white/15 bg-slate-900/45 p-6 shadow-2xl backdrop-blur-2xl lg:w-72 lg:shrink-0">
-      <div className="flex items-center gap-2">
-        <Flag className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Umpire Workspace</p>
-          <p className="mt-1 text-lg font-bold text-white">{user?.name}</p>
+    <aside className="flex w-full flex-col gap-6 rounded-[32px] border border-white/10 bg-loc-card-dark/70 p-6 shadow-2xl shadow-black/40 backdrop-blur-2xl lg:w-72 lg:shrink-0">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-loc-gold/15">
+          <Flag className="h-4 w-4 text-loc-gold" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-loc-muted-dark">Umpire Workspace</p>
+          <p className="mt-0.5 truncate font-loc-display text-lg font-bold tracking-wide text-loc-warmwhite">{user?.name}</p>
         </div>
       </div>
 
-      <nav className="flex flex-col gap-2">
+      <nav className="flex flex-col gap-1.5">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                isActive ? 'bg-green-600 text-white' : 'text-slate-200 hover:bg-white/10'
+              `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-colors ${
+                isActive ? 'bg-loc-gold text-loc-dark shadow-md shadow-loc-gold/20' : 'text-loc-text2-dark hover:bg-white/5 hover:text-loc-warmwhite'
               }`
             }
           >
@@ -47,7 +49,7 @@ export default function UmpireSidebar() {
       <button
         type="button"
         onClick={handleLogout}
-        className="mt-auto flex items-center gap-3 rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+        className="mt-auto flex items-center gap-3 rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-loc-text2-dark transition-colors hover:border-white/20 hover:bg-white/5 hover:text-loc-warmwhite"
       >
         <LogOut size={18} />
         Logout

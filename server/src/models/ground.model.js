@@ -288,6 +288,37 @@ export async function anyActiveGroundInCity({ city }) {
   return rows.length > 0
 }
 
+// "Grounds for Umpire" default view — every ground with an upcoming match,
+// unfiltered by city/distance, so navigating to the page shows real
+// opportunities immediately rather than requiring a search first. Same
+// shape/ACTIVE-only + UPCOMING_MATCH_EXISTS filter as
+// findGroundsByCityWithUpcomingMatches, just without the WHERE city clause
+// — mirrors how findAllActiveGrounds already relates to findActiveGroundsByCity.
+export async function findAllGroundsWithUpcomingMatches({ limit, offset }) {
+  const { rows } = await pool.query(
+    `WITH candidate_grounds AS (
+       SELECT
+         g.id, public_ground_id, slug, name, city, state, country,
+         ${GROUND_PHOTOS_SUBQUERY},
+         ${AMENITY_NAMES_SUBQUERY}
+       FROM grounds g
+       WHERE status = 'ACTIVE'
+         AND ${UPCOMING_MATCH_EXISTS}
+     )
+     SELECT *, COUNT(*) OVER()::int AS total_count
+     FROM candidate_grounds
+     ORDER BY name ASC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  )
+  return { rows, total: rows[0]?.total_count ?? 0 }
+}
+
+export async function anyActiveGroundExists() {
+  const { rows } = await pool.query(`SELECT 1 FROM grounds WHERE status = 'ACTIVE' LIMIT 1`)
+  return rows.length > 0
+}
+
 // Unscoped browse — "grounds already registered on LOC," shown on the
 // platform homepage below the hero without requiring a city search first.
 // Same public card shape/ACTIVE-only filter as findActiveGroundsByCity,

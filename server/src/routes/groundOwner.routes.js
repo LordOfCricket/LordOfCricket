@@ -18,6 +18,7 @@ import {
   getRecommendedUmpires,
   getUmpireOperationsSummary,
 } from '../controllers/groundOwner.controller.js'
+import { proposeUmpireForSlot, listMatchProposals, cancelMatchProposal } from '../controllers/umpireProposal.controller.js'
 
 // Mounted at /api/ground-owner. Reuses requireGroundRole('GROUND_OWNER')
 // exactly as-is (groundAccess.js, Phase 9) — same :publicGroundId param
@@ -67,6 +68,22 @@ router.patch(
   requireAuth,
   requireGroundRole('GROUND_OWNER'),
   updateGroundMatchSlotPaymentStatus,
+)
+
+// Umpire Proposals — Ground-Owner-initiated invitations to a specific
+// approved umpire for a specific open slot, optionally with a private bonus.
+router.post(
+  '/grounds/:publicGroundId/matches/:matchId/umpire-slots/:slotId/propose',
+  requireAuth,
+  requireGroundRole('GROUND_OWNER'),
+  proposeUmpireForSlot,
+)
+router.get('/grounds/:publicGroundId/matches/:matchId/proposals', requireAuth, requireGroundRole('GROUND_OWNER'), listMatchProposals)
+router.post(
+  '/grounds/:publicGroundId/matches/:matchId/proposals/:proposalId/cancel',
+  requireAuth,
+  requireGroundRole('GROUND_OWNER'),
+  cancelMatchProposal,
 )
 
 export default router

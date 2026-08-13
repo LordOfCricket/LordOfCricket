@@ -1,8 +1,10 @@
 import {
   findNearbyGroundsWithUpcomingMatches,
   findGroundsByCityWithUpcomingMatches,
+  findAllGroundsWithUpcomingMatches,
   anyActiveGroundNearby,
   anyActiveGroundInCity,
+  anyActiveGroundExists,
 } from '../models/ground.model.js'
 import { findUpcomingMatchesForGrounds, findActiveAssignedMatchesForUmpire } from '../models/matchUmpireSlot.model.js'
 import { estimateMatchTimeRange } from '../domain/umpireAssignment/matchTimeRange.js'
@@ -53,6 +55,18 @@ export async function findGroundsByCityForUmpire({ city, limit, offset, userId }
   const { rows, total } = await findGroundsByCityWithUpcomingMatches({ city, limit, offset })
   if (rows.length === 0) {
     const anyGroundsExist = await anyActiveGroundInCity({ city })
+    return { grounds: [], total: 0, anyGroundsExist }
+  }
+  const matchRows = await annotateScheduleConflicts(await findUpcomingMatchesForGrounds(rows.map((g) => g.id), userId), userId)
+  return { grounds: attachMatches(rows, matchRows), total, anyGroundsExist: true }
+}
+
+// Default "Grounds for Umpire" view — every ground with an upcoming match,
+// unfiltered, so the page has real content the instant it's opened.
+export async function findAllGroundsForUmpire({ limit, offset, userId }) {
+  const { rows, total } = await findAllGroundsWithUpcomingMatches({ limit, offset })
+  if (rows.length === 0) {
+    const anyGroundsExist = await anyActiveGroundExists()
     return { grounds: [], total: 0, anyGroundsExist }
   }
   const matchRows = await annotateScheduleConflicts(await findUpcomingMatchesForGrounds(rows.map((g) => g.id), userId), userId)

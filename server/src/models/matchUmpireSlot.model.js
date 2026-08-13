@@ -92,7 +92,7 @@ export async function findActiveAssignedMatchesForUmpire(userId, excludeMatchId 
 export async function claimAvailableSlot(matchId, userId, client = pool) {
   const { rows } = await client.query(
     `UPDATE match_umpire_slots
-     SET status = 'ASSIGNED', umpire_user_id = $2, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
+     SET status = 'ASSIGNED', umpire_user_id = $2, incentive_amount = 0, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
      WHERE id = (
        SELECT id FROM match_umpire_slots
        WHERE match_id = $1 AND status IN ('AVAILABLE', 'CANCELLED')
@@ -102,6 +102,26 @@ export async function claimAvailableSlot(matchId, userId, client = pool) {
      )
      RETURNING *`,
     [matchId, userId],
+  )
+  return rows[0] || null
+}
+
+// Umpire Proposals — a specific OPEN slot claimed by an umpire who accepted
+// a ground-owner-initiated proposal, at whatever incentive that proposal
+// offered (0 if none). Targets one exact row (never "any open slot" — the
+// umpire is accepting THIS slot's specific offer), guarded by the same
+// WHERE-status check every other slot-claiming UPDATE in this file uses —
+// no advisory lock needed: a single targeted UPDATE with a status guard is
+// naturally race-safe under Postgres's row-level locking (a losing
+// concurrent acceptance simply finds 0 rows matched once the winner's
+// UPDATE has committed).
+export async function claimSpecificSlotForProposal(slotId, umpireUserId, incentiveAmount, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE match_umpire_slots
+     SET status = 'ASSIGNED', umpire_user_id = $2, incentive_amount = $3, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
+     WHERE id = $1 AND status IN ('AVAILABLE', 'CANCELLED')
+     RETURNING *`,
+    [slotId, umpireUserId, incentiveAmount],
   )
   return rows[0] || null
 }
@@ -127,7 +147,7 @@ export async function markNoShow(slotId, client = pool) {
 export async function assignReplacementToSlot(slotId, newUmpireUserId, client = pool) {
   const { rows } = await client.query(
     `UPDATE match_umpire_slots
-     SET status = 'ASSIGNED', umpire_user_id = $2, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
+     SET status = 'ASSIGNED', umpire_user_id = $2, incentive_amount = 0, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
      WHERE id = $1 AND status = 'NO_SHOW'
      RETURNING *`,
     [slotId, newUmpireUserId],

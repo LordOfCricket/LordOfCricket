@@ -15,7 +15,8 @@ import {
   getMyUmpireInsight,
   regenerateMyUmpireInsight,
 } from '../controllers/umpireSelf.controller.js'
-import { listNearbyGroundsForUmpire, listGroundsByCityForUmpire } from '../controllers/umpireGroundDiscovery.controller.js'
+import { listNearbyGroundsForUmpire, listGroundsByCityForUmpire, listAllGroundsForUmpire } from '../controllers/umpireGroundDiscovery.controller.js'
+import { listMyProposals, respondToMyProposal } from '../controllers/umpireProposal.controller.js'
 
 // Mounted at /api/umpire. U4's 3 read endpoints U3 deliberately deferred
 // (Phase 0's illustrative /api/umpire/matches/available, /api/umpire/
@@ -41,6 +42,7 @@ router.delete('/availability/date/:date', requireAuth, requireApprovedUmpire, de
 // each carrying its own upcoming matches + real umpire-slot status, so
 // the frontend can show "Interested for Umpiring" per match without a
 // second per-ground round trip.
+router.get('/grounds/all', requireAuth, requireApprovedUmpire, listAllGroundsForUmpire)
 router.get('/grounds/nearby', requireAuth, requireApprovedUmpire, listNearbyGroundsForUmpire)
 router.get('/grounds/by-city', requireAuth, requireApprovedUmpire, listGroundsByCityForUmpire)
 
@@ -59,5 +61,9 @@ router.get('/statistics/trend', requireAuth, requireApprovedUmpire, getMyOfficia
 // AI route in this codebase (aiLimiter) — AI calls cost real money/latency.
 router.get('/ai-insight', requireAuth, requireApprovedUmpire, aiLimiter, getMyUmpireInsight)
 router.post('/ai-insight/regenerate', requireAuth, requireApprovedUmpire, aiLimiter, regenerateMyUmpireInsight)
+
+// Umpire Proposals — offers a Ground Owner has sent this umpire directly.
+router.get('/proposals', requireAuth, requireApprovedUmpire, listMyProposals)
+router.post('/proposals/:proposalId/respond', requireAuth, requireApprovedUmpire, respondToMyProposal)
 
 export default router

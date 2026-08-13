@@ -13,6 +13,7 @@ import {
 import { findActiveGroundOwnerUserIds } from '../models/groundUser.model.js'
 import { findUserById } from '../models/user.model.js'
 import { findWeeklyAvailability, findDateAvailability } from '../models/umpireAvailability.model.js'
+import { expirePendingProposalsForSlot } from '../models/umpireProposal.model.js'
 import { createNotification } from './groundNotification.service.js'
 import { UmpireAssignmentError, UMPIRE_ASSIGNMENT_ERROR_CODES as CODES } from '../domain/umpireAssignment/errors.js'
 import { estimateMatchTimeRange } from '../domain/umpireAssignment/matchTimeRange.js'
@@ -151,6 +152,7 @@ export async function applyForSlot({ matchId, user }) {
   // re-evaluates against whatever the first one just committed.
   const client = await pool.connect()
   let slot
+  let expiredProposals = []
   try {
     await client.query('BEGIN')
     await client.query('SELECT pg_advisory_xact_lock($1)', [user.id])
@@ -183,6 +185,11 @@ export async function applyForSlot({ matchId, user }) {
 
     await insertAssignmentEvent({ slotId: slot.id, matchId, umpireUserId: user.id, eventType: 'ASSIGNED', recordedBy: user.id }, client)
 
+    // A direct self-apply can win a slot that also has pending Ground-Owner
+    // proposals out to other umpires (or even this same user) — those must
+    // not linger as PENDING once the slot is gone.
+    expiredProposals = await expirePendingProposalsForSlot(slot.id, null, client)
+
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
@@ -192,6 +199,16 @@ export async function applyForSlot({ matchId, user }) {
   }
 
   await notifySlotEvent(matchId, user.id, 'UMPIRE_SLOT_ASSIGNED')
+  await Promise.all(
+    expiredProposals.filter((p) => p.umpire_user_id !== user.id).map((p) =>
+      createNotification({
+        userId: p.umpire_user_id,
+        type: 'UMPIRE_PROPOSAL_EXPIRED',
+        title: 'That umpiring opportunity was filled',
+        relatedMatchId: matchId,
+      }),
+    ),
+  )
   return slot
 }
 

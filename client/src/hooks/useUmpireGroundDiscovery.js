@@ -1,22 +1,24 @@
-import { useCallback, useState } from 'react'
-import { fetchNearbyGroundsForUmpire, fetchGroundsByCityForUmpire, applyForUmpireSlot } from '../services/umpireSelfApi.js'
+import { useCallback, useEffect, useState } from 'react'
+import { fetchAllGroundsForUmpire, fetchNearbyGroundsForUmpire, fetchGroundsByCityForUmpire, applyForUmpireSlot } from '../services/umpireSelfApi.js'
 import { applyErrorMessage } from '../models/umpireDashboard.model.js'
 
 const PAGE_SIZE = 20
+const ALL_QUERY = { mode: 'all' }
 
-// Same shape as useGroundSearch.js (submit-driven, not effect-driven —
-// every setState call happens inside an event handler), extended with
-// anyGroundsExist (drives which of the two empty-state messages to show)
-// and per-match apply state (apply/applyingMatchId/applyResults), modeled
-// directly on useAvailableMatches.js's apply(): the backend is always
-// authoritative, so a success OR a state-changing 409 both trigger a
-// refetch of the current page instead of any local count mutation.
+// "Grounds for Umpire" opens showing every ground with an upcoming match
+// (mode: 'all') — no search step required first. City/nearby search are
+// REFINEMENTS on top of that default, not a gate blocking it (LocationSelector
+// renders as a compact filter bar, never a full-page picker the umpire has
+// to get past before seeing anything). Every setState call still happens
+// inside an event handler or the one deferred mount effect (never
+// synchronously inside an effect body), same convention as every other data
+// hook in this codebase.
 export function useUmpireGroundDiscovery() {
-  const [query, setQuery] = useState(null) // { mode: 'city'|'nearby', ...params } once searched
+  const [query, setQuery] = useState(ALL_QUERY)
   const [grounds, setGrounds] = useState([])
   const [pagination, setPagination] = useState(null)
   const [anyGroundsExist, setAnyGroundsExist] = useState(true)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
   const [applyingMatchId, setApplyingMatchId] = useState(null)
@@ -24,7 +26,8 @@ export function useUmpireGroundDiscovery() {
 
   const fetchForQuery = useCallback((q, page) => {
     if (q.mode === 'city') return fetchGroundsByCityForUmpire({ city: q.city, page, limit: PAGE_SIZE })
-    return fetchNearbyGroundsForUmpire({ latitude: q.latitude, longitude: q.longitude, radiusKm: q.radiusKm, page, limit: PAGE_SIZE })
+    if (q.mode === 'nearby') return fetchNearbyGroundsForUmpire({ latitude: q.latitude, longitude: q.longitude, radiusKm: q.radiusKm, page, limit: PAGE_SIZE })
+    return fetchAllGroundsForUmpire({ page, limit: PAGE_SIZE })
   }, [])
 
   const fetchPage = useCallback(
@@ -45,6 +48,18 @@ export function useUmpireGroundDiscovery() {
     },
     [fetchForQuery],
   )
+
+  // Loads the default "all grounds" view once, on mount.
+  useEffect(() => {
+    const timer = window.setTimeout(() => fetchPage(ALL_QUERY, 1, { append: false }), 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const browseAll = useCallback(() => {
+    setQuery(ALL_QUERY)
+    fetchPage(ALL_QUERY, 1, { append: false })
+  }, [fetchPage])
 
   const searchByCity = useCallback(
     (city) => {
@@ -72,18 +87,9 @@ export function useUmpireGroundDiscovery() {
   }, [query, pagination, fetchPage])
 
   const retry = useCallback(() => {
-    if (!query) return
     const nextPage = grounds.length === 0 ? 1 : (pagination?.page ?? 0) + 1
     fetchPage(query, nextPage, { append: nextPage > 1 })
   }, [query, grounds.length, pagination, fetchPage])
-
-  const reset = useCallback(() => {
-    setQuery(null)
-    setGrounds([])
-    setPagination(null)
-    setAnyGroundsExist(true)
-    setError(null)
-  }, [])
 
   // Refetches every already-loaded page from page 1 so a match's real
   // filledSlots/currentUserAssigned (which could belong to any of the
@@ -91,7 +97,7 @@ export function useUmpireGroundDiscovery() {
   // useAvailableMatches.js's "always reload from the backend, never patch
   // local state" contract.
   const refetchAll = useCallback(() => {
-    if (!query || !pagination) return Promise.resolve()
+    if (!pagination) return Promise.resolve()
     const pagesLoaded = pagination.page
     setLoading(true)
     return fetchForQuery(query, 1)
@@ -134,13 +140,11 @@ export function useUmpireGroundDiscovery() {
   )
 
   const hasMore = Boolean(pagination && pagination.page < pagination.totalPages)
-  const searched = query !== null
 
   return {
-    mode: query?.mode ?? null,
-    city: query?.city ?? null,
-    radiusKm: query?.radiusKm ?? null,
-    searched,
+    mode: query.mode,
+    city: query.mode === 'city' ? query.city : null,
+    radiusKm: query.mode === 'nearby' ? query.radiusKm : null,
     grounds,
     pagination,
     anyGroundsExist,
@@ -149,10 +153,10 @@ export function useUmpireGroundDiscovery() {
     error,
     searchByCity,
     searchNearby,
+    browseAll,
     loadMore,
     hasMore,
     retry,
-    reset,
     applyingMatchId,
     applyResults,
     apply,

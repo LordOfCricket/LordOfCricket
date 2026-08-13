@@ -361,3 +361,48 @@ test('concurrency: a race for the last slot yields one 201 and one 409, and a re
     await server.close()
   }
 })
+
+// "Grounds for Umpire" default view — GET /umpire/grounds/all
+test('all: unfiltered by city/distance — a ground far away with an upcoming match is included; access control matches the other two routes', async () => {
+  const server = await startTestApp()
+  const teams = await makeTeams()
+  const umpire = await approvedUmpire('all-basic')
+  const pending = await makeUser({ label: 'all-gate-pending', playerType: 'umpire', requestStatuses: ['pending'] })
+  const fixture = await createGroundFixture({ label: 'all-far', ...FAR })
+  try {
+    const match = await fixture.createMatch(teams, { requiredUmpires: 2 })
+
+    const denied = await json(`${server.baseUrl}/umpire/grounds/all`, { token: pending.token })
+    assert.equal(denied.status, 403)
+
+    const res = await json(`${server.baseUrl}/umpire/grounds/all?limit=100`, { token: umpire.token })
+    assert.equal(res.status, 200, JSON.stringify(res.data))
+    const ground = res.data.grounds.find((g) => g.publicGroundId === fixture.ground.public_ground_id)
+    assert.ok(ground, 'a ground far from any coordinate/city filter must still appear in the unfiltered "all" view')
+    assert.equal(typeof ground.distanceKm, 'undefined', 'the unfiltered view has no origin point, so distanceKm is never fabricated')
+    const entry = ground.matches.find((m) => m.matchId === match.id)
+    assert.ok(entry)
+    assert.equal(entry.filledSlots, 0)
+  } finally {
+    await umpire.cleanup()
+    await pending.cleanup()
+    await teams.cleanup()
+    await fixture.cleanup()
+    await server.close()
+  }
+})
+
+test('all: a ground with no upcoming matches is excluded, same rule as the city/nearby views', async () => {
+  const server = await startTestApp()
+  const umpire = await approvedUmpire('all-empty')
+  const fixture = await createGroundFixture({ label: 'all-no-matches', ...NEAR })
+  try {
+    const res = await json(`${server.baseUrl}/umpire/grounds/all?limit=100`, { token: umpire.token })
+    assert.equal(res.status, 200)
+    assert.ok(!res.data.grounds.some((g) => g.publicGroundId === fixture.ground.public_ground_id))
+  } finally {
+    await umpire.cleanup()
+    await fixture.cleanup()
+    await server.close()
+  }
+})

@@ -1712,3 +1712,68 @@ BEGIN
 END $$;
 ALTER TABLE ai_insights ADD CONSTRAINT ai_insights_source_type_check
   CHECK (source_type IN ('MATCH', 'PLAYER', 'TEAM', 'UMPIRE'));
+
+-- ============================================================================
+-- Umpire Proposals — "Browse Umpires" + incentive/bonus offers
+-- ============================================================================
+--
+-- A Ground Owner can proactively invite a specific (or several) approved
+-- umpire(s) to an OPEN slot (never a NO_SHOW slot — that stays the existing,
+-- separate assignReplacementUmpire flow), optionally offering a bonus on top
+-- of the match's base fee. Multiple simultaneous proposals per slot are
+-- allowed (confirmed product decision) — first to accept wins, every other
+-- pending proposal for that slot then expires. The bonus is private to the
+-- umpire(s) it's offered to, never surfaced on any public listing.
+--
+-- incentive_amount lives on the SLOT (not just the proposal row) because
+-- it's the actual commercial commitment once accepted — ensureEarningRecordsForMatch
+-- reads it directly from here, the same way it already reads the match's
+-- base fee, rather than joining back into the proposals table at earning-
+-- creation time. A slot must never inherit a stale bonus from a previous
+-- occupant, so every UPDATE that assigns a NEW umpire to a slot (self-apply,
+-- ground-owner replacement, or proposal acceptance) explicitly sets this
+-- column — either to 0 or to the accepted proposal's own amount.
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS incentive_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS umpire_proposals (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  match_umpire_slot_id INTEGER NOT NULL REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  proposed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  incentive_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (incentive_amount >= 0),
+  currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+  message VARCHAR(280),
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED', 'EXPIRED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  responded_at TIMESTAMPTZ
+);
+-- One PENDING offer per (slot, umpire) at a time — a new one can be sent
+-- after the previous one is declined/expired/cancelled (all terminal, so
+-- the partial index only ever guards the live PENDING state).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_umpire_proposals_pending_unique
+  ON umpire_proposals(match_umpire_slot_id, umpire_user_id) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_umpire_proposals_umpire ON umpire_proposals(umpire_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_umpire_proposals_slot ON umpire_proposals(match_umpire_slot_id, status);
+
+-- 5 new notification types — same idempotent drop-then-add widening used
+-- repeatedly above.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
+                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
+                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
+                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
+                   'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED',
+                   'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED'));

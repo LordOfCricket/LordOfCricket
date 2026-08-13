@@ -1,73 +1,71 @@
-import { LocateFixed, MapPin } from 'lucide-react'
+import { useState } from 'react'
+import { LocateFixed, MapPin, Globe2 } from 'lucide-react'
 import CitySelector from './CitySelector.jsx'
 import RadiusFilter from './RadiusFilter.jsx'
 import { useGeolocation } from '../../hooks/useGeolocation.js'
 import { DEFAULT_RADIUS_KM } from '../../models/groundDiscovery.model.js'
 
-// "SELECT YOUR CITY ... or 📍 FIND GROUNDS NEAR ME" — city search is
-// primary/default; geolocation is a secondary action, only requested on
-// explicit click (never on mount). Once geolocation succeeds, a radius
-// selector appears and every radius change re-runs the nearby search.
-export default function LocationSelector({ searched, mode, city, radiusKm, onSearchCity, onSearchNearby, onChangeLocation }) {
+// A compact, always-visible refine bar — never a full-page gate the umpire
+// has to get past before seeing anything (the page already shows every
+// ground with an upcoming match by default; this only narrows that list).
+export default function LocationSelector({ mode, city, radiusKm, onSearchCity, onSearchNearby, onBrowseAll }) {
   const geo = useGeolocation()
+  const [cityPickerOpen, setCityPickerOpen] = useState(false)
 
-  // Fires the first nearby search directly from the geolocation success
-  // callback (see useGeolocation.js's `onSuccess`) — no effect watching
-  // status/coords needed.
   const handleFindNearMe = () => {
     geo.requestLocation((coords) => onSearchNearby(coords.latitude, coords.longitude, radiusKm ?? DEFAULT_RADIUS_KM))
   }
 
-  const handleChangeLocation = () => {
-    geo.reset()
-    onChangeLocation()
+  const handleSelectCity = (selected) => {
+    setCityPickerOpen(false)
+    onSearchCity(selected)
   }
 
-  if (searched) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-emerald-100/70">
-        <span className="flex items-center gap-2">
-          <MapPin className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-          {mode === 'nearby' ? 'Showing grounds near you' : (
-            <>
-              Showing grounds in <span className="font-semibold text-white uppercase">{city}</span>
-            </>
-          )}
-        </span>
-        {mode === 'nearby' && <RadiusFilter radiusKm={radiusKm ?? DEFAULT_RADIUS_KM} onChange={(km) => onSearchNearby(geo.coords.latitude, geo.coords.longitude, km)} />}
-        <button type="button" onClick={handleChangeLocation} className="font-semibold text-emerald-400 underline-offset-2 hover:underline">
-          Change location
-        </button>
-      </div>
-    )
-  }
+  const pillClass = (active) =>
+    `flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors ${
+      active ? 'bg-loc-gold text-loc-dark' : 'text-loc-text2-dark hover:bg-white/10 hover:text-loc-warmwhite'
+    }`
 
   return (
-    <div className="flex w-full flex-col items-center gap-5">
-      <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">Select Your City</span>
-      <CitySelector onSelect={onSearchCity} />
+    <div className="rounded-2xl border border-white/10 bg-loc-card-dark/60 p-3 backdrop-blur-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" aria-pressed={mode === 'all'} onClick={onBrowseAll} className={pillClass(mode === 'all')}>
+          <Globe2 className="h-3.5 w-3.5" aria-hidden="true" />
+          All Grounds
+        </button>
 
-      <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-widest text-emerald-100/40">
-        <span className="h-px w-10 bg-emerald-400/20" />
-        or
-        <span className="h-px w-10 bg-emerald-400/20" />
+        <button type="button" aria-pressed={mode === 'city'} onClick={() => setCityPickerOpen((v) => !v)} className={pillClass(mode === 'city')}>
+          <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+          {mode === 'city' && city ? city : 'By City'}
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={mode === 'nearby'}
+          onClick={handleFindNearMe}
+          disabled={geo.status === 'prompting'}
+          className={`${pillClass(mode === 'nearby')} disabled:opacity-60`}
+        >
+          <LocateFixed className="h-3.5 w-3.5" aria-hidden="true" />
+          {geo.status === 'prompting' ? 'Locating…' : 'Near Me'}
+        </button>
+
+        {mode === 'nearby' && (
+          <RadiusFilter radiusKm={radiusKm ?? DEFAULT_RADIUS_KM} onChange={(km) => onSearchNearby(geo.coords.latitude, geo.coords.longitude, km)} />
+        )}
       </div>
 
-      <button
-        type="button"
-        onClick={handleFindNearMe}
-        disabled={geo.status === 'prompting'}
-        className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 px-6 py-3 text-sm font-semibold text-emerald-100/80 transition-colors hover:border-emerald-400/50 hover:text-white disabled:opacity-60"
-      >
-        <LocateFixed className="h-4 w-4" aria-hidden="true" />
-        {geo.status === 'prompting' ? 'Requesting your location…' : 'Find Grounds Near Me'}
-      </button>
+      {cityPickerOpen && (
+        <div className="mt-3">
+          <CitySelector onSelect={handleSelectCity} />
+        </div>
+      )}
 
       {(geo.status === 'denied' || geo.status === 'unavailable') && (
-        <p className="text-sm text-amber-300/80" role="status">
+        <p className="mt-3 text-xs text-amber-300/80" role="status">
           {geo.status === 'denied'
-            ? 'Location access was denied — search by city above instead.'
-            : geo.error || "Location isn't available on this device — search by city above instead."}
+            ? 'Location access was denied — search by city instead.'
+            : geo.error || "Location isn't available on this device — search by city instead."}
         </p>
       )}
     </div>

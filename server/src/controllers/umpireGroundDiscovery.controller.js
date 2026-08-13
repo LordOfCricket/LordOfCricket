@@ -1,5 +1,5 @@
 import { parseCoordinate, parseRadiusKm, parsePagination, roundDistance } from './ground.controller.js'
-import { findNearbyGroundsForUmpire, findGroundsByCityForUmpire } from '../services/umpireGroundDiscovery.service.js'
+import { findNearbyGroundsForUmpire, findGroundsByCityForUmpire, findAllGroundsForUmpire } from '../services/umpireGroundDiscovery.service.js'
 
 const MAX_CITY_LENGTH = 100
 
@@ -59,6 +59,25 @@ export async function listNearbyGroundsForUmpire(req, res, next) {
       offset,
       userId: req.user.id,
     })
+
+    res.json({
+      grounds: grounds.map(serializeGroundWithMatches),
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      anyGroundsExist,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// "Grounds for Umpire" default view — no city/coordinates required. Same
+// response shape as the other two so the frontend can treat all three
+// modes identically.
+export async function listAllGroundsForUmpire(req, res, next) {
+  try {
+    const { limit, page, offset } = parsePagination(req.query)
+
+    const { grounds, total, anyGroundsExist } = await findAllGroundsForUmpire({ limit, offset, userId: req.user.id })
 
     res.json({
       grounds: grounds.map(serializeGroundWithMatches),
