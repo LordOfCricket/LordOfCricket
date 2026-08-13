@@ -7,13 +7,55 @@ import {
   claimAvailableSlot,
   cancelMyAssignment,
   findActiveAssignedMatchesForUmpire,
+  insertAssignmentEvent,
+  checkInSlot,
 } from '../models/matchUmpireSlot.model.js'
 import { findActiveGroundOwnerUserIds } from '../models/groundUser.model.js'
 import { findUserById } from '../models/user.model.js'
+import { findWeeklyAvailability, findDateAvailability } from '../models/umpireAvailability.model.js'
 import { createNotification } from './groundNotification.service.js'
 import { UmpireAssignmentError, UMPIRE_ASSIGNMENT_ERROR_CODES as CODES } from '../domain/umpireAssignment/errors.js'
 import { estimateMatchTimeRange } from '../domain/umpireAssignment/matchTimeRange.js'
 import { rangesOverlap } from '../domain/booking/availability.js'
+import { isUmpireAvailableForMatch } from '../domain/umpireAssignment/availability.js'
+
+// Shared by applyForSlot (self-service) and assignReplacement (ground-owner-
+// initiated) — every path that puts a specific umpire into a specific slot
+// must pass the exact same three gates (approved-umpire, cross-match
+// overlap, availability), or a replacement could silently reintroduce the
+// double-booking bug U10 closed. `candidateUser` must be the real user row
+// (from findUserById), not a manufactured object — isApprovedUmpireUser
+// needs its actual role/player_type. Runs INSIDE the caller's transaction
+// scope (so the overlap/availability reads are serialized against the
+// caller's advisory lock); throws a typed UmpireAssignmentError and never
+// claims anything itself — the caller performs the actual claim/reassign
+// write only once this resolves without throwing.
+export async function assertUmpireEligibleForMatch(match, candidateUser, client) {
+  if (!(await isApprovedUmpireUser(candidateUser))) {
+    throw new UmpireAssignmentError(CODES.NOT_APPROVED_UMPIRE, 'This umpire is not an approved umpire.')
+  }
+
+  const candidateRange = estimateMatchTimeRange(match)
+  const otherAssignments = await findActiveAssignedMatchesForUmpire(candidateUser.id, match.id, client)
+  const conflict = otherAssignments.find((other) => {
+    const otherRange = estimateMatchTimeRange(other)
+    return rangesOverlap(candidateRange.start, candidateRange.end, otherRange.start, otherRange.end)
+  })
+  if (conflict) {
+    throw new UmpireAssignmentError(
+      CODES.OVERLAPPING_ASSIGNMENT,
+      'This umpire already has an assignment that overlaps with this match\'s time — an umpire can only officiate one match at a time.',
+    )
+  }
+
+  const [weeklyRules, dateOverrides] = await Promise.all([
+    findWeeklyAvailability(candidateUser.id, client),
+    findDateAvailability(candidateUser.id, client),
+  ])
+  if (!isUmpireAvailableForMatch(candidateRange, weeklyRules, dateOverrides)) {
+    throw new UmpireAssignmentError(CODES.NOT_AVAILABLE, 'This umpire has marked themselves unavailable at this match\'s scheduled time.')
+  }
+}
 
 // U7 — best-effort, never blocks the primary action (same posture
 // groundNotification.service.js's createNotification already guarantees
@@ -117,18 +159,10 @@ export async function applyForSlot({ matchId, user }) {
       throw new UmpireAssignmentError(CODES.ALREADY_ASSIGNED, 'You are already assigned to umpire this match.')
     }
 
-    const candidateRange = estimateMatchTimeRange(match)
-    const otherAssignments = await findActiveAssignedMatchesForUmpire(user.id, matchId, client)
-    const conflict = otherAssignments.find((other) => {
-      const otherRange = estimateMatchTimeRange(other)
-      return rangesOverlap(candidateRange.start, candidateRange.end, otherRange.start, otherRange.end)
-    })
-    if (conflict) {
-      throw new UmpireAssignmentError(
-        CODES.OVERLAPPING_ASSIGNMENT,
-        'You already have an umpire assignment that overlaps with this match\'s time — an umpire can only officiate one match at a time.',
-      )
-    }
+    // Overlap + availability — the same shared gate assignReplacement uses,
+    // so a self-apply and a ground-owner-initiated replacement can never
+    // diverge in what they consider "eligible".
+    await assertUmpireEligibleForMatch(match, user, client)
 
     try {
       slot = await claimAvailableSlot(matchId, user.id, client)
@@ -146,6 +180,8 @@ export async function applyForSlot({ matchId, user }) {
     if (!slot) {
       throw new UmpireAssignmentError(CODES.NO_SLOT_AVAILABLE, 'No umpire slot is available for this match.')
     }
+
+    await insertAssignmentEvent({ slotId: slot.id, matchId, umpireUserId: user.id, eventType: 'ASSIGNED', recordedBy: user.id }, client)
 
     await client.query('COMMIT')
   } catch (err) {
@@ -165,21 +201,66 @@ export async function cancelAssignment({ matchId, user, reason }) {
 
   // U3.1 product decision: self-cancellation is UPCOMING-only, same window
   // as application. Once a match goes live, an umpire stepping away is an
-  // operational/replacement problem (a match now needs a replacement
-  // umpire, not just an empty slot) — not something normal self-cancel
-  // should handle silently. A replacement-umpire workflow is explicitly
-  // deferred to a later phase; this only closes the self-service path.
+  // operational/replacement problem, handled by markNoShow + assignReplacement
+  // below (Phase 23) rather than by normal self-cancel.
   if (match.status !== 'upcoming') {
     throw new UmpireAssignmentError(CODES.MATCH_NOT_ELIGIBLE, 'This match is no longer eligible for umpire assignment changes.')
   }
 
   // Scoped to (matchId, user.id) inside cancelMyAssignment's WHERE clause —
   // never a slot id supplied by the caller — so this can only ever cancel
-  // the CALLING user's own assignment.
-  const slot = await cancelMyAssignment(matchId, user.id, reason ?? null)
+  // the CALLING user's own assignment. Cancel + event log run in one
+  // transaction so the two can never diverge (a crash between them would
+  // otherwise leave a CANCELLED slot with no matching history row).
+  const client = await pool.connect()
+  let slot
+  try {
+    await client.query('BEGIN')
+    slot = await cancelMyAssignment(matchId, user.id, reason ?? null, client)
+    if (!slot) {
+      throw new UmpireAssignmentError(CODES.ASSIGNMENT_NOT_FOUND, 'You do not have an active umpire assignment for this match.')
+    }
+    await insertAssignmentEvent({ slotId: slot.id, matchId, umpireUserId: user.id, eventType: 'CANCELLED', recordedBy: user.id }, client)
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  await notifySlotEvent(matchId, user.id, 'UMPIRE_SLOT_CANCELLED')
+  return slot
+}
+
+// Check-in (Workstream E) — route is gated by requireMatchScorerByParam, so
+// by the time this runs the caller is already confirmed to hold an active
+// ASSIGNED slot on this match; checkInSlot's own WHERE clause re-confirms it
+// anyway (never trusts the gate alone) and is naturally idempotent. Location
+// is optional and only ever stored, never required or exposed publicly —
+// the ground owner is the only other party who can see it (via the
+// staffing panel), consistent with "never expose precise location publicly".
+export async function checkIn({ matchId, user, latitude, longitude }) {
+  const slot = await checkInSlot(matchId, user.id, { latitude, longitude })
   if (!slot) {
     throw new UmpireAssignmentError(CODES.ASSIGNMENT_NOT_FOUND, 'You do not have an active umpire assignment for this match.')
   }
-  await notifySlotEvent(matchId, user.id, 'UMPIRE_SLOT_CANCELLED')
+
+  const match = await findMatchByIdWithTeams(matchId)
+  if (match?.ground_id) {
+    const [umpire, ownerIds] = await Promise.all([findUserById(user.id), findActiveGroundOwnerUserIds(match.ground_id)])
+    await Promise.all(
+      ownerIds.map((ownerId) =>
+        createNotification({
+          userId: ownerId,
+          type: 'UMPIRE_CHECKED_IN',
+          title: 'Your umpire has checked in',
+          body: `${umpire.name} checked in for ${match.team_a_name} vs ${match.team_b_name}.`,
+          relatedMatchId: matchId,
+        }),
+      ),
+    )
+  }
+
   return slot
 }

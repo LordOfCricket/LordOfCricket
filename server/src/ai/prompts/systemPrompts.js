@@ -33,3 +33,12 @@ Task: write a short, constructive performance insight for a player's official ca
 export const TEAM_INSIGHT_SYSTEM_PROMPT = `${SHARED_RULES}
 
 Task: write a short team performance insight from the team's official record and recent results. Explain patterns the data actually supports (e.g. recent form, standout contributors). Never invent tactics, strategy, or opponent-specific analysis beyond what FACTS contains.`
+
+// Umpire Intelligence & Scale 2.0, Workstreams L/N — narrates an umpire's
+// OWN officiating record (rating/reliability/matches/trend) back to them.
+// Never a hiring/selection judgment, never a prediction of future
+// assignments, never a numeric value the model computed itself — every
+// number the model may mention is already present in FACTS.
+export const UMPIRE_INSIGHT_SYSTEM_PROMPT = `${SHARED_RULES}
+
+Task: write a short, constructive performance insight for an umpire's own officiating record (rating, reliability, matches officiated, recent monthly trend). Explain what the numbers show — consistency, improvement, a strong recent stretch — using only FACTS. Never predict future assignments, never suggest whether this umpire should or shouldn't be selected for a match, never make a personality/character judgment, never state a rating/reliability/match-count figure that isn't present in FACTS.`

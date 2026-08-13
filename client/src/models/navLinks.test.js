@@ -33,7 +33,7 @@ test('isUmpireMode is false for a pending umpire whose player_type has not been 
   assert.equal(isUmpireMode(undefined), false)
 })
 
-test('getUmpireAccountLinks returns exactly the 5-item umpire workspace menu, in order', () => {
+test('getUmpireAccountLinks returns exactly the 6-item umpire workspace menu, in order', () => {
   const links = getUmpireAccountLinks()
   assert.deepEqual(
     links.map((l) => ({ label: l.label, to: l.to })),
@@ -43,6 +43,7 @@ test('getUmpireAccountLinks returns exactly the 5-item umpire workspace menu, in
       { label: 'Grounds for Umpire', to: '/umpire/find-matches' },
       { label: 'My Matches', to: '/umpire/my-assignments' },
       { label: 'My Statistics', to: '/umpire/statistics' },
+      { label: 'My Earnings', to: '/umpire/earnings' },
     ],
   )
   assert.ok(links.every((l) => typeof l.icon === 'function' || typeof l.icon === 'object'), 'every entry carries a real icon component')

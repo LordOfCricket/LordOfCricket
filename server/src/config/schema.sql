@@ -1476,3 +1476,239 @@ ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
                    'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED'));
+
+-- ============================================================================
+-- PHASE 23 — Umpire Operations 2.0 (availability, assignment history,
+-- check-in, no-show/replacement, incidents, reminders)
+-- ============================================================================
+--
+-- Availability calendar. No rows for a given umpire = fully available (the
+-- same honest-absence default umpire_profiles.is_available already implies,
+-- and the only state every umpire is in before this phase ships — zero
+-- regression risk for existing assignment-claiming tests). A date-specific
+-- override always wins over the weekly rule for that date. One row per
+-- (umpire, date) — a single window per date, matching every example in the
+-- spec; loosening to multiple windows per date later is additive, not a
+-- breaking change, so it isn't built now.
+CREATE TABLE IF NOT EXISTS umpire_weekly_availability (
+  id SERIAL PRIMARY KEY,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday .. 6=Saturday
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE (umpire_user_id, day_of_week)
+);
+CREATE TABLE IF NOT EXISTS umpire_date_availability (
+  id SERIAL PRIMARY KEY,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  specific_date DATE NOT NULL,
+  start_time TIME,
+  end_time TIME,
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (umpire_user_id, specific_date)
+);
+
+-- Append-only assignment event log — the actual source of truth for
+-- replacement history and per-umpire no-show/cancellation counts.
+-- match_umpire_slots only ever holds CURRENT per-slot state: a CANCELLED or
+-- NO_SHOW slot can be reclaimed by a *different* umpire (the same atomic-
+-- claim mechanism U3 already uses for CANCELLED rows), which silently
+-- overwrites umpire_user_id on that row. Without this table, the umpire who
+-- no-showed or cancelled would lose that history the instant someone else
+-- takes the slot. umpire_user_id/recorded_by use ON DELETE SET NULL (not
+-- CASCADE) — matching match_umpire_slots.umpire_user_id's own precedent —
+-- so history survives a user row being removed instead of vanishing with it.
+CREATE TABLE IF NOT EXISTS umpire_assignment_events (
+  id SERIAL PRIMARY KEY,
+  match_umpire_slot_id INTEGER NOT NULL REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(24) NOT NULL
+    CHECK (event_type IN ('ASSIGNED', 'CANCELLED', 'NO_SHOW', 'REPLACEMENT_ASSIGNED', 'COMPLETED')),
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_umpire_assignment_events_umpire ON umpire_assignment_events(umpire_user_id);
+CREATE INDEX IF NOT EXISTS idx_umpire_assignment_events_match ON umpire_assignment_events(match_id);
+
+-- Match-operational incident log (rain, injury, bad light, etc.) — reported
+-- by the assigned umpire, visible to the umpire and the match's ground
+-- owner. Not a generic issue tracker: always tied to exactly one match, one
+-- reporter, one timestamp.
+CREATE TABLE IF NOT EXISTS match_incidents (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  reported_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  incident_type VARCHAR(30) NOT NULL
+    CHECK (incident_type IN ('RAIN', 'INJURY', 'BAD_LIGHT', 'GROUND_CONDITION', 'PLAYER_MISCONDUCT',
+                              'EQUIPMENT_ISSUE', 'TECHNICAL_PROBLEM', 'MATCH_ABANDONED', 'OTHER')),
+  description VARCHAR(500),
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_match_incidents_match ON match_incidents(match_id);
+
+-- Pre-match checklist — persisted per (match, umpire), not localStorage, so
+-- it survives a refresh/device change and belongs to the real assignment.
+-- Fixed item taxonomy validated at the service layer (same small-option-set
+-- convention as app_feature_liked/umpire_requests.status elsewhere in this
+-- file), not a second CHECK-driven enum table.
+CREATE TABLE IF NOT EXISTS umpire_match_checklist_items (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item_key VARCHAR(40) NOT NULL,
+  is_checked BOOLEAN NOT NULL DEFAULT false,
+  checked_at TIMESTAMPTZ,
+  UNIQUE (match_id, umpire_user_id, item_key)
+);
+
+-- Check-in — columns directly on the assignment row rather than a new
+-- table: match + umpire + assignment are already exactly what a
+-- match_umpire_slots row identifies, so a check-in is just three more facts
+-- about that same row, not a separate entity.
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ;
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS check_in_latitude NUMERIC(9,6);
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS check_in_longitude NUMERIC(9,6);
+
+-- 7 new notification types for the operational events this phase adds.
+-- BOOKING_REMINDER (existing, still unused) is a ground-booking-domain type
+-- and is deliberately not repurposed for umpire assignment reminders — a
+-- different domain sharing one string would make dedup/filtering ambiguous.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
+                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
+                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
+                   'MATCH_INCIDENT_REPORTED'));
+
+-- Dedup backstop for the reminder poller (server/src/services/
+-- reminderScheduler.service.js): a partial unique index, not just a
+-- check-then-insert in application code, so a duplicate reminder can never
+-- land even under overlapping poll ticks — same "let the DB be the real
+-- guarantee" approach as idx_match_umpire_slots_active_umpire above.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ground_notifications_reminder_dedup
+  ON ground_notifications(user_id, type, related_match_id)
+  WHERE type IN ('UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M');
+
+-- One-time backfill: nothing has ever written match_umpire_slots.status =
+-- 'COMPLETED' (getUmpireStats has always read status IN ('ASSIGNED',
+-- 'COMPLETED') specifically because of this gap). Without this, every match
+-- that completed before this phase shipped would permanently show 0
+-- officiated matches for real work already done, since nothing retroactively
+-- revisits an ASSIGNED row once a match moves on. Idempotent — only touches
+-- rows still stuck at ASSIGNED on an already-completed/finalized match, so
+-- re-running this file is a no-op the second time.
+UPDATE match_umpire_slots
+  SET status = 'COMPLETED', completed_at = COALESCE(completed_at, NOW())
+  WHERE status = 'ASSIGNED'
+    AND match_id IN (SELECT id FROM matches WHERE status IN ('completed', 'finalized'));
+
+-- ============================================================================
+-- Umpire Communication & Commercial 2.0
+-- ============================================================================
+--
+-- Match-scoped communication. One table serves both "announcements" and
+-- "chat" (an announcement is just a message) — building two parallel
+-- systems for the same shape would be pure duplication. sender_role is
+-- snapshotted at send time (not re-derived from current ground_users/
+-- match_umpire_slots state on every read) so a message's displayed
+-- attribution stays correct even after a replacement umpire takes over the
+-- slot the original sender held.
+CREATE TABLE IF NOT EXISTS match_messages (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sender_role VARCHAR(20) NOT NULL CHECK (sender_role IN ('GROUND_OWNER', 'UMPIRE')),
+  body VARCHAR(1000) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_match_messages_match ON match_messages(match_id, created_at);
+
+-- One new notification type for match messages — same idempotent
+-- drop-then-add widening used 3 times already above.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
+                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
+                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
+                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE'));
+
+-- Umpire fee — per-umpire (confirmed with the product owner; no existing
+-- precedent anywhere in LOC to infer this from). Nullable: no fee set yet
+-- is a real, honest state ("not configured"), never displayed as ₹0.
+-- NUMERIC(10,2), matching the exact monetary convention already established
+-- by menu_items.price/orders.total (real currency, never FLOAT) — not an
+-- integer-minor-units convention this codebase has never used anywhere.
+-- Set/updated only by the owning Ground Owner and, per Workstream R,
+-- rejected by the service layer once the match is completed/finalized (no
+-- DB-level immutability trigger — every other write-time business rule in
+-- this schema is enforced the same way, in the service layer).
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_amount NUMERIC(10,2);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_currency VARCHAR(3) NOT NULL DEFAULT 'INR';
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_set_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_updated_at TIMESTAMPTZ;
+
+-- Umpire earnings — one row per umpire who actually COMPLETED a slot on a
+-- match that had a fee set at completion time. UNIQUE(match_umpire_slot_id)
+-- is what makes "no duplicate earning for the same completed assignment" a
+-- DB guarantee, not just application discipline (same posture as the
+-- reminder dedup index above). A slot that went NO_SHOW then got
+-- reassigned and completed by a replacement has exactly one
+-- match_umpire_slots row throughout — its current umpire_user_id at
+-- completion time is whoever actually finished the match, so this table
+-- naturally never credits a no-show umpire without any special-case code.
+CREATE TABLE IF NOT EXISTS umpire_earnings (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  match_umpire_slot_id INTEGER NOT NULL UNIQUE REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'APPROVED', 'PAID', 'FAILED', 'CANCELLED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_umpire_earnings_umpire ON umpire_earnings(umpire_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_umpire_earnings_match ON umpire_earnings(match_id);
+
+-- ============================================================================
+-- Umpire Intelligence & Scale 2.0
+-- ============================================================================
+--
+-- ai_insights.source_type widened to add 'UMPIRE' — reuses the existing
+-- Player/Team insight machinery exactly (PERSON_INSIGHT_SCHEMA, same
+-- ai_insights row shape), no new table. Idempotent drop-then-add, same
+-- pattern already used repeatedly for ground_notifications_type_check.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'ai_insights' AND constraint_name = 'ai_insights_source_type_check'
+  ) THEN
+    ALTER TABLE ai_insights DROP CONSTRAINT ai_insights_source_type_check;
+  END IF;
+END $$;
+ALTER TABLE ai_insights ADD CONSTRAINT ai_insights_source_type_check
+  CHECK (source_type IN ('MATCH', 'PLAYER', 'TEAM', 'UMPIRE'));

@@ -52,6 +52,17 @@ export async function findGroundByPublicId(publicGroundId) {
   return rows[0] || null
 }
 
+// Phase 23, Workstream B — the small, read-only slice Match Briefing needs
+// (name + amenity names), by internal id. Deliberately a separate, narrow
+// function rather than adding AMENITY_NAMES_SUBQUERY to findGroundById
+// itself — that function's plain-row shape is relied on elsewhere (e.g.
+// match.service.js's ground-exists validation), and widening it would
+// change what every existing caller receives for no reason relevant to them.
+export async function findGroundSummaryById(id) {
+  const { rows } = await pool.query(`SELECT g.name, ${AMENITY_NAMES_SUBQUERY} FROM grounds g WHERE g.id = $1`, [id])
+  return rows[0] || null
+}
+
 export async function findAllGrounds() {
   const { rows } = await pool.query('SELECT * FROM grounds ORDER BY id')
   return rows

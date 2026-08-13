@@ -13,6 +13,11 @@ function serializeMatchSlotRow(m) {
     teamBName: m.team_b_name,
     teamBShort: m.team_b_short,
     requiredUmpires: m.required_umpires,
+    // Workstream E — match format, when the match actually has one set
+    // (oversPerInnings is nullable — "no overs limit" is a real, existing
+    // state, never fabricated into a default).
+    oversPerInnings: m.overs_per_innings ?? null,
+    ballsPerOver: m.balls_per_over ?? null,
     totalSlots: m.total_slots,
     filledSlots: m.filled_slots,
     currentUserAssigned: m.current_user_assigned,

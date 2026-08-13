@@ -1,11 +1,16 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarClock, Flag } from 'lucide-react'
+import { CalendarClock, Flag, ClipboardList, MapPin, MessageCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useUmpireDashboard } from '../../hooks/useUmpireDashboard.js'
 import UmpireLayout from '../../components/umpire-dashboard/UmpireLayout.jsx'
 import AssignmentCard from '../../components/umpire-dashboard/AssignmentCard.jsx'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import StatTile from '../../components/stats/StatTile.jsx'
+import ReputationBadges from '../../components/common/ReputationBadges.jsx'
+import MatchChatPanel from '../../components/match/MatchChatPanel.jsx'
+import PersonalInsights from '../../components/umpire-dashboard/PersonalInsights.jsx'
+import { formatMatchDate, formatMatchTime } from '../../models/matchDiscovery.model.js'
 
 function timeGreeting() {
   const hour = new Date().getHours()
@@ -14,9 +19,63 @@ function timeGreeting() {
   return 'Good evening'
 }
 
+function NextAssignmentCard({ assignment }) {
+  const [showChat, setShowChat] = useState(false)
+  return (
+    <div className="rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/5 p-5 shadow-sm backdrop-blur-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-400">Next Assignment</p>
+      {assignment.ground_name && <p className="mt-2 font-semibold text-white">{assignment.ground_name}</p>}
+      <p className="text-slate-200">
+        {assignment.team_a_name} vs {assignment.team_b_name}
+      </p>
+      <p className="mt-1 text-sm text-slate-400">
+        {formatMatchDate(assignment.match_date)} · {formatMatchTime(assignment.match_date)}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <Link
+          to={`/umpire/matches/${assignment.match_id}/briefing`}
+          className="inline-flex h-10 items-center gap-2 rounded-full bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+        >
+          <ClipboardList className="h-4 w-4" />
+          Match Briefing
+        </Link>
+        <Link
+          to={`/umpire/matches/${assignment.match_id}/briefing`}
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-4 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/5"
+        >
+          <MapPin className="h-4 w-4" />
+          Check In
+        </Link>
+        <button
+          type="button"
+          onClick={() => setShowChat((v) => !v)}
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-4 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/5"
+        >
+          <MessageCircle className="h-4 w-4" />
+          {showChat ? 'Hide Messages' : 'Message Ground Owner'}
+        </button>
+      </div>
+      {showChat && <MatchChatPanel matchId={assignment.match_id} onClose={() => setShowChat(false)} />}
+    </div>
+  )
+}
+
 export default function UmpireDashboardPage() {
   const { user } = useAuth()
-  const { loading, error, upcomingAssignmentsCount, upcomingAssignments, matchesOfficiated, ratingAvg, ratingCount, refresh } = useUmpireDashboard()
+  const {
+    loading,
+    error,
+    upcomingAssignmentsCount,
+    upcomingAssignments,
+    nextAssignment,
+    matchesOfficiated,
+    reliability,
+    ratingAvg,
+    ratingCount,
+    verified,
+    badges,
+    refresh,
+  } = useUmpireDashboard()
   const firstName = user?.name?.split(' ')[0] || 'Umpire'
 
   return (
@@ -27,6 +86,7 @@ export default function UmpireDashboardPage() {
             {timeGreeting()}, {firstName}
           </h1>
           <p className="mt-2 text-slate-300">Your Officiating Overview</p>
+          {!loading && !error && <ReputationBadges verified={verified} badges={badges} />}
         </div>
 
         <Link
@@ -39,16 +99,23 @@ export default function UmpireDashboardPage() {
       </div>
 
       <div className="mt-8">
-        {loading && <StatsLoadingGrid tiles={3} />}
+        {loading && <StatsLoadingGrid tiles={4} />}
         {!loading && error && <StatsErrorState message={error} onRetry={refresh} />}
         {!loading && !error && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatTile label="Matches Officiated" value={matchesOfficiated} emphasis />
             <StatTile label="Upcoming Assignments" value={upcomingAssignmentsCount} />
+            <StatTile label="Reliability" value={reliability != null ? `${reliability}%` : 'N/A'} />
             <StatTile label="Rating" value={ratingCount > 0 ? `${Number(ratingAvg).toFixed(1)} / 5` : 'Not rated yet'} />
           </div>
         )}
       </div>
+
+      {!loading && !error && nextAssignment && (
+        <div className="mt-6">
+          <NextAssignmentCard assignment={nextAssignment} />
+        </div>
+      )}
 
       {!loading && !error && (
         <div className="mt-8">
@@ -70,6 +137,8 @@ export default function UmpireDashboardPage() {
           )}
         </div>
       )}
+
+      {!loading && !error && <PersonalInsights />}
     </UmpireLayout>
   )
 }

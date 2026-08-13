@@ -4,6 +4,9 @@ import * as matchSummaryService from '../services/matchSummary.service.js'
 import * as publicMatchService from '../services/publicMatch.service.js'
 import * as liveMatchService from '../services/liveMatch.service.js'
 import * as commentaryService from '../services/commentary.service.js'
+import * as umpireAssignmentService from '../services/umpireAssignment.service.js'
+import * as matchIncidentService from '../services/matchIncident.service.js'
+import * as matchChecklistService from '../services/matchChecklist.service.js'
 import { publishMatchState } from '../realtime/cricketRealtime.js'
 import * as tournamentFixtureService from '../services/tournamentFixture.service.js'
 import { logger } from '../utils/logger.js'
@@ -63,6 +66,59 @@ export async function setToss(req, res, next) {
   try {
     const match = await matchService.setToss(req.params.id, req.body)
     res.json({ match })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function checkIn(req, res, next) {
+  try {
+    const latitude = req.body?.latitude != null ? Number(req.body.latitude) : undefined
+    const longitude = req.body?.longitude != null ? Number(req.body.longitude) : undefined
+    const slot = await umpireAssignmentService.checkIn({ matchId: Number(req.params.id), user: req.user, latitude, longitude })
+    res.json({ slot })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function reportIncident(req, res, next) {
+  try {
+    const incident = await matchIncidentService.reportIncident({
+      matchId: Number(req.params.id),
+      user: req.user,
+      incidentType: req.body?.incidentType,
+      description: req.body?.description,
+      occurredAt: req.body?.occurredAt,
+    })
+    res.status(201).json({ incident })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listIncidents(req, res, next) {
+  try {
+    const incidents = await matchIncidentService.listIncidents(Number(req.params.id))
+    res.json({ incidents })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getMatchChecklist(req, res, next) {
+  try {
+    const items = await matchChecklistService.getChecklist(Number(req.params.id), req.user.id)
+    res.json({ items })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function updateMatchChecklistItem(req, res, next) {
+  try {
+    const item = await matchChecklistService.setChecklistItem(Number(req.params.id), req.user.id, req.body?.itemKey, req.body?.isChecked)
+    res.json({ item })
   } catch (err) {
     next(err)
   }

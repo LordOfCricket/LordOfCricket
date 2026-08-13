@@ -23,8 +23,8 @@ function Section({ title, items, cancellingId, onCancel }) {
 }
 
 export default function MyAssignmentsPage() {
-  const { upcoming, live, completed, loading, error, cancellingId, cancel, refresh } = useMyAssignments()
-  const hasAny = upcoming.length + live.length + completed.length > 0
+  const { upcoming, live, completed, cancelled, noShow, loading, error, cancellingId, cancel, refresh } = useMyAssignments()
+  const hasAny = upcoming.length + live.length + completed.length + cancelled.length + noShow.length > 0
 
   return (
     <UmpireLayout title="My Matches" subtitle="Matches assigned to you as umpire.">
@@ -50,6 +50,8 @@ export default function MyAssignmentsPage() {
           <Section title="Live" items={live} cancellingId={cancellingId} onCancel={cancel} />
           <Section title="Upcoming" items={upcoming} cancellingId={cancellingId} onCancel={cancel} />
           <Section title="Completed" items={completed} cancellingId={cancellingId} onCancel={cancel} />
+          <Section title="No-Show" items={noShow} cancellingId={cancellingId} onCancel={cancel} />
+          <Section title="Cancelled" items={cancelled} cancellingId={cancellingId} onCancel={cancel} />
         </>
       )}
     </UmpireLayout>

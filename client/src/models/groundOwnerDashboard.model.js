@@ -20,10 +20,20 @@ export function filterUpcomingMatches(matches) {
 
 // Per-slot rows (from GET /matches/:matchId/umpire-slots) into the display
 // shape the Ground Owner view needs — real assigned-umpire name, or an
-// honest "Slot Available", never a fabricated placeholder.
+// honest "Slot Available", never a fabricated placeholder. NO_SHOW/COMPLETED
+// (Phase 23) must NOT fall through to "Slot Available" — a NO_SHOW slot
+// isn't freely claimable via the normal self-apply flow (it needs a
+// ground-owner-initiated replacement), and a COMPLETED slot is officiating
+// history, not an open slot on a match that's already finished.
 export function describeSlot(slot) {
   if (slot.status === 'ASSIGNED' && slot.umpire_name) {
     return { label: slot.umpire_name, detail: 'Assigned' }
+  }
+  if (slot.status === 'NO_SHOW') {
+    return { label: slot.umpire_name || 'Umpire', detail: 'No-Show — needs replacement' }
+  }
+  if (slot.status === 'COMPLETED' && slot.umpire_name) {
+    return { label: slot.umpire_name, detail: 'Officiated' }
   }
   return { label: 'Slot Available', detail: null }
 }

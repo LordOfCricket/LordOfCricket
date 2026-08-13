@@ -1,15 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CalendarDays, ChevronDown, ChevronUp, Trophy } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronUp, Trophy, MessageCircle } from 'lucide-react'
 import BackButton from '../../components/common/BackButton.jsx'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import { useGroundMatches } from '../../hooks/useGroundMatches.js'
 import { useMatchUmpireSlots } from '../../hooks/useMatchUmpireSlots.js'
+import { useUmpireOperationsSummary } from '../../hooks/useUmpireOperationsSummary.js'
 import { fetchTeams } from '../../services/playerApi.js'
 import { formatMatchDate, formatMatchTime, statusLabel, formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 import { slotStatusInfo, describeSlot } from '../../models/groundOwnerDashboard.model.js'
+import { PAYMENT_STATUSES, paymentStatusLabel, paymentStatusClasses, formatAmount } from '../../models/umpireEarnings.model.js'
+import { staffingForecastLabel, staffingForecastClasses } from '../../models/staffingForecast.model.js'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
+import ReplacementPicker from '../../components/ground-owner/ReplacementPicker.jsx'
+import RecommendedUmpires from '../../components/ground-owner/RecommendedUmpires.jsx'
+import AssignmentHistory from '../../components/ground-owner/AssignmentHistory.jsx'
+import ReputationBadges from '../../components/common/ReputationBadges.jsx'
+import MatchChatPanel from '../../components/match/MatchChatPanel.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import StatTile from '../../components/stats/StatTile.jsx'
 
 function CreateMatchForm({ onCreate, creating, createError, onDone }) {
   const [teams, setTeams] = useState([])
@@ -108,8 +117,164 @@ function CreateMatchForm({ onCreate, creating, createError, onDone }) {
   )
 }
 
-function SlotDetail({ matchId, slots, loading, error, onExpand }) {
+function PaymentStatusControl({ matchId, slot, slotsHook }) {
+  const busy = slotsHook.actionBusyId === slot.id
+  if (!slot.earning) return null
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${paymentStatusClasses(slot.earning.status)}`}>
+        {formatAmount(slot.earning.amount, slot.earning.currency)} · {paymentStatusLabel(slot.earning.status)}
+      </span>
+      <select
+        disabled={busy}
+        value=""
+        onChange={(e) => {
+          if (e.target.value) slotsHook.updatePaymentStatus(matchId, slot.id, e.target.value)
+          e.target.value = ''
+        }}
+        className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300 disabled:opacity-50"
+      >
+        <option value="" className="bg-slate-900">
+          Change status…
+        </option>
+        {PAYMENT_STATUSES.filter((s) => s !== slot.earning.status).map((s) => (
+          <option key={s} value={s} className="bg-slate-900">
+            {paymentStatusLabel(s)}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook }) {
+  const [findingReplacement, setFindingReplacement] = useState(false)
+  const [showChat, setShowChat] = useState(false)
+  const { label, detail } = describeSlot(slot)
+  const busy = slotsHook.actionBusyId === slot.id
+  const canMarkNoShow = slot.status === 'ASSIGNED' && (matchStatus === 'upcoming' || matchStatus === 'live')
+
+  return (
+    <div className="border-b border-white/5 py-2 last:border-b-0">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-400">Umpire {index + 1}</span>
+        <span className={detail ? 'font-semibold text-white' : 'text-slate-500'}>
+          {label}
+          {detail && <span className="ml-1.5 text-emerald-300">· {detail}</span>}
+        </span>
+      </div>
+      {slot.reputation && (
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+          {slot.reputation.ratingCount > 0 && <span>⭐ {Number(slot.reputation.ratingAvg).toFixed(1)}</span>}
+          {slot.reputation.reliability != null && <span>Reliability {slot.reputation.reliability}%</span>}
+          <span>{slot.reputation.matchesOfficiated} Matches</span>
+          <ReputationBadges verified={slot.reputation.verified} badges={slot.reputation.badges} size="sm" />
+        </div>
+      )}
+      <PaymentStatusControl matchId={matchId} slot={slot} slotsHook={slotsHook} />
+      {(slot.status === 'ASSIGNED' || slot.status === 'COMPLETED') && slot.umpire_user_id && (
+        <button
+          type="button"
+          onClick={() => setShowChat((v) => !v)}
+          className="mt-1.5 flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition-colors hover:bg-white/5"
+        >
+          <MessageCircle className="h-3 w-3" />
+          {showChat ? 'Hide Messages' : 'Message Umpire'}
+        </button>
+      )}
+      {showChat && <MatchChatPanel matchId={matchId} onClose={() => setShowChat(false)} />}
+      {canMarkNoShow && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => slotsHook.markNoShow(matchId, slot.id)}
+          className="mt-1.5 rounded-full border border-rose-400/30 px-2.5 py-1 text-[11px] font-semibold text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? 'Marking…' : 'Mark No-Show'}
+        </button>
+      )}
+      {slot.status === 'NO_SHOW' && !findingReplacement && (
+        <button
+          type="button"
+          onClick={() => setFindingReplacement(true)}
+          className="mt-1.5 rounded-full bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+        >
+          Find Replacement
+        </button>
+      )}
+      {slot.status === 'NO_SHOW' && findingReplacement && (
+        <ReplacementPicker
+          publicGroundId={publicGroundId}
+          matchId={matchId}
+          slotId={slot.id}
+          busy={busy}
+          onCancel={() => setFindingReplacement(false)}
+          onAssign={async (newUmpireUserId) => {
+            const ok = await slotsHook.assignReplacement(matchId, slot.id, newUmpireUserId)
+            if (ok) setFindingReplacement(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function FeeControl({ matchId, matchStatus, umpireFee, slotsHook }) {
+  const [editing, setEditing] = useState(false)
+  const [amountDraft, setAmountDraft] = useState('')
+  const busy = slotsHook.actionBusyId === `fee-${matchId}`
+  const locked = matchStatus === 'completed' || matchStatus === 'finalized'
+
+  const startEdit = () => {
+    setAmountDraft(umpireFee?.amount ?? '')
+    setEditing(true)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const amount = Number(amountDraft)
+    if (!Number.isFinite(amount) || amount < 0) return
+    const ok = await slotsHook.setFee(matchId, { amount, currency: umpireFee?.currency || 'INR' })
+    if (ok) setEditing(false)
+  }
+
+  return (
+    <div className="mb-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs">
+      <div>
+        <span className="text-slate-400">Umpire Fee (per umpire)</span>{' '}
+        <span className="font-semibold text-white">{umpireFee ? formatAmount(umpireFee.amount, umpireFee.currency) : 'Not set'}</span>
+      </div>
+      {!locked && !editing && (
+        <button type="button" onClick={startEdit} className="font-semibold text-emerald-300 hover:text-emerald-200">
+          {umpireFee ? 'Edit' : 'Set fee'}
+        </button>
+      )}
+      {!locked && editing && (
+        <form onSubmit={submit} className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={amountDraft}
+            onChange={(e) => setAmountDraft(e.target.value)}
+            className="w-20 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-white"
+            autoFocus
+          />
+          <button type="submit" disabled={busy} className="font-semibold text-emerald-300 hover:text-emerald-200 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-200">
+            Cancel
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, loading, error, onExpand, slotsHook, hasOpenCapacity }) {
   const [expanded, setExpanded] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const toggle = () => {
     if (!expanded) onExpand(matchId)
@@ -118,37 +283,49 @@ function SlotDetail({ matchId, slots, loading, error, onExpand }) {
 
   return (
     <div className="mt-3">
-      <button type="button" onClick={toggle} className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200">
-        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        {expanded ? 'Hide umpire status' : 'View umpire status'}
-      </button>
+      <div className="flex items-center gap-4">
+        <button type="button" onClick={toggle} className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200">
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          {expanded ? 'Hide umpire status' : 'View umpire status'}
+        </button>
+        <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs font-semibold text-slate-400 hover:text-slate-200">
+          {showHistory ? 'Hide history' : 'History'}
+        </button>
+      </div>
       {expanded && (
         <div className="mt-2 space-y-1.5">
           {loading && <p className="text-xs text-slate-400">Loading…</p>}
           {!loading && error && <p className="text-xs text-rose-300">{error}</p>}
           {!loading && !error && slots && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              {slots.map((slot, i) => {
-                const { label, detail } = describeSlot(slot)
-                return (
-                  <div key={slot.id} className="flex items-center justify-between py-1 text-xs">
-                    <span className="text-slate-400">Umpire {i + 1}</span>
-                    <span className={detail ? 'font-semibold text-white' : 'text-slate-500'}>
-                      {label}
-                      {detail && <span className="ml-1.5 text-emerald-300">· {detail}</span>}
-                    </span>
-                  </div>
-                )
-              })}
+              <FeeControl matchId={matchId} matchStatus={matchStatus} umpireFee={umpireFee} slotsHook={slotsHook} />
+              {hasOpenCapacity && matchStatus === 'upcoming' && <RecommendedUmpires publicGroundId={publicGroundId} matchId={matchId} />}
+              {slots.map((slot, i) => (
+                <SlotRow
+                  key={slot.id}
+                  publicGroundId={publicGroundId}
+                  matchId={matchId}
+                  matchStatus={matchStatus}
+                  slot={slot}
+                  index={i}
+                  slotsHook={slotsHook}
+                />
+              ))}
+              {slotsHook.actionError && <p className="mt-2 text-xs text-rose-300">{slotsHook.actionError}</p>}
             </div>
           )}
+        </div>
+      )}
+      {showHistory && (
+        <div className="mt-2 rounded-xl border border-white/10 bg-white/5 p-3">
+          <AssignmentHistory publicGroundId={publicGroundId} matchId={matchId} />
         </div>
       )}
     </div>
   )
 }
 
-function MatchCard({ match, slotsHook, lifecycleHook }) {
+function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook }) {
   const status = slotStatusInfo(match)
   const busy = lifecycleHook.lifecycleBusyId === match.id
   const result = lifecycleHook.lifecycleResults[match.id]
@@ -178,22 +355,32 @@ function MatchCard({ match, slotsHook, lifecycleHook }) {
         </span>
       </div>
 
-      <div className="mt-3 flex items-center gap-2 text-sm">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
         <span className="font-semibold text-white">
           {match.filled_slots} / {match.total_slots}
         </span>
         <span>
           {status.emoji} {status.label}
         </span>
+        {match.staffingForecast && match.staffingForecast.status !== 'NOT_REQUIRED' && (
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${staffingForecastClasses(match.staffingForecast.status)}`}>
+            {staffingForecastLabel(match.staffingForecast.status)}
+          </span>
+        )}
       </div>
 
       {match.total_slots > 0 && (
         <SlotDetail
+          publicGroundId={publicGroundId}
           matchId={match.id}
+          matchStatus={match.status}
           slots={slotsHook.slotsByMatch[match.id]}
+          umpireFee={slotsHook.umpireFeeByMatch[match.id]}
           loading={slotsHook.loadingId === match.id}
           error={slotsHook.error}
           onExpand={slotsHook.load}
+          slotsHook={slotsHook}
+          hasOpenCapacity={match.filled_slots < match.total_slots}
         />
       )}
 
@@ -243,6 +430,26 @@ function MatchCard({ match, slotsHook, lifecycleHook }) {
   )
 }
 
+// Umpire Intelligence & Scale 2.0, Workstream J — a small, honest summary
+// (never a misleading average from too few reviews — see the backend's own
+// GROUND_RATING_MIN_SAMPLE guard).
+function UmpireOperationsSummaryPanel({ publicGroundId }) {
+  const { summary, loading, error } = useUmpireOperationsSummary(publicGroundId)
+  if (loading || error || !summary) return null
+  return (
+    <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-5 shadow-sm backdrop-blur-sm">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Umpire Operations This Month</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <StatTile label="Matches" value={summary.matchesThisMonth} />
+        <StatTile label="Fully Staffed" value={summary.fullyStaffed} />
+        <StatTile label="Needs Attention" value={summary.currentlyUnderstaffedUpcoming} />
+        <StatTile label="Avg Umpire Rating" value={summary.avgUmpireRating != null ? summary.avgUmpireRating.toFixed(1) : 'Not enough data'} />
+        <StatTile label="No-Shows" value={summary.noShowCount} />
+      </div>
+    </div>
+  )
+}
+
 export default function GroundMatchesPage() {
   const { publicGroundId } = useParams()
   const { grounds, loading: groundsLoading } = useMyGrounds()
@@ -258,6 +465,8 @@ export default function GroundMatchesPage() {
       <BackButton label="Back to Dashboard" fallback="/ground-owner/dashboard" />
 
       <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">{groundsLoading ? 'Loading…' : ground?.name || 'Ground'}</h1>
+
+      <UmpireOperationsSummaryPanel publicGroundId={publicGroundId} />
 
       <div className="mt-6 flex items-center justify-between">
         <h2 className="text-xl font-semibold text-white">Matches</h2>
@@ -298,7 +507,7 @@ export default function GroundMatchesPage() {
         {!loading && !error && matches.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
             {matches.map((match) => (
-              <MatchCard key={match.id} match={match} slotsHook={slotsHook} lifecycleHook={groundMatches} />
+              <MatchCard key={match.id} publicGroundId={publicGroundId} match={match} slotsHook={slotsHook} lifecycleHook={groundMatches} />
             ))}
           </div>
         )}

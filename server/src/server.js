@@ -6,7 +6,9 @@ import { connectPostgres } from './config/db.js'
 import { allowedOrigins } from './config/corsOrigins.js'
 import { registerCricketRealtime } from './realtime/cricketRealtime.js'
 import { registerBookingRealtime } from './realtime/bookingRealtime.js'
+import { registerMatchChatRealtime } from './realtime/matchChatRealtime.js'
 import { validateEnv } from './config/validateEnv.js'
+import { startReminderScheduler } from './services/reminderScheduler.service.js'
 import { logger } from './utils/logger.js'
 
 // ES module imports (including app.js's own chain, which is where
@@ -67,6 +69,11 @@ registerCricketRealtime(io)
 // pattern as cricket realtime above. See server/src/realtime/bookingRealtime.js.
 registerBookingRealtime(io)
 
+// Umpire Communication & Commercial 2.0 — match-scoped chat. Same additive
+// pattern; its own authorized room, separate from the public spectator
+// match:{id} room above. See server/src/realtime/matchChatRealtime.js.
+registerMatchChatRealtime(io)
+
 // MongoDB cleanup, Phase 6 — GalleryImage/AiInsight/MenuItem/TodayMenu/Order
 // are all PostgreSQL now (Phases 1-5); no live route/controller/service
 // imports a Mongo model anymore (repo-wide search, see the Phase 6 report).
@@ -78,6 +85,11 @@ registerBookingRealtime(io)
 async function start() {
   await connectPostgres()
   server.listen(PORT, () => logger.info(`Server listening on port ${PORT}`))
+  // Phase 23, Workstream D — umpire match reminders. Only started here (the
+  // real server boot path), never by integration tests, which start their
+  // own throwaway http.createServer(app) instances via startTestApp() and
+  // would otherwise leave a dangling interval per test file.
+  startReminderScheduler()
 }
 
 start()

@@ -18,7 +18,13 @@ function clampComment(value) {
 
 async function assignedUmpires(matchId) {
   const slots = await findSlotsByMatch(matchId)
-  return slots.filter((s) => s.status === 'ASSIGNED' && s.umpire_user_id).map((s) => ({ userId: s.umpire_user_id, name: s.umpire_name }))
+  // 'COMPLETED' as well as 'ASSIGNED' (Phase 23): feedback is only ever open
+  // once a match reaches 'completed'/'finalized' (FEEDBACK_OPEN_STATUSES
+  // below), and by that point every slot that was ASSIGNED has already
+  // transitioned to COMPLETED (officiating credit, markSlotsCompletedForMatch)
+  // — an ASSIGNED-only filter would find zero umpires for every completed
+  // match, silently breaking umpire feedback/rating entirely.
+  return slots.filter((s) => (s.status === 'ASSIGNED' || s.status === 'COMPLETED') && s.umpire_user_id).map((s) => ({ userId: s.umpire_user_id, name: s.umpire_name }))
 }
 
 // The single place eligibility is computed — GET and POST both call this,

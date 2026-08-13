@@ -34,6 +34,20 @@ export async function insertMatchFeedback(
   return rows[0]
 }
 
+// Phase 24, Workstream D — rating trend. Numeric ratings + timestamp only,
+// no comments, no reviewer identity — this is the umpire viewing their own
+// recent trend, not a public review feed. Newest-first at the DB level
+// (LIMIT needs that ordering to pick the right N); the caller reverses to
+// chronological for display, matching the brief's own "Last 5 matches: 4.6
+// 4.8 4.7 4.9 5.0" left-to-right-oldest-to-newest example.
+export async function findRecentRatingsForUmpire(umpireUserId, limit = 5) {
+  const { rows } = await pool.query(
+    `SELECT rating, created_at FROM match_feedback_umpire_ratings WHERE umpire_user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [umpireUserId, limit],
+  )
+  return rows
+}
+
 export async function insertUmpireRating(client, { matchFeedbackId, umpireUserId, rating, commentLiked, commentImprove }) {
   const { rows } = await client.query(
     `INSERT INTO match_feedback_umpire_ratings (match_feedback_id, umpire_user_id, rating, comment_liked, comment_improve)

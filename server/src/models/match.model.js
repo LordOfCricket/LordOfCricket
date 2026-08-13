@@ -68,7 +68,13 @@ export async function findMatchesByGroundId(groundId) {
        ta.name AS team_a_name, ta.short_name AS team_a_short,
        tb.name AS team_b_name, tb.short_name AS team_b_short,
        (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id) AS total_slots,
-       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status = 'ASSIGNED') AS filled_slots
+       -- 'COMPLETED' as well as 'ASSIGNED' (Phase 23): this list includes
+       -- completed/finalized matches (see the function comment above), and
+       -- by the time a match completes, every slot that was ASSIGNED has
+       -- already transitioned to COMPLETED (officiating credit) — an
+       -- ASSIGNED-only count would wrongly show a fully-staffed completed
+       -- match as "0 filled".
+       (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status IN ('ASSIGNED', 'COMPLETED')) AS filled_slots
      FROM matches m
      JOIN teams ta ON ta.id = m.team_a_id
      JOIN teams tb ON tb.id = m.team_b_id

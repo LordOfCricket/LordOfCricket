@@ -2,6 +2,7 @@ import * as scoringService from '../services/scoring.service.js'
 import * as commentaryService from '../services/commentary.service.js'
 import { selectWagonWheelShots, getTimeline, groupDeliveriesByOver, getLastWicket } from '../domain/scoring/selectors.js'
 import { publishMatchState, publishCommentary } from '../realtime/cricketRealtime.js'
+import { ensureEarningRecordsForMatch } from '../models/umpireEarning.model.js'
 import { logger } from '../utils/logger.js'
 
 function serializeState({ innings, state, format }) {
@@ -144,6 +145,25 @@ function maybePublish(req, result, reason) {
   if (!result.idempotentReplay) publishMatchState(req.io, result.matchId, reason)
 }
 
+// Umpire Communication & Commercial 2.0 — the scoring engine's own
+// auto-completion path (maybeCompleteInnings, called inside recordDelivery/
+// recordEvent's transaction) never touches earnings itself, to avoid an
+// aborted-transaction hazard: a caught error mid-transaction still leaves
+// Postgres unable to commit the writes before it. Hooking in here instead —
+// strictly after the response is already sent, same fire-and-forget
+// contract as maybePublish/maybePublishCommentary — means a bug here can
+// never undo the officiating-credit writes that already committed.
+// Idempotent (ON CONFLICT DO NOTHING), so a swallowed failure just
+// self-heals on the next earnings read.
+async function maybeEnsureEarnings(result) {
+  if (!result.completion?.match) return
+  try {
+    await ensureEarningRecordsForMatch(result.matchId)
+  } catch (err) {
+    logger.error('ensureEarningRecordsForMatch failed after scoring-engine match completion', { matchId: result.matchId, error: err.message })
+  }
+}
+
 // Phase 12: commentary generation/persistence is a SEPARATE step from the
 // cricket write above — it runs only after that write already committed, and
 // its own failure is caught here and logged only (Part 38: an already-
@@ -173,6 +193,7 @@ export async function recordDelivery(req, res, next) {
     res.status(201).json(result)
     maybePublish(req, result, result.completion?.match ? 'match_completed' : 'delivery')
     maybePublishCommentary(req, result, req.params.inningsId)
+    maybeEnsureEarnings(result)
   } catch (err) {
     next(err)
   }
@@ -191,6 +212,7 @@ export async function recordEvent(req, res, next) {
     res.status(201).json(result)
     maybePublish(req, result, result.completion?.match ? 'match_completed' : 'event')
     maybePublishCommentary(req, result, req.params.inningsId)
+    maybeEnsureEarnings(result)
   } catch (err) {
     next(err)
   }

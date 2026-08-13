@@ -1,7 +1,7 @@
 // Run with: node --test src/models/umpireDashboard.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { slotSummary, bucketAssignments, canCancelAssignment, canEnterScoring, applyErrorMessage, cancelErrorMessage } from './umpireDashboard.model.js'
+import { slotSummary, bucketAssignments, nextAssignment, canCancelAssignment, canEnterScoring, applyErrorMessage, cancelErrorMessage } from './umpireDashboard.model.js'
 
 test('slotSummary derives open capacity from total/filled, never negative', () => {
   assert.deepEqual(slotSummary({ total_slots: 2, filled_slots: 0 }), { total: 2, filled: 0, open: 2 })
@@ -11,13 +11,12 @@ test('slotSummary derives open capacity from total/filled, never negative', () =
   assert.deepEqual(slotSummary(null), { total: 0, filled: 0, open: 0 })
 })
 
-test('bucketAssignments sorts ASSIGNED slots by match status, ignores non-ASSIGNED slots', () => {
+test('bucketAssignments sorts ASSIGNED slots by match status', () => {
   const assignments = [
     { status: 'ASSIGNED', match_status: 'upcoming', match_id: 1 },
     { status: 'ASSIGNED', match_status: 'live', match_id: 2 },
     { status: 'ASSIGNED', match_status: 'completed', match_id: 3 },
     { status: 'ASSIGNED', match_status: 'finalized', match_id: 4 },
-    { status: 'CANCELLED', match_status: 'upcoming', match_id: 5 },
   ]
   const { upcoming, live, completed } = bucketAssignments(assignments)
   assert.deepEqual(upcoming.map((a) => a.match_id), [1])
@@ -25,9 +24,40 @@ test('bucketAssignments sorts ASSIGNED slots by match status, ignores non-ASSIGN
   assert.deepEqual(completed.map((a) => a.match_id), [3, 4])
 })
 
+test('bucketAssignments: a COMPLETED slot always lands in completed, regardless of match_status (officiating credit, Phase 23)', () => {
+  const assignments = [{ status: 'COMPLETED', match_status: 'completed', match_id: 10 }]
+  assert.deepEqual(bucketAssignments(assignments).completed.map((a) => a.match_id), [10])
+})
+
+test('bucketAssignments: CANCELLED and NO_SHOW get their own buckets, not silently dropped', () => {
+  const assignments = [
+    { status: 'CANCELLED', match_status: 'upcoming', match_id: 5 },
+    { status: 'NO_SHOW', match_status: 'live', match_id: 6 },
+  ]
+  const buckets = bucketAssignments(assignments)
+  assert.deepEqual(buckets.cancelled.map((a) => a.match_id), [5])
+  assert.deepEqual(buckets.noShow.map((a) => a.match_id), [6])
+  assert.deepEqual(buckets.upcoming, [])
+  assert.deepEqual(buckets.live, [])
+  assert.deepEqual(buckets.completed, [])
+})
+
 test('bucketAssignments handles empty/missing input without throwing', () => {
-  assert.deepEqual(bucketAssignments([]), { upcoming: [], live: [], completed: [] })
-  assert.deepEqual(bucketAssignments(undefined), { upcoming: [], live: [], completed: [] })
+  const empty = { upcoming: [], live: [], completed: [], cancelled: [], noShow: [] }
+  assert.deepEqual(bucketAssignments([]), empty)
+  assert.deepEqual(bucketAssignments(undefined), empty)
+})
+
+test('nextAssignment: picks the soonest upcoming match, not just index 0 (the list isn\'t guaranteed date-sorted)', () => {
+  const later = { match_id: 1, match_date: '2026-09-01T10:00:00.000Z' }
+  const sooner = { match_id: 2, match_date: '2026-08-15T10:00:00.000Z' }
+  assert.equal(nextAssignment([later, sooner]), sooner)
+  assert.equal(nextAssignment([sooner, later]), sooner)
+})
+
+test('nextAssignment: empty/missing input returns null, never throws', () => {
+  assert.equal(nextAssignment([]), null)
+  assert.equal(nextAssignment(undefined), null)
 })
 
 test('canCancelAssignment: only an ASSIGNED slot on an upcoming match', () => {

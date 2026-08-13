@@ -13,6 +13,7 @@ import {
   ClipboardList,
   CalendarClock,
   MapPinned,
+  Wallet,
 } from 'lucide-react'
 
 // Dedicated Umpire Workspace — the login mode ("Player Login" vs "Umpire
@@ -44,6 +45,9 @@ export function getPrimaryNavLinks(user, defaultLinks) {
 // getAccountLinks(user); an approved umpire should see a completely
 // separate, focused workspace menu, not the player menu with an extra item
 // bolted on (that was the bug this phase fixes).
+// Umpire Communication & Commercial 2.0 — "My Earnings" added as its own
+// workspace destination (Workstream P), not folded into My Statistics —
+// commercial data is a distinct concern from officiating performance.
 export function getUmpireAccountLinks() {
   return [
     { label: 'View Dashboard', to: '/umpire/dashboard', icon: LayoutDashboard },
@@ -51,6 +55,7 @@ export function getUmpireAccountLinks() {
     { label: 'Grounds for Umpire', to: '/umpire/find-matches', icon: MapPinned },
     { label: 'My Matches', to: '/umpire/my-assignments', icon: CalendarCheck },
     { label: 'My Statistics', to: '/umpire/statistics', icon: BarChart3 },
+    { label: 'My Earnings', to: '/umpire/earnings', icon: Wallet },
   ]
 }
 

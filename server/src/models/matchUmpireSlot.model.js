@@ -16,6 +16,11 @@ export async function createSlotsForMatch(matchId, count, client = pool) {
   return rows
 }
 
+export async function findSlotById(slotId, client = pool) {
+  const { rows } = await client.query(`SELECT * FROM match_umpire_slots WHERE id = $1`, [slotId])
+  return rows[0] || null
+}
+
 export async function findSlotsByMatch(matchId) {
   const { rows } = await pool.query(
     `SELECT s.*, u.name AS umpire_name
@@ -33,6 +38,29 @@ export async function hasActiveSlotAssignment(matchId, userId, client = pool) {
     matchId,
     userId,
   ])
+  return rows.length > 0
+}
+
+// Authorization-only variant (Phase 23) — also true once the slot has
+// transitioned to COMPLETED, not just ASSIGNED. Exists specifically for
+// matchScorerAccess.js's Gate 2: since match completion now writes
+// match_umpire_slots.status='COMPLETED' (officiating credit,
+// markSlotsCompletedForMatch), an ASSIGNED-only check would incorrectly
+// revoke the umpire's own ability to finalize the very match they just
+// officiated — POST /matches/:id/finalize's deliberate 'completed'
+// allowedStatuses exception depends on this. The SEPARATE allowedStatuses
+// check right after this one is still what actually revokes access for
+// every other route once a match completes — this only widens WHO counts as
+// "held this assignment", never widens which match statuses are accepted.
+// Deliberately NOT used by applyForSlot's ALREADY_ASSIGNED pre-check or by
+// groundOwner.service.js's replacement-candidate exclusion — both of those
+// mean something different ("is this umpire's ASSIGNED-right-now capacity
+// already spoken for"), not "did they ever hold/complete this match".
+export async function hasHeldSlotAssignment(matchId, userId, client = pool) {
+  const { rows } = await client.query(
+    `SELECT 1 FROM match_umpire_slots WHERE match_id = $1 AND umpire_user_id = $2 AND status IN ('ASSIGNED', 'COMPLETED') LIMIT 1`,
+    [matchId, userId],
+  )
   return rows.length > 0
 }
 
@@ -78,13 +106,85 @@ export async function claimAvailableSlot(matchId, userId, client = pool) {
   return rows[0] || null
 }
 
+// No-show (Phase 23, Workstream F) — atomic guard: only a currently ASSIGNED
+// slot can become NO_SHOW, so calling this twice or on a slot that's already
+// moved on is a safe no-op (returns null), never a double-transition.
+export async function markNoShow(slotId, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE match_umpire_slots SET status = 'NO_SHOW' WHERE id = $1 AND status = 'ASSIGNED' RETURNING *`,
+    [slotId],
+  )
+  return rows[0] || null
+}
+
+// Replacement (Phase 23, Workstream G) — reuses the SAME slot row rather
+// than creating a new one (required_umpires' fixed row count must never
+// change), atomically guarded to only fire from NO_SHOW. Because
+// requireMatchScorer/hasActiveSlotAssignment re-check umpire_user_id live on
+// every request, this one UPDATE is what makes scoring access transfer to
+// the replacement and revoke from the no-show umpire — no separate
+// authorization change needed anywhere else.
+export async function assignReplacementToSlot(slotId, newUmpireUserId, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE match_umpire_slots
+     SET status = 'ASSIGNED', umpire_user_id = $2, assigned_at = NOW(), cancelled_at = NULL, cancellation_reason = NULL
+     WHERE id = $1 AND status = 'NO_SHOW'
+     RETURNING *`,
+    [slotId, newUmpireUserId],
+  )
+  return rows[0] || null
+}
+
+// Check-in (Phase 23, Workstream E) — the assignment row itself already
+// identifies match + umpire, so this is just 3 more facts about that same
+// row, not a new entity. Idempotent by construction: the guarded UPDATE only
+// ever fires once (checked_in_at IS NULL), so a second call can never
+// overwrite the original check-in time/location — it falls through to the
+// plain SELECT and returns what's already there.
+export async function checkInSlot(matchId, umpireUserId, { latitude = null, longitude = null } = {}) {
+  const { rows } = await pool.query(
+    `UPDATE match_umpire_slots
+     SET checked_in_at = NOW(), check_in_latitude = $3, check_in_longitude = $4
+     WHERE match_id = $1 AND umpire_user_id = $2 AND status = 'ASSIGNED' AND checked_in_at IS NULL
+     RETURNING *`,
+    [matchId, umpireUserId, latitude, longitude],
+  )
+  if (rows[0]) return rows[0]
+  const { rows: existing } = await pool.query(`SELECT * FROM match_umpire_slots WHERE match_id = $1 AND umpire_user_id = $2 AND status = 'ASSIGNED'`, [
+    matchId,
+    umpireUserId,
+  ])
+  return existing[0] || null
+}
+
+// Officiating credit (Phase 23) — every slot still ASSIGNED the instant a
+// match reaches a real result transitions to COMPLETED, whoever currently
+// holds it (the original umpire, or a replacement who took over after a
+// no-show — either way, whoever actually officiated). Called from inside
+// the same transaction as the matches.status flip to 'completed', both call
+// sites: match.service.js#completeMatchManually and
+// scoring.service.js#maybeCompleteInnings (auto-completion). Returns the
+// updated rows so the caller can log a COMPLETED event per slot.
+export async function markSlotsCompletedForMatch(matchId, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE match_umpire_slots
+     SET status = 'COMPLETED', completed_at = NOW()
+     WHERE match_id = $1 AND status = 'ASSIGNED'
+     RETURNING *`,
+    [matchId],
+  )
+  return rows
+}
+
 // Scoped to (matchId, userId) in the WHERE clause itself — never a slot id
 // or slot number supplied by the caller — so this can only ever cancel the
 // CALLING user's own assignment. There is at most one ASSIGNED row per
 // (match, umpire) by construction (the partial unique index from U1), so no
-// slot identifier is needed to disambiguate which one.
-export async function cancelMyAssignment(matchId, userId, reason = null) {
-  const { rows } = await pool.query(
+// slot identifier is needed to disambiguate which one. `client` accepts a
+// transaction connection so the caller can log the CANCELLED event
+// atomically alongside this update (see insertAssignmentEvent below).
+export async function cancelMyAssignment(matchId, userId, reason = null, client = pool) {
+  const { rows } = await client.query(
     `UPDATE match_umpire_slots
      SET status = 'CANCELLED', cancelled_at = NOW(), cancellation_reason = $3
      WHERE match_id = $1 AND umpire_user_id = $2 AND status = 'ASSIGNED'
@@ -92,6 +192,22 @@ export async function cancelMyAssignment(matchId, userId, reason = null) {
     [matchId, userId, reason],
   )
   return rows[0] || null
+}
+
+// Append-only history log (Phase 23) — match_umpire_slots only ever holds
+// CURRENT per-slot state, and a CANCELLED/NO_SHOW row can later be
+// reclaimed/reassigned to a DIFFERENT umpire, overwriting umpire_user_id on
+// that same row. Without this, the original umpire's no-show/cancellation
+// would silently vanish from their own history the instant someone else
+// takes the slot. `client` should be the same transaction connection as the
+// state-changing write it's paired with, so the two commit/rollback
+// together.
+export async function insertAssignmentEvent({ slotId, matchId, umpireUserId, eventType, recordedBy = null }, client = pool) {
+  await client.query(
+    `INSERT INTO umpire_assignment_events (match_umpire_slot_id, match_id, umpire_user_id, event_type, recorded_by)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [slotId, matchId, umpireUserId, eventType, recordedBy],
+  )
 }
 
 // U4 read #1 — umpire discovery: real 'upcoming' matches that still have
@@ -136,6 +252,7 @@ export async function findUpcomingMatchesForGrounds(groundIds, userId) {
   const { rows } = await pool.query(
     `SELECT
        m.id, m.ground_id, m.match_date, m.venue, m.required_umpires,
+       m.overs_per_innings, m.balls_per_over,
        ta.name AS team_a_name, ta.short_name AS team_a_short,
        tb.name AS team_b_name, tb.short_name AS team_b_short,
        (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id) AS total_slots,
@@ -181,17 +298,37 @@ export async function findSlotsForUmpire(userId) {
 // umpire_profiles' cached counters (which nothing increments yet — showing
 // them would mean "Matches Officiated" stays 0 forever even after a real
 // match is officiated, which is worse than not caching). "Officiated" means
-// held an ASSIGNED/COMPLETED slot on a match that reached a real result.
+// held an ASSIGNED/COMPLETED slot on a match that reached a real result —
+// current-state is correct here because COMPLETED always lands on whoever
+// ACTUALLY officiated (a replacement's slot row is what transitions, not a
+// second row for the original no-show umpire).
+//
+// no_shows/cancellations (Phase 23) intentionally do NOT read from
+// match_umpire_slots' current status the way matches_officiated does — a
+// CANCELLED or NO_SHOW slot can later be reclaimed/reassigned to a DIFFERENT
+// umpire, overwriting that same row's umpire_user_id, which would silently
+// erase the original umpire's own history from a current-state count. Both
+// are instead counted from umpire_assignment_events, the append-only log
+// that exists specifically to survive that overwrite.
 export async function getUmpireStats(userId) {
-  const { rows } = await pool.query(
-    `SELECT
-       COUNT(*) FILTER (WHERE m.status IN ('completed', 'finalized') AND s.status IN ('ASSIGNED', 'COMPLETED'))::int AS matches_officiated,
-       COUNT(*) FILTER (WHERE s.status = 'CANCELLED')::int AS matches_cancelled,
-       COUNT(*) FILTER (WHERE m.status IN ('upcoming', 'live') AND s.status = 'ASSIGNED')::int AS upcoming_assignments
-     FROM match_umpire_slots s
-     JOIN matches m ON m.id = s.match_id
-     WHERE s.umpire_user_id = $1`,
-    [userId],
-  )
-  return rows[0]
+  const [{ rows: slotRows }, { rows: eventRows }] = await Promise.all([
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE m.status IN ('completed', 'finalized') AND s.status IN ('ASSIGNED', 'COMPLETED'))::int AS matches_officiated,
+         COUNT(*) FILTER (WHERE m.status IN ('upcoming', 'live') AND s.status = 'ASSIGNED')::int AS upcoming_assignments
+       FROM match_umpire_slots s
+       JOIN matches m ON m.id = s.match_id
+       WHERE s.umpire_user_id = $1`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE event_type = 'NO_SHOW')::int AS matches_no_show,
+         COUNT(*) FILTER (WHERE event_type = 'CANCELLED')::int AS matches_cancelled
+       FROM umpire_assignment_events
+       WHERE umpire_user_id = $1`,
+      [userId],
+    ),
+  ])
+  return { ...slotRows[0], ...eventRows[0] }
 }

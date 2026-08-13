@@ -46,6 +46,8 @@ const AvailableMatchesPage = lazy(() => import('../pages/umpire/AvailableMatches
 const MyAssignmentsPage = lazy(() => import('../pages/umpire/MyAssignmentsPage.jsx'))
 const UmpireProfilePage = lazy(() => import('../pages/umpire/UmpireProfilePage.jsx'))
 const UmpireStatisticsPage = lazy(() => import('../pages/umpire/UmpireStatisticsPage.jsx'))
+const UmpireEarningsPage = lazy(() => import('../pages/umpire/UmpireEarningsPage.jsx'))
+const MatchBriefingPage = lazy(() => import('../pages/umpire/MatchBriefingPage.jsx'))
 const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
 const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
 
@@ -58,6 +60,7 @@ const RealScorerPage = lazy(() => import('../pages/scorer/RealScorerPage.jsx'))
 const PlayersDiscoveryPage = lazy(() => import('../pages/players/PlayersDiscoveryPage.jsx'))
 const PublicPlayerProfilePage = lazy(() => import('../pages/players/PublicPlayerProfilePage.jsx'))
 const LeaderboardsPage = lazy(() => import('../pages/leaderboards/LeaderboardsPage.jsx'))
+const TopUmpiresPage = lazy(() => import('../pages/leaderboards/TopUmpiresPage.jsx'))
 
 // Phase 17 — Advanced Cricket Analytics: player/team comparison (public reads)
 const PlayerComparePage = lazy(() => import('../pages/players/PlayerComparePage.jsx'))
@@ -138,6 +141,8 @@ const router = createBrowserRouter([
       { path: '/umpire/my-assignments', element: <RequireApprovedUmpire>{withSuspense(<MyAssignmentsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/profile', element: <RequireApprovedUmpire>{withSuspense(<UmpireProfilePage />)}</RequireApprovedUmpire> },
       { path: '/umpire/statistics', element: <RequireApprovedUmpire>{withSuspense(<UmpireStatisticsPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/earnings', element: <RequireApprovedUmpire>{withSuspense(<UmpireEarningsPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/matches/:matchId/briefing', element: <RequireApprovedUmpire>{withSuspense(<MatchBriefingPage />)}</RequireApprovedUmpire> },
       { path: '/ground-owner/dashboard', element: <RequireGroundOwner>{withSuspense(<GroundOwnerDashboardPage />)}</RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner>{withSuspense(<GroundMatchesPage />)}</RequireGroundOwner> },
 
@@ -146,6 +151,7 @@ const router = createBrowserRouter([
       { path: '/players/compare', element: withSuspense(<PlayerComparePage />) },
       { path: '/players/:publicPlayerId', element: withSuspense(<PublicPlayerProfilePage />) },
       { path: '/leaderboards', element: withSuspense(<LeaderboardsPage />) },
+      { path: '/leaderboards/umpires', element: withSuspense(<TopUmpiresPage />) },
 
       // Phase 10 Part 1 — public match discovery
       { path: '/matches', element: withSuspense(<MatchesPage />) },

@@ -315,9 +315,11 @@ test('complete: manual completion on a still-live match transitions to COMPLETED
     })
     assert.equal(tossAfter.status, 403)
 
-    // Assignment history intact — the slot is still ASSIGNED, not deleted/reset.
+    // Assignment history intact — the slot is not deleted/reset, and (Phase
+    // 23) now correctly reflects officiating credit: COMPLETED, not stuck
+    // at ASSIGNED forever.
     const { rows } = await pool.query('SELECT status, umpire_user_id FROM match_umpire_slots WHERE match_id = $1', [match.id])
-    assert.equal(rows[0].status, 'ASSIGNED')
+    assert.equal(rows[0].status, 'COMPLETED')
     assert.equal(rows[0].umpire_user_id, umpire.id)
   } finally {
     await umpire.cleanup()

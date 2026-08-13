@@ -4,28 +4,50 @@
 // (models/matchUmpireSlot.model.js::findSlotsForUmpire on the backend) —
 // no new endpoint, no fabricated numbers.
 
-// "Matches This Month" — only assignments the umpire actually currently
-// holds (status='ASSIGNED'; a CANCELLED slot isn't a match they're
-// officiating), whose match falls in the current calendar month regardless
-// of upcoming/live/completed, since the point is recency of activity.
+// "Matches This Month" — assignments the umpire currently holds or has
+// completed (status='ASSIGNED' or 'COMPLETED'; a CANCELLED/NO_SHOW slot
+// isn't a match they're officiating), whose match falls in the current
+// calendar month, since the point is recency of activity. 'COMPLETED' as
+// well as 'ASSIGNED' (Phase 23): the instant a match completes, its slot
+// transitions ASSIGNED -> COMPLETED (officiating credit) — without this, a
+// match this umpire officiated earlier this month would drop out of the
+// count the moment it finished, which is backwards for "activity this month".
 export function matchesThisMonth(assignments, now = new Date()) {
   const year = now.getFullYear()
   const month = now.getMonth()
   return (assignments || []).filter((a) => {
-    if (a.status !== 'ASSIGNED') return false
+    if (a.status !== 'ASSIGNED' && a.status !== 'COMPLETED') return false
     const d = new Date(a.match_date)
     return d.getFullYear() === year && d.getMonth() === month
   }).length
 }
 
-// "Grounds Officiated At" — distinct grounds where a match this umpire held
-// an ASSIGNED slot on has actually reached completed/finalized (genuinely
-// officiated, not merely "currently holding a slot on an upcoming match").
+// "Grounds Officiated At" — distinct grounds where a slot this umpire held
+// has reached 'COMPLETED' (Phase 23: written the instant its match
+// completes — genuinely officiated, not merely "currently holding a slot on
+// an upcoming match"). Checking status alone is now sufficient and more
+// precise than the old ASSIGNED + match_status-in-completed/finalized
+// combination, which (now that COMPLETED is real) can never both be true at
+// once — a slot is never simultaneously ASSIGNED and on a completed match.
 export function groundsOfficiatedAt(assignments) {
-  const grounds = new Set(
-    (assignments || [])
-      .filter((a) => a.status === 'ASSIGNED' && ['completed', 'finalized'].includes(a.match_status) && a.ground_name)
-      .map((a) => a.ground_name),
-  )
+  const grounds = new Set((assignments || []).filter((a) => a.status === 'COMPLETED' && a.ground_name).map((a) => a.ground_name))
   return grounds.size
+}
+
+// "Matches in Last N Months" — same ASSIGNED/COMPLETED officiating-credit
+// rule as matchesThisMonth, generalized to the N full calendar months
+// immediately preceding the current one (deliberately excludes the current,
+// still-in-progress month — that's what the separate "This Month" tile is
+// for). Used for "Last Month" (n=1) and "Last 3 Months" (n=3) activity
+// tiles. Entirely client-side, to avoid ever introducing a new server-side
+// NOW()/date comparison (see reliability.js's history with matches.match_date
+// timezone issues last phase).
+export function matchesInLastNMonths(assignments, n, now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth() - n, 1).getTime()
+  const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  return (assignments || []).filter((a) => {
+    if (a.status !== 'ASSIGNED' && a.status !== 'COMPLETED') return false
+    const t = new Date(a.match_date).getTime()
+    return t >= start && t < end
+  }).length
 }

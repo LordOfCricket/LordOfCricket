@@ -3,8 +3,18 @@ import { MapPin, CalendarDays } from 'lucide-react'
 import { formatMatchDate, formatMatchTime, statusLabel } from '../../models/matchDiscovery.model.js'
 import { canCancelAssignment, canEnterScoring } from '../../models/umpireDashboard.model.js'
 
+// Phase 23 — status now reflects real history (ASSIGNED/COMPLETED/
+// CANCELLED/NO_SHOW), not just "Assigned" forever.
+const SLOT_STATUS_LABEL = {
+  ASSIGNED: 'Assigned',
+  COMPLETED: 'Officiated',
+  CANCELLED: 'Cancelled',
+  NO_SHOW: 'No-Show',
+}
+
 export default function AssignmentCard({ assignment, cancelling, onCancel, compact = false, showActions = true }) {
   const isLive = assignment.match_status === 'live'
+  const isCompleted = assignment.status === 'COMPLETED'
 
   return (
     <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-5 shadow-sm backdrop-blur-sm">
@@ -37,7 +47,9 @@ export default function AssignmentCard({ assignment, cancelling, onCancel, compa
         </span>
       </div>
 
-      <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status: Assigned</p>
+      <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Status: {SLOT_STATUS_LABEL[assignment.status] || assignment.status}
+      </p>
 
       {showActions && (
       <div className="mt-4 flex flex-wrap gap-3">
@@ -49,6 +61,14 @@ export default function AssignmentCard({ assignment, cancelling, onCancel, compa
             Enter Scoring
           </Link>
         )}
+        {assignment.status === 'ASSIGNED' && assignment.match_status === 'upcoming' && (
+          <Link
+            to={`/umpire/matches/${assignment.match_id}/briefing`}
+            className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl border border-emerald-400/30 px-5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/10"
+          >
+            Match Briefing
+          </Link>
+        )}
         {assignment.match_status === 'upcoming' && (
           <Link
             to={`/matches/${assignment.match_id}/setup`}
@@ -56,6 +76,22 @@ export default function AssignmentCard({ assignment, cancelling, onCancel, compa
           >
             View Match
           </Link>
+        )}
+        {isCompleted && (
+          <>
+            <Link
+              to={`/matches/${assignment.match_id}/summary`}
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/15 px-5 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/10"
+            >
+              View Result
+            </Link>
+            <Link
+              to={`/matches/${assignment.match_id}/feedback`}
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl border border-emerald-400/30 px-5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/10"
+            >
+              Feedback
+            </Link>
+          </>
         )}
         {canCancelAssignment(assignment) ? (
           <button

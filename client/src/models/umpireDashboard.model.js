@@ -8,23 +8,42 @@ export function slotSummary(match) {
   return { total, filled, open: Math.max(total - filled, 0) }
 }
 
-// Buckets by the MATCH's lifecycle, not the slot's — an ASSIGNED slot on a
-// completed/finalized match stays ASSIGNED forever today (nothing
-// transitions it to COMPLETED yet, a later phase's job), so match status is
-// the only reliable signal for "is this still upcoming/live/in the past".
-// Only ASSIGNED slots are "mine to act on" — CANCELLED history isn't shown
-// here (U4 explicitly defers advanced history).
+// Buckets for "My Matches" (U4, extended Phase 23 Workstream P). An
+// ASSIGNED slot's bucket follows the MATCH's lifecycle (upcoming/live/past);
+// a slot already COMPLETED (officiating credit, written the instant its
+// match completes — Phase 23) always belongs in `completed` regardless of
+// match_status, since match_status only reaches 'finalized' after. CANCELLED
+// and NO_SHOW are their own buckets — real, disclosed history, not hidden
+// the way U4 originally deferred it.
 export function bucketAssignments(assignments) {
   const upcoming = []
   const live = []
   const completed = []
+  const cancelled = []
+  const noShow = []
   for (const a of assignments || []) {
-    if (a.status !== 'ASSIGNED') continue
-    if (a.match_status === 'live') live.push(a)
-    else if (a.match_status === 'upcoming') upcoming.push(a)
-    else completed.push(a)
+    if (a.status === 'ASSIGNED') {
+      if (a.match_status === 'live') live.push(a)
+      else if (a.match_status === 'upcoming') upcoming.push(a)
+      else completed.push(a)
+    } else if (a.status === 'COMPLETED') {
+      completed.push(a)
+    } else if (a.status === 'CANCELLED') {
+      cancelled.push(a)
+    } else if (a.status === 'NO_SHOW') {
+      noShow.push(a)
+    }
   }
-  return { upcoming, live, completed }
+  return { upcoming, live, completed, cancelled, noShow }
+}
+
+// The single soonest upcoming assignment (Phase 23 — Umpire Dashboard's
+// "Next Assignment" card). `upcoming` isn't guaranteed date-sorted (the
+// backend orders by match_date DESC for the whole list), so this picks the
+// minimum explicitly rather than trusting index 0.
+export function nextAssignment(upcoming) {
+  if (!upcoming?.length) return null
+  return upcoming.reduce((soonest, a) => (new Date(a.match_date) < new Date(soonest.match_date) ? a : soonest))
 }
 
 // Mirrors the backend exactly (umpireAssignment.service.js's cancelAssignment,

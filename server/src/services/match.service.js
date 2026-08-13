@@ -8,8 +8,10 @@ import { findMatchByIdWithTeams, createMatch as createMatchModel, updateMatch } 
 import { findTeamById } from '../models/team.model.js'
 import { findGroundById } from '../models/ground.model.js'
 import { countPlayingXiByTeam } from '../repositories/matchPlayer.repository.js'
-import { createSlotsForMatch, findSlotsByMatch } from '../models/matchUmpireSlot.model.js'
+import { createSlotsForMatch, findSlotsByMatch, markSlotsCompletedForMatch, insertAssignmentEvent } from '../models/matchUmpireSlot.model.js'
+import { ensureEarningRecordsForMatch } from '../models/umpireEarning.model.js'
 import { pool } from '../config/db.js'
+import { logger } from '../utils/logger.js'
 
 const MIN_PLAYING_XI = 2 // absolute floor: need a striker and a non-striker to start batting
 const DEFAULT_MAX_PLAYING_XI = 11
@@ -194,12 +196,45 @@ export async function completeMatchManually(matchId) {
     throw conflict(`Cannot complete a match that is '${match.status}' — it must be live first.`)
   }
 
-  const updated = await updateMatch(match.id, {
-    status: 'completed',
-    completed_at: new Date(),
-    result_type: 'NO_RESULT',
-    result: 'Match ended without a result.',
-  })
+  // Transactional (Phase 23) so the status flip and the umpire slots'
+  // ASSIGNED -> COMPLETED officiating-credit write can never diverge — a
+  // crash between them would otherwise leave a completed match whose
+  // umpire never got credit, or vice versa.
+  const client = await pool.connect()
+  let updated
+  try {
+    await client.query('BEGIN')
+    updated = await updateMatch(
+      match.id,
+      { status: 'completed', completed_at: new Date(), result_type: 'NO_RESULT', result: 'Match ended without a result.' },
+      client,
+    )
+    const completedSlots = await markSlotsCompletedForMatch(match.id, client)
+    for (const slot of completedSlots) {
+      await insertAssignmentEvent({ slotId: slot.id, matchId: match.id, umpireUserId: slot.umpire_user_id, eventType: 'COMPLETED' }, client)
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // Umpire Communication & Commercial 2.0 — AFTER commit, not inside the
+  // transaction: a caught error mid-transaction still leaves Postgres in an
+  // aborted state, so swallowing it and proceeding to COMMIT would silently
+  // roll back the officiating-credit writes above too. Running it
+  // post-commit, best-effort (same posture as every notification/realtime
+  // side-effect in this codebase), means a bug here can never undo a real
+  // match completion — and it's idempotent (ON CONFLICT DO NOTHING), so the
+  // read-side's own defensive call self-heals if this one fails.
+  try {
+    await ensureEarningRecordsForMatch(match.id)
+  } catch (err) {
+    logger.error('ensureEarningRecordsForMatch failed after completeMatchManually', { matchId: match.id, error: err.message })
+  }
+
   return { match: updated, transitioned: true }
 }
 

@@ -28,9 +28,10 @@ import { computeSourceFingerprint } from '../domain/ai/computeSourceFingerprint.
 import { buildMatchAIContext } from '../domain/ai/buildMatchAIContext.js'
 import { buildPlayerAIContext } from '../domain/ai/buildPlayerAIContext.js'
 import { buildTeamAIContext } from '../domain/ai/buildTeamAIContext.js'
+import { buildUmpireAIContext } from '../domain/ai/buildUmpireAIContext.js'
 import { MATCH_INSIGHT_SCHEMA } from '../ai/schemas/matchInsightSchema.js'
 import { PERSON_INSIGHT_SCHEMA } from '../ai/schemas/personInsightSchema.js'
-import { MATCH_INSIGHT_SYSTEM_PROMPT, PLAYER_INSIGHT_SYSTEM_PROMPT, TEAM_INSIGHT_SYSTEM_PROMPT } from '../ai/prompts/systemPrompts.js'
+import { MATCH_INSIGHT_SYSTEM_PROMPT, PLAYER_INSIGHT_SYSTEM_PROMPT, TEAM_INSIGHT_SYSTEM_PROMPT, UMPIRE_INSIGHT_SYSTEM_PROMPT } from '../ai/prompts/systemPrompts.js'
 
 import * as matchSummaryService from './matchSummary.service.js'
 import * as scoringService from './scoring.service.js'
@@ -38,6 +39,8 @@ import * as commentaryRepo from '../repositories/commentary.repository.js'
 import * as statisticsService from './statistics.service.js'
 import * as publicTeamService from './publicTeam.service.js'
 import { findPlayerByPublicId } from '../models/player.model.js'
+import { buildReputationSummary } from './umpireReputation.service.js'
+import { findMonthlyOfficiatingTrend } from '../models/umpireTrend.model.js'
 import { logger } from '../utils/logger.js'
 
 // Part 29 — bounded, in-process single-flight de-dup: N spectators hitting
@@ -188,6 +191,39 @@ export async function getPlayerInsight(publicPlayerId, opts = {}) {
       },
       systemPrompt: PLAYER_INSIGHT_SYSTEM_PROMPT,
       taskInstruction: 'Write the player performance insight now, as a single JSON object matching the schema. Nothing else.',
+      schema: PERSON_INSIGHT_SCHEMA,
+    },
+    opts
+  )
+}
+
+// Umpire Intelligence & Scale 2.0, Workstreams L/M/N — self-scoped (userId
+// comes from the authenticated caller, never a route param — see
+// aiInsight.routes.js's own comment), unlike the public player/team
+// insights: an umpire's performance narrative is personal-insight
+// territory (Workstream W), not a public profile page.
+export async function getUmpireInsight(userId, opts = {}) {
+  return getOrGenerate(
+    {
+      sourceType: 'UMPIRE',
+      sourceId: String(userId),
+      buildFacts: async () => {
+        const [summary, trend] = await Promise.all([buildReputationSummary(userId), findMonthlyOfficiatingTrend(userId, 6)])
+        if (!summary || (summary.matchesOfficiated === 0 && summary.ratingCount === 0)) return null // Part 38 equivalent — never a forced insight with no data
+        const facts = buildUmpireAIContext(summary, trend)
+        return {
+          facts,
+          fingerprintInput: {
+            matchesOfficiated: summary.matchesOfficiated,
+            reliability: summary.reliability,
+            ratingAvg: summary.ratingAvg,
+            ratingCount: summary.ratingCount,
+            trend,
+          },
+        }
+      },
+      systemPrompt: UMPIRE_INSIGHT_SYSTEM_PROMPT,
+      taskInstruction: 'Write the umpire performance insight now, as a single JSON object matching the schema. Nothing else.',
       schema: PERSON_INSIGHT_SCHEMA,
     },
     opts

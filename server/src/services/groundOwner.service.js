@@ -1,8 +1,32 @@
+import { pool } from '../config/db.js'
 import { findGroundsOwnedByUser } from '../models/groundUser.model.js'
-import { findMatchesByGroundId, findMatchById, findMatchByIdWithTeams } from '../models/match.model.js'
-import { findSlotsByMatch } from '../models/matchUmpireSlot.model.js'
+import { findMatchesByGroundId, findMatchById, findMatchByIdWithTeams, updateMatch } from '../models/match.model.js'
+import {
+  findSlotsByMatch,
+  findSlotById,
+  markNoShow as markSlotNoShowModel,
+  assignReplacementToSlot,
+  insertAssignmentEvent,
+} from '../models/matchUmpireSlot.model.js'
+import { findUserById } from '../models/user.model.js'
+import { findIncidentsByMatch } from '../models/matchIncident.model.js'
 import * as matchService from './match.service.js'
+import { assertUmpireEligibleForMatch } from './umpireAssignment.service.js'
+import { buildReputationSummaries } from './umpireReputation.service.js'
+import { findEligibleUmpireCandidates } from './umpireEligibility.service.js'
+import { UmpireAssignmentError, UMPIRE_ASSIGNMENT_ERROR_CODES as CODES } from '../domain/umpireAssignment/errors.js'
 import { createNotification } from './groundNotification.service.js'
+import { ensureEarningRecordsForMatch, findEarningsForMatch, findEarningBySlotId, updatePaymentStatus as updatePaymentStatusModel } from '../models/umpireEarning.model.js'
+import { isValidPaymentStatusTransition } from '../domain/umpireCommerce/paymentStatus.js'
+import { utcToGroundLocalParts } from '../domain/shared/groundTime.js'
+import { computeStaffingForecast } from '../domain/umpireRecommendation/staffingForecast.js'
+
+// A ground-level aggregate below this many reviews is displayed as "not
+// enough data" rather than a misleading average (Workstream J's own
+// warning) — same spirit as ranking.js's ENOUGH_DATA_FLOOR, kept local
+// since this is a distinct "is this ground-month aggregate meaningful"
+// question, not a badge/ranking-consistency one.
+const GROUND_RATING_MIN_SAMPLE = 5
 
 function badRequest(message) {
   const err = new Error(message)
@@ -13,6 +37,12 @@ function badRequest(message) {
 function notFound(message) {
   const err = new Error(message)
   err.statusCode = 404
+  return err
+}
+
+function conflict(message) {
+  const err = new Error(message)
+  err.statusCode = 409
   return err
 }
 
@@ -32,7 +62,13 @@ async function resolveOwnedMatch(ground, matchId) {
 
 async function notifyAssignedUmpires(matchId, { type, title, body }) {
   const slots = await findSlotsByMatch(matchId)
-  const umpireUserIds = slots.filter((s) => s.status === 'ASSIGNED' && s.umpire_user_id).map((s) => s.umpire_user_id)
+  // 'COMPLETED' as well as 'ASSIGNED' (Phase 23): completeGroundMatch calls
+  // this AFTER matchService.completeMatchManually has already flipped the
+  // umpire's slot ASSIGNED -> COMPLETED (officiating credit), so by the time
+  // the MATCH_COMPLETED notification fires, ASSIGNED alone would find nobody.
+  // Safe for the MATCH_STARTING call site too — a slot is never COMPLETED
+  // before its match completes, so this can't broaden who gets notified there.
+  const umpireUserIds = slots.filter((s) => (s.status === 'ASSIGNED' || s.status === 'COMPLETED') && s.umpire_user_id).map((s) => s.umpire_user_id)
   await Promise.all(umpireUserIds.map((userId) => createNotification({ userId, type, title, body, relatedMatchId: matchId })))
 }
 
@@ -58,8 +94,27 @@ export async function listMyGrounds(userId) {
 
 // `ground` is already the authorized, resolved row requireGroundRole
 // attached to req.ground — ground.id here is never client-supplied.
+//
+// Umpire Intelligence & Scale 2.0, Workstream K — each 'upcoming' match
+// gains a deterministic `staffingForecast` field, computed from data
+// already on the row (filled_slots/total_slots/match_date) — no new query.
+// `new Date(m.match_date).getTime()` vs `Date.now()` is a plain instant
+// difference (timezone-invariant once both sides are real Date objects) —
+// the SAME read path matchTimeRange.js#estimateMatchTimeRange already uses
+// elsewhere in this codebase for match_date, not a new/4th interpretation
+// (Workstream Y). Its known, disclosed Node-process-TZ dependency (flagged,
+// not fixed, in Communication & Commercial 2.0) applies equally here — no
+// new risk introduced.
 export async function listGroundMatches(ground) {
-  return findMatchesByGroundId(ground.id)
+  const matches = await findMatchesByGroundId(ground.id)
+  return matches.map((m) => {
+    if (m.status !== 'upcoming') return m
+    const hoursUntilMatch = (new Date(m.match_date).getTime() - Date.now()) / (60 * 60 * 1000)
+    return {
+      ...m,
+      staffingForecast: computeStaffingForecast({ filledSlots: m.filled_slots, totalSlots: m.total_slots, hoursUntilMatch }),
+    }
+  })
 }
 
 // U8 hardening fix: oversPerInnings/ballsPerOver were never accepted here at
@@ -97,9 +152,83 @@ export async function createGroundMatch(ground, { teamAId, teamBId, matchDate, r
 // just properly scoped to the authorized owner of the match's own ground
 // rather than any authenticated user. No phone number: users has no phone
 // column anywhere in this schema — never fabricated, simply not returned.
+//
+// Phase 24 — each slot with an umpire gets a `reputation` summary, fetched
+// via ONE batched call (buildReputationSummaries) across every distinct
+// umpire on this match's slots, never one query per slot.
+// Umpire Communication & Commercial 2.0 — self-heals earnings for any slot
+// that completed since the last view (ensureEarningRecordsForMatch is
+// idempotent), then attaches the match's fee + each slot's earning/payment
+// status. No new "commercial view" endpoint — this existing response is
+// additively extended, matching Workstream X's "one cohesive response"
+// guidance exactly the way Reputation 2.0 already did for this same route.
 export async function getMatchUmpireSlots(ground, matchId) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  await ensureEarningRecordsForMatch(matchId)
+  const [slots, earnings] = await Promise.all([findSlotsByMatch(matchId), findEarningsForMatch(matchId)])
+  const umpireIds = slots.map((s) => s.umpire_user_id).filter(Boolean)
+  const summaries = await buildReputationSummaries(umpireIds)
+  const earningsBySlot = new Map(earnings.map((e) => [e.match_umpire_slot_id, e]))
+  return {
+    umpireFee:
+      match.umpire_fee_amount != null ? { amount: match.umpire_fee_amount, currency: match.umpire_fee_currency } : null,
+    slots: slots.map((slot) => {
+      const earning = earningsBySlot.get(slot.id)
+      return {
+        ...slot,
+        reputation: slot.umpire_user_id ? summaries.get(slot.umpire_user_id) || null : null,
+        earning: earning ? { id: earning.id, amount: earning.amount, currency: earning.currency, status: earning.status } : null,
+      }
+    }),
+  }
+}
+
+// Fee = per-umpire, applied uniformly to every slot on the match (confirmed
+// semantic — no prior precedent existed anywhere in LOC). Only the owning
+// Ground Owner may set/update it, and never once the match has reached a
+// terminal state (Workstream R) — enforced here, in the service layer,
+// matching every other write-time business rule in this codebase (no DB
+// trigger).
+export async function setMatchUmpireFee(ground, matchId, actingUserId, { amount, currency = 'INR' }) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  if (match.status === 'completed' || match.status === 'finalized') {
+    throw conflict('The umpire fee cannot be changed once the match has completed.')
+  }
+  const numericAmount = Number(amount)
+  if (!Number.isFinite(numericAmount) || numericAmount < 0) {
+    throw badRequest('amount must be a non-negative number.')
+  }
+  if (typeof currency !== 'string' || currency.length !== 3) {
+    throw badRequest('currency must be a 3-letter code.')
+  }
+  return updateMatch(matchId, {
+    umpire_fee_amount: numericAmount.toFixed(2),
+    umpire_fee_currency: currency.toUpperCase(),
+    umpire_fee_set_by: actingUserId,
+    umpire_fee_updated_at: new Date(),
+  })
+}
+
+// Payment status — only the owning Ground Owner may transition it, and only
+// along the documented, terminal-state-guarded transitions
+// (isValidPaymentStatusTransition). amount/currency/umpireId are never
+// accepted from the request body here — they were already fixed at
+// earning-creation time from the match's own fee (Workstream S: never trust
+// client-supplied commercial values).
+export async function updateSlotPaymentStatus(ground, matchId, slotId, status) {
   await resolveOwnedMatch(ground, matchId)
-  return findSlotsByMatch(matchId)
+  const slot = await findSlotById(slotId)
+  if (!slot || slot.match_id !== matchId) {
+    throw notFound('Umpire slot not found for this match.')
+  }
+  const earning = await findEarningBySlotId(slotId)
+  if (!earning) {
+    throw notFound('No earning record exists for this slot yet.')
+  }
+  if (!isValidPaymentStatusTransition(earning.status, status)) {
+    throw conflict(`Cannot move payment status from '${earning.status}' to '${status}'.`)
+  }
+  return updatePaymentStatusModel(earning.id, status)
 }
 
 // "Match is Starting" — reuses match.service.js#startMatch verbatim (toss/
@@ -135,4 +264,238 @@ export async function completeGroundMatch(ground, matchId) {
     })
   }
   return match
+}
+
+// Verifies the target slot belongs to THIS match (never trust a slot id
+// alone — a ground owner could otherwise probe/act on any slot id from any
+// match) and is in the expected current status. 404, not 409, when the slot
+// doesn't belong to the match — same "don't even confirm it exists"
+// posture resolveOwnedMatch uses for cross-ground matches.
+async function resolveEligibleSlot(matchId, slotId, expectedStatus) {
+  const slot = await findSlotById(slotId)
+  if (!slot || slot.match_id !== matchId) {
+    throw new UmpireAssignmentError(CODES.SLOT_NOT_FOUND, 'Umpire slot not found for this match.')
+  }
+  if (slot.status !== expectedStatus) {
+    throw new UmpireAssignmentError(CODES.SLOT_NOT_ELIGIBLE, `This slot is '${slot.status}', not '${expectedStatus}'.`)
+  }
+  return slot
+}
+
+// No-show (Workstream F) — only an authorized ground owner of the match's
+// own ground, only while the match hasn't reached a terminal state, only a
+// currently ASSIGNED slot. Marking a slot NO_SHOW while the match is still
+// 'live' immediately revokes that umpire's scoring access (requireMatchScorer
+// re-checks hasActiveSlotAssignment live), which is the intended effect —
+// an absent umpire shouldn't retain scoring rights.
+export async function markMatchUmpireNoShow(ground, matchId, slotId, actingUserId) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  if (match.status !== 'upcoming' && match.status !== 'live') {
+    throw new UmpireAssignmentError(CODES.MATCH_NOT_ELIGIBLE, `Cannot mark a no-show on a match that is '${match.status}'.`)
+  }
+  const slot = await resolveEligibleSlot(matchId, slotId, 'ASSIGNED')
+  const noShowUmpireId = slot.umpire_user_id
+
+  const client = await pool.connect()
+  let updated
+  try {
+    await client.query('BEGIN')
+    updated = await markSlotNoShowModel(slotId, client)
+    if (!updated) {
+      throw new UmpireAssignmentError(CODES.SLOT_NOT_ELIGIBLE, 'This slot is no longer ASSIGNED.')
+    }
+    await insertAssignmentEvent({ slotId, matchId, umpireUserId: noShowUmpireId, eventType: 'NO_SHOW', recordedBy: actingUserId }, client)
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  const withTeams = await findMatchByIdWithTeams(matchId)
+  await createNotification({
+    userId: noShowUmpireId,
+    type: 'UMPIRE_NO_SHOW',
+    title: 'You were marked as a no-show',
+    body: `You were marked as a no-show for ${withTeams.team_a_name} vs ${withTeams.team_b_name}.`,
+    relatedMatchId: matchId,
+  })
+
+  return updated
+}
+
+// Candidate pool for a NO_SHOW slot — approved, no conflicting match,
+// available, not already actively assigned to THIS match, and not the
+// no-show umpire themselves (a "find replacement" flow offering someone as
+// their own replacement is confusing UX, not a real replacement — the
+// no-show umpire otherwise passes every one of these checks, since their own
+// slot is no longer ASSIGNED). Reuses the exact same overlap/availability
+// logic assertUmpireEligibleForMatch enforces at write time, as a filter
+// instead of a throw, so this list can never show a candidate the actual
+// replace call would then reject.
+//
+// Phase 24 — the per-candidate eligibility checks run CONCURRENTLY across
+// candidates (Promise.all over the whole candidate list) instead of
+// one-candidate-at-a-time in a sequential for-loop — a confirmed N+1 the
+// previous phase left as a known gap — and each surviving candidate gets a
+// `reputation` summary via ONE batched call at the end, never per-candidate.
+//
+// Umpire Intelligence & Scale 2.0 — the eligibility-filtering logic itself
+// now lives in umpireEligibility.service.js#findEligibleUmpireCandidates
+// (extracted, behavior-unchanged) so the new recommendation engine reuses
+// the identical pipeline instead of a second implementation.
+export async function listEligibleReplacements(ground, matchId, slotId) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  const slot = await resolveEligibleSlot(matchId, slotId, 'NO_SHOW')
+
+  const eligible = await findEligibleUmpireCandidates(match, { excludeUserId: slot.umpire_user_id })
+
+  const summaries = await buildReputationSummaries(eligible.map((c) => c.id))
+  return eligible.map((c) => ({ id: c.id, name: c.name, reputation: summaries.get(c.id) || null }))
+}
+
+// Replacement (Workstream G) — the new umpire goes through the EXACT same
+// eligibility gate applyForSlot uses (assertUmpireEligibleForMatch: approved,
+// overlap, availability), never a bare guarded UPDATE, so a ground-owner-
+// initiated replacement can never bypass the protections U10/Phase 23-A
+// already established for self-service assignment.
+export async function assignReplacementUmpire(ground, matchId, slotId, newUmpireUserId, actingUserId) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  if (match.status !== 'upcoming' && match.status !== 'live') {
+    throw new UmpireAssignmentError(CODES.MATCH_NOT_ELIGIBLE, `Cannot assign a replacement on a match that is '${match.status}'.`)
+  }
+  await resolveEligibleSlot(matchId, slotId, 'NO_SHOW')
+
+  const candidate = await findUserById(newUmpireUserId)
+  if (!candidate) throw new UmpireAssignmentError(CODES.MATCH_NOT_FOUND, 'Replacement umpire not found.')
+
+  const client = await pool.connect()
+  let slot
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT pg_advisory_xact_lock($1)', [newUmpireUserId])
+
+    await assertUmpireEligibleForMatch(match, candidate, client)
+
+    slot = await assignReplacementToSlot(slotId, newUmpireUserId, client)
+    if (!slot) {
+      throw new UmpireAssignmentError(CODES.SLOT_NOT_ELIGIBLE, 'This slot is no longer NO_SHOW.')
+    }
+    await insertAssignmentEvent(
+      { slotId, matchId, umpireUserId: newUmpireUserId, eventType: 'REPLACEMENT_ASSIGNED', recordedBy: actingUserId },
+      client,
+    )
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  const withTeams = await findMatchByIdWithTeams(matchId)
+  const matchLabel = `${withTeams.team_a_name} vs ${withTeams.team_b_name}`
+  await Promise.all([
+    createNotification({
+      userId: newUmpireUserId,
+      type: 'UMPIRE_REPLACEMENT_ASSIGNED',
+      title: "You're now assigned as a replacement umpire",
+      body: matchLabel,
+      relatedMatchId: matchId,
+    }),
+  ])
+
+  return slot
+}
+
+// Replacement/assignment history (Workstream H) — the lightweight read
+// umpire_assignment_events exists for: every ASSIGNED/CANCELLED/NO_SHOW/
+// REPLACEMENT_ASSIGNED/COMPLETED event for this match, oldest first, with
+// enough context to render a 3-line timeline per slot without a second
+// round trip.
+export async function getMatchAssignmentHistory(ground, matchId) {
+  await resolveOwnedMatch(ground, matchId)
+  const { rows } = await pool.query(
+    `SELECT e.id, e.match_umpire_slot_id, e.event_type, e.recorded_at, e.umpire_user_id, u.name AS umpire_name
+     FROM umpire_assignment_events e
+     LEFT JOIN users u ON u.id = e.umpire_user_id
+     WHERE e.match_id = $1
+     ORDER BY e.recorded_at ASC`,
+    [matchId],
+  )
+  return rows
+}
+
+// Ground-owner read path for incidents (Workstream I) — same
+// findIncidentsByMatch model function the umpire-side GET /matches/:id/
+// incidents route uses, just reused through the ground-scoped auth gate
+// instead of requireMatchScorerByParam.
+export async function getMatchIncidents(ground, matchId) {
+  await resolveOwnedMatch(ground, matchId)
+  return findIncidentsByMatch(matchId)
+}
+
+// Umpire Intelligence & Scale 2.0, Workstream J — "Umpire Operations" for
+// the current ground-local calendar month. Every count derives from
+// matches.match_date's own naive digits (already ground-local — see
+// Communication 2.0), compared via plain EXTRACT(YEAR/MONTH) against the
+// CURRENT ground-local calendar month, never a NOW()-vs-naive-column
+// instant comparison (the exact bug class that phase fixed).
+//
+// "Understaffed starts" from the task's own example cannot be computed
+// honestly: no column anywhere records whether a match was started while
+// understaffed (confirmUnderstaffed is a transient request flag, never
+// persisted — confirmed by inspecting match.service.js#startMatch). Rather
+// than add a new column for one minor metric or silently approximate it,
+// this reports the real, currently-computable equivalent instead:
+// "currentlyUnderstaffedUpcoming" — upcoming matches this month that are
+// understaffed as of right now. Disclosed, not silently renamed.
+export async function getUmpireOperationsSummary(ground) {
+  const { year, month } = utcToGroundLocalParts(new Date())
+
+  const [{ rows: matchRows }, { rows: ratingRows }, { rows: noShowRows }] = await Promise.all([
+    pool.query(
+      `SELECT
+         COUNT(*)::int AS matches_this_month,
+         COUNT(*) FILTER (
+           WHERE m.required_umpires > 0
+             AND (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status = 'ASSIGNED') >= m.required_umpires
+         )::int AS fully_staffed,
+         COUNT(*) FILTER (
+           WHERE m.status = 'upcoming'
+             AND m.required_umpires > 0
+             AND (SELECT COUNT(*)::int FROM match_umpire_slots s WHERE s.match_id = m.id AND s.status = 'ASSIGNED') < m.required_umpires
+         )::int AS currently_understaffed_upcoming
+       FROM matches m
+       WHERE m.ground_id = $1 AND EXTRACT(YEAR FROM m.match_date) = $2 AND EXTRACT(MONTH FROM m.match_date) = $3`,
+      [ground.id, year, month],
+    ),
+    pool.query(
+      `SELECT AVG(rat.rating)::numeric(3,2) AS avg_rating, COUNT(*)::int AS rating_count
+       FROM match_feedback_umpire_ratings rat
+       JOIN match_feedback mf ON mf.id = rat.match_feedback_id
+       JOIN matches m ON m.id = mf.match_id
+       WHERE m.ground_id = $1 AND EXTRACT(YEAR FROM m.match_date) = $2 AND EXTRACT(MONTH FROM m.match_date) = $3`,
+      [ground.id, year, month],
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS no_show_count
+       FROM umpire_assignment_events e
+       JOIN matches m ON m.id = e.match_id
+       WHERE m.ground_id = $1 AND e.event_type = 'NO_SHOW' AND EXTRACT(YEAR FROM m.match_date) = $2 AND EXTRACT(MONTH FROM m.match_date) = $3`,
+      [ground.id, year, month],
+    ),
+  ])
+
+  const match = matchRows[0]
+  const rating = ratingRows[0]
+  return {
+    matchesThisMonth: match.matches_this_month,
+    fullyStaffed: match.fully_staffed,
+    currentlyUnderstaffedUpcoming: match.currently_understaffed_upcoming,
+    avgUmpireRating: rating.rating_count >= GROUND_RATING_MIN_SAMPLE ? Number(rating.avg_rating) : null,
+    ratingSampleSize: rating.rating_count,
+    noShowCount: noShowRows[0].no_show_count,
+  }
 }

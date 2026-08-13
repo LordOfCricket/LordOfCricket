@@ -59,3 +59,26 @@ export async function updateMyUmpireProfile(fields) {
   const { data } = await api.patch('/umpire/profile', fields)
   return data.profile
 }
+
+// Umpire Communication & Commercial 2.0 — "My Earnings" summary + recent list.
+export async function fetchMyEarnings() {
+  const { data } = await api.get('/umpire/earnings')
+  return data
+}
+
+// Umpire Intelligence & Scale 2.0 — monthly officiating/rating/reliability trend.
+export async function fetchMyOfficiatingTrend(months) {
+  const { data } = await api.get('/umpire/statistics/trend', { params: { months } })
+  return data.months
+}
+
+// Umpire Intelligence & Scale 2.0 — AI performance summary (self-scoped).
+export async function fetchMyUmpireInsight() {
+  const { data } = await api.get('/umpire/ai-insight')
+  return data
+}
+
+export async function regenerateMyUmpireInsight() {
+  const { data } = await api.post('/umpire/ai-insight/regenerate')
+  return data
+}

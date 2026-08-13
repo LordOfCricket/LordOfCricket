@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Trophy } from 'lucide-react'
 import { fetchLeaderboard } from '../../services/statisticsApi.js'
 import { fetchTeams } from '../../services/playerApi.js'
@@ -124,9 +124,14 @@ export default function LeaderboardsPage() {
       <div className="mx-auto max-w-4xl">
         <BackButton fallback="/" />
 
-        <div className="mt-4 flex items-center gap-3">
-          <Trophy className="h-7 w-7 text-amber-300" />
-          <h1 className="text-3xl font-bold text-white">Leaderboards</h1>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Trophy className="h-7 w-7 text-amber-300" />
+            <h1 className="text-3xl font-bold text-white">Leaderboards</h1>
+          </div>
+          <Link to="/leaderboards/umpires" className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/5">
+            Top Umpires →
+          </Link>
         </div>
         <p className="mt-1 text-sm text-slate-300">All-time official rankings, derived from finalized LOC matches.</p>
 

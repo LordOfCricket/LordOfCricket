@@ -33,7 +33,7 @@ import { isSuperAdminUser } from './auth.js'
 import { isApprovedUmpireUser } from '../models/umpireRequest.model.js'
 import { findMatchById } from '../models/match.model.js'
 import { findInningsById } from '../repositories/innings.repository.js'
-import { hasActiveSlotAssignment } from '../models/matchUmpireSlot.model.js'
+import { hasHeldSlotAssignment } from '../models/matchUmpireSlot.model.js'
 
 const DEFAULT_ALLOWED_STATUSES = ['upcoming', 'live']
 
@@ -59,7 +59,11 @@ function requireMatchScorer(resolveMatchId, { allowedStatuses = DEFAULT_ALLOWED_
         return res.status(404).json({ error: 'Match not found.' })
       }
 
-      const assigned = await hasActiveSlotAssignment(match.id, req.user.id)
+      // Phase 23: also true once COMPLETED (officiating credit), not just
+      // ASSIGNED — see hasHeldSlotAssignment's own comment. The
+      // allowedStatuses check right below is still what actually revokes
+      // access for every route except finalize's deliberate exception.
+      const assigned = await hasHeldSlotAssignment(match.id, req.user.id)
       if (!assigned) {
         return res.status(403).json({ error: 'You are not assigned to umpire this match.' })
       }

@@ -41,3 +41,31 @@ export async function fetchMatchInnings(matchId) {
   const { data } = await api.get(`/matches/${matchId}/innings`)
   return data.innings
 }
+
+// Phase 23 — umpire operational actions on a match, all gated server-side by
+// the same requireMatchScorerByParam gate as toss/start (only the actively
+// assigned umpire may call these).
+export async function checkInForMatch(matchId, { latitude, longitude } = {}) {
+  const { data } = await api.post(`/matches/${matchId}/checkin`, { latitude, longitude })
+  return data.slot
+}
+
+export async function fetchMatchChecklist(matchId) {
+  const { data } = await api.get(`/matches/${matchId}/checklist`)
+  return data.items
+}
+
+export async function updateMatchChecklistItem(matchId, itemKey, isChecked) {
+  const { data } = await api.patch(`/matches/${matchId}/checklist`, { itemKey, isChecked })
+  return data.item
+}
+
+export async function reportMatchIncident(matchId, { incidentType, description, occurredAt } = {}) {
+  const { data } = await api.post(`/matches/${matchId}/incidents`, { incidentType, description, occurredAt })
+  return data.incident
+}
+
+export async function fetchMatchIncidents(matchId) {
+  const { data } = await api.get(`/matches/${matchId}/incidents`)
+  return data.incidents
+}

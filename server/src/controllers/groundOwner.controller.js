@@ -1,4 +1,5 @@
 import * as groundOwnerService from '../services/groundOwner.service.js'
+import { recommendUmpiresForMatch } from '../services/umpireRecommendation.service.js'
 
 export async function listMyGrounds(req, res, next) {
   try {
@@ -45,8 +46,54 @@ export async function createGroundMatch(req, res, next) {
 // on every one of these three actions.
 export async function getGroundMatchUmpireSlots(req, res, next) {
   try {
-    const slots = await groundOwnerService.getMatchUmpireSlots(req.ground, Number(req.params.matchId))
-    res.json({ slots })
+    const { slots, umpireFee } = await groundOwnerService.getMatchUmpireSlots(req.ground, Number(req.params.matchId))
+    res.json({ slots, umpireFee })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getUmpireOperationsSummary(req, res, next) {
+  try {
+    const summary = await groundOwnerService.getUmpireOperationsSummary(req.ground)
+    res.json({ summary })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getRecommendedUmpires(req, res, next) {
+  try {
+    const candidates = await recommendUmpiresForMatch(req.ground, Number(req.params.matchId), {
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    })
+    res.json({ candidates })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function setGroundMatchUmpireFee(req, res, next) {
+  try {
+    const match = await groundOwnerService.setMatchUmpireFee(req.ground, Number(req.params.matchId), req.user.id, {
+      amount: req.body?.amount,
+      currency: req.body?.currency,
+    })
+    res.json({ match })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function updateGroundMatchSlotPaymentStatus(req, res, next) {
+  try {
+    const earning = await groundOwnerService.updateSlotPaymentStatus(
+      req.ground,
+      Number(req.params.matchId),
+      Number(req.params.slotId),
+      req.body?.status,
+    )
+    res.json({ earning })
   } catch (err) {
     next(err)
   }
@@ -67,6 +114,59 @@ export async function completeGroundMatch(req, res, next) {
   try {
     const match = await groundOwnerService.completeGroundMatch(req.ground, Number(req.params.matchId))
     res.json({ match })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function markUmpireNoShow(req, res, next) {
+  try {
+    const slot = await groundOwnerService.markMatchUmpireNoShow(req.ground, Number(req.params.matchId), Number(req.params.slotId), req.user.id)
+    res.json({ slot })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getEligibleReplacements(req, res, next) {
+  try {
+    const candidates = await groundOwnerService.listEligibleReplacements(req.ground, Number(req.params.matchId), Number(req.params.slotId))
+    res.json({ candidates })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function assignReplacementUmpire(req, res, next) {
+  try {
+    const newUmpireUserId = Number(req.body?.newUmpireUserId)
+    if (!Number.isInteger(newUmpireUserId)) return res.status(400).json({ error: 'newUmpireUserId is required.' })
+    const slot = await groundOwnerService.assignReplacementUmpire(
+      req.ground,
+      Number(req.params.matchId),
+      Number(req.params.slotId),
+      newUmpireUserId,
+      req.user.id,
+    )
+    res.json({ slot })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getMatchAssignmentHistory(req, res, next) {
+  try {
+    const events = await groundOwnerService.getMatchAssignmentHistory(req.ground, Number(req.params.matchId))
+    res.json({ events })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getMatchIncidents(req, res, next) {
+  try {
+    const incidents = await groundOwnerService.getMatchIncidents(req.ground, Number(req.params.matchId))
+    res.json({ incidents })
   } catch (err) {
     next(err)
   }

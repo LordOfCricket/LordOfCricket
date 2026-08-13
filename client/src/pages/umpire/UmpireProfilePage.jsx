@@ -5,6 +5,8 @@ import { useUmpireProfile } from '../../hooks/useUmpireProfile.js'
 import UmpireLayout from '../../components/umpire-dashboard/UmpireLayout.jsx'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import StatTile from '../../components/stats/StatTile.jsx'
+import ReputationBadges from '../../components/common/ReputationBadges.jsx'
+import { experienceLabel, hasEnoughDataForTrend } from '../../models/umpireReputation.model.js'
 
 export default function UmpireProfilePage() {
   const { user } = useAuth()
@@ -37,6 +39,15 @@ export default function UmpireProfilePage() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Name</p>
                 <p className="mt-1 text-base text-white">{user?.name}</p>
               </div>
+
+              <ReputationBadges verified={profile.verified} badges={profile.badges} />
+
+              {experienceLabel(profile.experienceYears) && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Experience</p>
+                  <p className="mt-1 text-base text-white">{experienceLabel(profile.experienceYears)}</p>
+                </div>
+              )}
 
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Bio</span>
@@ -112,6 +123,30 @@ export default function UmpireProfilePage() {
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-400">Not available yet — no umpire feedback has been submitted for you.</p>
+            )}
+          </div>
+
+          <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
+            <h2 className="text-xl font-semibold text-white">Rating Trend</h2>
+            {/* Last up to 5 individual ratings, oldest -> newest — never a
+                fabricated month-bucketed trend, and never implied as
+                statistically meaningful from a single review. */}
+            {hasEnoughDataForTrend(profile.recentRatings) ? (
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                {profile.recentRatings.map((r, i) => (
+                  <div key={i} className="flex flex-col items-center gap-1">
+                    <span className="flex items-center gap-1 text-sm font-bold text-amber-300">
+                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                      {Number(r.rating).toFixed(1)}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {new Date(r.createdAt).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-400">Not enough data yet.</p>
             )}
           </div>
         </div>

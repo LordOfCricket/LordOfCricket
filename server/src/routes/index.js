@@ -23,6 +23,8 @@ import groundBookingRoutes from './groundBooking.routes.js'
 import groundOpsRoutes from './groundOps.routes.js'
 import matchAvailabilityRoutes, { meAvailabilityRoutes } from './matchAvailability.routes.js'
 import umpireAssignmentRoutes from './umpireAssignment.routes.js'
+import matchMessageRoutes from './matchMessage.routes.js'
+import { topUmpiresRoutes } from './umpireLeaderboard.routes.js'
 import umpireSelfRoutes from './umpireSelf.routes.js'
 import groundOwnerRoutes from './groundOwner.routes.js'
 import matchFeedbackRoutes from './matchFeedback.routes.js'
@@ -59,6 +61,8 @@ router.use('/me', meAvailabilityRoutes)
 
 // Phase 21 (U3) — umpire match-slot application/assignment.
 router.use('/matches', umpireAssignmentRoutes)
+// Umpire Communication & Commercial 2.0 — match-scoped messages.
+router.use('/matches', matchMessageRoutes)
 // Phase 21 (U4) — the umpire's own dashboard reads (available matches, my
 // assignments, my profile).
 router.use('/umpire', umpireSelfRoutes)
@@ -94,6 +98,9 @@ router.use('/tournaments', tournamentAnalyticsRoutes)
 router.use('/players', playerStatsRoutes)
 router.use('/me', meStatsRoutes)
 router.use('/stats', leaderboardRoutes)
+// Umpire Intelligence & Scale 2.0 — deliberately a separate route, never
+// merged into the player leaderboard's own :metric space.
+router.use('/stats', topUmpiresRoutes)
 
 // Site-wide auth (single login for players, staff, umpires)
 router.use('/auth', authRoutes)
