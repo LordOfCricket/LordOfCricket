@@ -10,6 +10,7 @@ import { fetchTeams } from '../../services/playerApi.js'
 import { formatMatchDate, formatMatchTime, statusLabel, formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 import { slotStatusInfo, describeSlot } from '../../models/groundOwnerDashboard.model.js'
 import { PAYMENT_STATUSES, paymentStatusLabel, paymentStatusClasses, formatAmount } from '../../models/umpireEarnings.model.js'
+import { proposalStatusLabel, proposalStatusClasses } from '../../models/umpireProposal.model.js'
 import { staffingForecastLabel, staffingForecastClasses } from '../../models/staffingForecast.model.js'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import ReplacementPicker from '../../components/ground-owner/ReplacementPicker.jsx'
@@ -147,7 +148,35 @@ function PaymentStatusControl({ matchId, slot, slotsHook }) {
   )
 }
 
-function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook }) {
+function PendingProposalsForSlot({ matchId, slotId, proposals, slotsHook }) {
+  const pending = (proposals || []).filter((p) => p.match_umpire_slot_id === slotId && p.status === 'PENDING')
+  if (pending.length === 0) return null
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {pending.map((p) => {
+        const busy = slotsHook.actionBusyId === `proposal-${p.id}`
+        return (
+          <li key={p.id} className={`flex items-center justify-between gap-2 rounded-full border px-2.5 py-1 text-[11px] ${proposalStatusClasses(p.status)}`}>
+            <span>
+              Offered to {p.umpire_name}
+              {Number(p.incentive_amount) > 0 ? ` (+${formatAmount(p.incentive_amount, p.currency)})` : ''} · {proposalStatusLabel(p.status)}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => slotsHook.cancelProposal(matchId, p.id)}
+              className="shrink-0 font-semibold underline decoration-dotted hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? 'Withdrawing…' : 'Withdraw'}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook, proposals }) {
   const [findingReplacement, setFindingReplacement] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const { label, detail } = describeSlot(slot)
@@ -172,6 +201,7 @@ function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook 
         </div>
       )}
       <PaymentStatusControl matchId={matchId} slot={slot} slotsHook={slotsHook} />
+      <PendingProposalsForSlot matchId={matchId} slotId={slot.id} proposals={proposals} slotsHook={slotsHook} />
       {(slot.status === 'ASSIGNED' || slot.status === 'COMPLETED') && slot.umpire_user_id && (
         <button
           type="button"
@@ -275,9 +305,14 @@ function FeeControl({ matchId, matchStatus, umpireFee, slotsHook }) {
 function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, loading, error, onExpand, slotsHook, hasOpenCapacity }) {
   const [expanded, setExpanded] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const openSlot = slots?.find((s) => s.status === 'AVAILABLE' || s.status === 'CANCELLED')
+  const proposals = slotsHook.proposalsByMatch[matchId]
 
   const toggle = () => {
-    if (!expanded) onExpand(matchId)
+    if (!expanded) {
+      onExpand(matchId)
+      slotsHook.loadProposals(matchId)
+    }
     setExpanded((v) => !v)
   }
 
@@ -299,7 +334,16 @@ function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, lo
           {!loading && !error && slots && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <FeeControl matchId={matchId} matchStatus={matchStatus} umpireFee={umpireFee} slotsHook={slotsHook} />
-              {hasOpenCapacity && matchStatus === 'upcoming' && <RecommendedUmpires publicGroundId={publicGroundId} matchId={matchId} />}
+              {hasOpenCapacity && matchStatus === 'upcoming' && (
+                <RecommendedUmpires
+                  publicGroundId={publicGroundId}
+                  matchId={matchId}
+                  openSlotId={openSlot?.id}
+                  onPropose={(slotId, umpireUserId, payload) => slotsHook.proposeUmpire(matchId, slotId, umpireUserId, payload)}
+                  proposeBusy={openSlot && slotsHook.actionBusyId === openSlot.id}
+                  proposeError={slotsHook.actionError}
+                />
+              )}
               {slots.map((slot, i) => (
                 <SlotRow
                   key={slot.id}
@@ -309,6 +353,7 @@ function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, lo
                   slot={slot}
                   index={i}
                   slotsHook={slotsHook}
+                  proposals={proposals}
                 />
               ))}
               {slotsHook.actionError && <p className="mt-2 text-xs text-rose-300">{slotsHook.actionError}</p>}

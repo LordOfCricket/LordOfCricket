@@ -2,17 +2,23 @@ import { useEffect, useState } from 'react'
 import { Star, Sparkles } from 'lucide-react'
 import { fetchRecommendedUmpires } from '../../services/groundOwnerApi.js'
 import ReputationBadges from '../common/ReputationBadges.jsx'
+import ProposeUmpireForm from './ProposeUmpireForm.jsx'
 
 // Umpire Intelligence & Scale 2.0, Workstreams C/D/F/V — deterministic,
 // explainable recommendations for a match with open umpire capacity.
-// Purely informational: assignment still happens through the existing
-// apply/replace flows elsewhere on this page — this component never
-// assigns anybody itself. Fetched on-demand only when the Ground Owner
-// actually opens it, same lazy-load posture as ReplacementPicker.
-export default function RecommendedUmpires({ publicGroundId, matchId }) {
+// Purely informational by default: assignment still happens through the
+// existing apply/replace flows elsewhere on this page. Umpire Proposals
+// adds one exception — a "Propose" action per candidate that sends a
+// (optionally bonus-sweetened) invitation to the match's first open slot,
+// only rendered when the caller supplies an openSlotId and propose handler.
+// Fetched on-demand only when the Ground Owner actually opens it, same
+// lazy-load posture as ReplacementPicker.
+export default function RecommendedUmpires({ publicGroundId, matchId, openSlotId, onPropose, proposeBusy, proposeError }) {
   const [candidates, setCandidates] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [proposingTo, setProposingTo] = useState(null)
+  const canPropose = Boolean(openSlotId && onPropose)
 
   useEffect(() => {
     let cancelled = false
@@ -64,6 +70,26 @@ export default function RecommendedUmpires({ publicGroundId, matchId }) {
                     </li>
                   ))}
                 </ul>
+              )}
+              {canPropose && proposingTo !== c.id && (
+                <button
+                  type="button"
+                  onClick={() => setProposingTo(c.id)}
+                  className="mt-2 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+                >
+                  Propose
+                </button>
+              )}
+              {canPropose && proposingTo === c.id && (
+                <ProposeUmpireForm
+                  busy={proposeBusy}
+                  error={proposeError}
+                  onCancel={() => setProposingTo(null)}
+                  onSubmit={async (payload) => {
+                    const ok = await onPropose(openSlotId, c.id, payload)
+                    if (ok) setProposingTo(null)
+                  }}
+                />
               )}
             </li>
           ))}

@@ -6,6 +6,7 @@ import {
   setGroundMatchUmpireFee,
   updateGroundMatchSlotPaymentStatus,
 } from '../services/groundOwnerApi.js'
+import { proposeUmpireForSlot, fetchMatchProposals, cancelMatchProposal } from '../services/umpireProposalApi.js'
 
 // Lazy, on-demand fetch of one match's per-slot umpire detail, properly
 // scoped to the owner of the match's own ground (requireGroundRole
@@ -20,6 +21,9 @@ export function useMatchUmpireSlots(publicGroundId) {
   // slotId so two different slots' buttons never show the same spinner.
   const [actionBusyId, setActionBusyId] = useState(null)
   const [actionError, setActionError] = useState('')
+  // Umpire Proposals — pending/expired/etc. offers sent for a match, keyed
+  // by matchId, loaded lazily alongside the slot detail it annotates.
+  const [proposalsByMatch, setProposalsByMatch] = useState({})
 
   const load = async (matchId, { force = false } = {}) => {
     if (slotsByMatch[matchId] && !force) return
@@ -97,5 +101,62 @@ export function useMatchUmpireSlots(publicGroundId) {
     }
   }
 
-  return { slotsByMatch, umpireFeeByMatch, loadingId, error, load, markNoShow, assignReplacement, setFee, updatePaymentStatus, actionBusyId, actionError }
+  const loadProposals = async (matchId) => {
+    try {
+      const proposals = await fetchMatchProposals(publicGroundId, matchId)
+      setProposalsByMatch((prev) => ({ ...prev, [matchId]: proposals }))
+    } catch {
+      // Best-effort annotation only — the slot list above is the source of
+      // truth for who's assigned; a failed proposals fetch just means no
+      // "offer sent" badges render, never a blocking error.
+    }
+  }
+
+  const proposeUmpire = async (matchId, slotId, umpireUserId, { incentiveAmount, message } = {}) => {
+    setActionBusyId(slotId)
+    setActionError('')
+    try {
+      await proposeUmpireForSlot(publicGroundId, matchId, slotId, { umpireUserId, incentiveAmount, message })
+      await loadProposals(matchId)
+      return true
+    } catch (err) {
+      setActionError(err.response?.data?.message || err.response?.data?.error || 'Unable to send this proposal.')
+      return false
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
+  const cancelProposal = async (matchId, proposalId) => {
+    setActionBusyId(`proposal-${proposalId}`)
+    setActionError('')
+    try {
+      await cancelMatchProposal(publicGroundId, matchId, proposalId)
+      await loadProposals(matchId)
+      return true
+    } catch (err) {
+      setActionError(err.response?.data?.message || err.response?.data?.error || 'Unable to withdraw this proposal.')
+      return false
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
+  return {
+    slotsByMatch,
+    umpireFeeByMatch,
+    loadingId,
+    error,
+    load,
+    markNoShow,
+    assignReplacement,
+    setFee,
+    updatePaymentStatus,
+    actionBusyId,
+    actionError,
+    proposalsByMatch,
+    loadProposals,
+    proposeUmpire,
+    cancelProposal,
+  }
 }

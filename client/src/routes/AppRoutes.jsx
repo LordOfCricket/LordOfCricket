@@ -50,6 +50,8 @@ const UmpireEarningsPage = lazy(() => import('../pages/umpire/UmpireEarningsPage
 const MatchBriefingPage = lazy(() => import('../pages/umpire/MatchBriefingPage.jsx'))
 const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
 const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
+const BrowseUmpiresPage = lazy(() => import('../pages/ground-owner/BrowseUmpiresPage.jsx'))
+const UmpireProposalsPage = lazy(() => import('../pages/umpire/UmpireProposalsPage.jsx'))
 
 // Phase 5 — real, backend-authoritative match scoring
 const MatchSetupPage = lazy(() => import('../pages/match-setup/MatchSetupPage.jsx'))
@@ -143,7 +145,9 @@ const router = createBrowserRouter([
       { path: '/umpire/statistics', element: <RequireApprovedUmpire>{withSuspense(<UmpireStatisticsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/earnings', element: <RequireApprovedUmpire>{withSuspense(<UmpireEarningsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/matches/:matchId/briefing', element: <RequireApprovedUmpire>{withSuspense(<MatchBriefingPage />)}</RequireApprovedUmpire> },
+      { path: '/umpire/proposals', element: <RequireApprovedUmpire>{withSuspense(<UmpireProposalsPage />)}</RequireApprovedUmpire> },
       { path: '/ground-owner/dashboard', element: <RequireGroundOwner>{withSuspense(<GroundOwnerDashboardPage />)}</RequireGroundOwner> },
+      { path: '/ground-owner/browse-umpires', element: <RequireGroundOwner>{withSuspense(<BrowseUmpiresPage />)}</RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner>{withSuspense(<GroundMatchesPage />)}</RequireGroundOwner> },
 
       // Phase 8 — player discovery, public profiles, leaderboards (public reads, no auth wall)

@@ -602,3 +602,82 @@ test('Regression — a plain apply/complete with no proposal ever involved earns
     await server.close()
   }
 })
+
+// -----------------------------------------------------------------------
+// End-to-end scenario
+// -----------------------------------------------------------------------
+
+test('End-to-end — owner proposes 2 umpires for one slot with different bonuses; umpire B accepts, umpire A is notified their offer expired; match completes; B earns base + bonus', async () => {
+  const server = await startTestApp()
+  const ctx = await setupContext()
+  const umpireA = await createUser('e2e-a', { playerType: 'umpire', umpireRequestStatus: 'approved' })
+  const umpireB = await createUser('e2e-b', { playerType: 'umpire', umpireRequestStatus: 'approved' })
+  try {
+    // 1. Owner sets a base fee, then proposes the same open slot to both
+    // umpires with different bonuses.
+    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
+      method: 'PATCH',
+      token: ctx.owner.token,
+      body: { amount: 400, currency: 'INR' },
+    })
+    const slotId = await getOpenSlotId(server, ctx)
+    const proposeA = await json(proposeUrl(server, ctx, slotId), {
+      method: 'POST',
+      token: ctx.owner.token,
+      body: { umpireUserId: umpireA.id, incentiveAmount: 50, message: 'Can you cover this one?' },
+    })
+    const proposeB = await json(proposeUrl(server, ctx, slotId), {
+      method: 'POST',
+      token: ctx.owner.token,
+      body: { umpireUserId: umpireB.id, incentiveAmount: 150 },
+    })
+    assert.equal(proposeA.status, 201)
+    assert.equal(proposeB.status, 201)
+
+    // Both umpires see the offer in their own inbox, privately.
+    const inboxA = await json(`${server.baseUrl}/umpire/proposals`, { token: umpireA.token })
+    const inboxB = await json(`${server.baseUrl}/umpire/proposals`, { token: umpireB.token })
+    assert.ok(inboxA.data.proposals.some((p) => p.id === proposeA.data.proposal.id))
+    assert.ok(inboxB.data.proposals.some((p) => p.id === proposeB.data.proposal.id))
+    assert.ok(!inboxA.data.proposals.some((p) => p.id === proposeB.data.proposal.id), 'umpire A must never see umpire B\'s offer')
+
+    // 2. Umpire B accepts first.
+    const accept = await json(`${server.baseUrl}/umpire/proposals/${proposeB.data.proposal.id}/respond`, {
+      method: 'POST',
+      token: umpireB.token,
+      body: { accept: true },
+    })
+    assert.equal(accept.status, 200, JSON.stringify(accept.data))
+    assert.equal(accept.data.slot.umpire_user_id, umpireB.id)
+    assert.equal(Number(accept.data.slot.incentive_amount), 150)
+
+    // 3. Umpire A's now-stale offer auto-expired and they were notified.
+    const notifiedA = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM ground_notifications WHERE user_id = $1 AND type = 'UMPIRE_PROPOSAL_EXPIRED'`,
+      [umpireA.id],
+    )
+    assert.equal(notifiedA.rows[0].n, 1)
+    const laterInboxA = await json(`${server.baseUrl}/umpire/proposals`, { token: umpireA.token })
+    assert.equal(laterInboxA.data.proposals.find((p) => p.id === proposeA.data.proposal.id).status, 'EXPIRED')
+
+    // 4. Match completes; B's earning is base fee + their own bonus, not A's.
+    await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
+    const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
+      method: 'POST',
+      token: ctx.owner.token,
+    })
+    assert.equal(complete.status, 200, JSON.stringify(complete.data))
+
+    const { rows: earningsB } = await pool.query('SELECT amount FROM umpire_earnings WHERE umpire_user_id = $1', [umpireB.id])
+    assert.equal(earningsB.length, 1)
+    assert.equal(Number(earningsB[0].amount), 550) // 400 base + 150 bonus
+
+    const { rows: earningsA } = await pool.query('SELECT amount FROM umpire_earnings WHERE umpire_user_id = $1', [umpireA.id])
+    assert.equal(earningsA.length, 0, 'umpire A never officiated, so they must never earn anything for this match')
+  } finally {
+    await umpireB.cleanup()
+    await umpireA.cleanup()
+    await ctx.cleanup()
+    await server.close()
+  }
+})

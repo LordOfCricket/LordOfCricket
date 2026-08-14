@@ -14,6 +14,7 @@ import {
   CalendarClock,
   MapPinned,
   Wallet,
+  Gift,
 } from 'lucide-react'
 
 // Dedicated Umpire Workspace — the login mode ("Player Login" vs "Umpire
@@ -56,6 +57,10 @@ export function getUmpireAccountLinks() {
     { label: 'My Matches', to: '/umpire/my-assignments', icon: CalendarCheck },
     { label: 'My Statistics', to: '/umpire/statistics', icon: BarChart3 },
     { label: 'My Earnings', to: '/umpire/earnings', icon: Wallet },
+    // Umpire Proposals — Ground-Owner-initiated invitations, its own
+    // workspace destination alongside My Matches (a proposal is not yet an
+    // assignment until accepted).
+    { label: 'Proposals', to: '/umpire/proposals', icon: Gift },
   ]
 }
 

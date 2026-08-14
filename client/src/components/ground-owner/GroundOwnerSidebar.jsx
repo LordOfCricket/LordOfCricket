@@ -1,12 +1,16 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, LogOut } from 'lucide-react'
+import { LayoutDashboard, Search, LogOut } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 
-// Mirrors AdminSidebar.jsx/UmpireSidebar.jsx. One entry today — the
-// dashboard IS the ground list + per-ground drill-in (see U5 report:
-// "My Grounds"/"Matches" are sections of that flow, not separate top-level
-// pages, matching the phase's own detailed dashboard mockup).
-const LINKS = [{ to: '/ground-owner/dashboard', label: 'Dashboard', icon: LayoutDashboard }]
+// Mirrors AdminSidebar.jsx/UmpireSidebar.jsx. The dashboard IS the ground
+// list + per-ground drill-in (see U5 report: "My Grounds"/"Matches" are
+// sections of that flow, not separate top-level pages). Umpire Proposals
+// adds "Browse Umpires" as the one other top-level destination — the
+// ground-owner mirror of the umpire's own "Grounds for Umpire" page.
+const LINKS = [
+  { to: '/ground-owner/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/ground-owner/browse-umpires', label: 'Browse Umpires', icon: Search },
+]
 
 export default function GroundOwnerSidebar() {
   const { user, logout } = useAuth()
