@@ -7,13 +7,20 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1)
 }
 
+// Login is OTP-only (email/phone + code) since Phase 3 — these accounts'
+// `password` field is vestigial (stored, never checked; the password-login
+// route was removed in Phase 8). The emails themselves must be valid per
+// domain/otpAuth/otp.js's identifier regex (requires a real TLD) — they
+// used to be bare `@email` with no TLD, which silently made every one of
+// these seeded accounts impossible to log into once OTP identifier
+// validation shipped, since `/auth/send-otp` rejected them outright.
 const TEST_USERS = [
-  { name: 'Test Player', email: 'player@email', password: 'password', role: 'player', playerType: 'team_player' },
-  { name: 'Test Staff', email: 'staff@email', password: 'password', role: 'staff', playerType: null, staffRole: 'super_admin' },
+  { name: 'Test Player', email: 'player@example.com', password: 'password', role: 'player', playerType: 'team_player' },
+  { name: 'Test Staff', email: 'staff@example.com', password: 'password', role: 'staff', playerType: null, staffRole: 'super_admin' },
   // Umpire Login (LOC Login screen) — pre-approved so the umpire flow is
   // testable immediately, without a separate manual admin-approval step
   // each time the seed runs.
-  { name: 'Test Umpire', email: 'umpire@email', password: 'password', role: 'player', playerType: 'umpire' },
+  { name: 'Test Umpire', email: 'umpire@example.com', password: 'password', role: 'player', playerType: 'umpire' },
 ]
 
 async function seed() {

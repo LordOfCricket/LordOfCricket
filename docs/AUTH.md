@@ -153,7 +153,7 @@ looking it up, with no sticky-session requirement.
 
 | Identifier | Configured | Provider | How verification works |
 |---|---|---|---|
-| PHONE | `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_VERIFY_SERVICE_SID` all set | Twilio Verify | Twilio generates/delivers/checks the code remotely; LOC's `otp_codes` row for this case carries `otp_hash: null` and exists only for local rate-limit bookkeeping — not a second verification source. |
+| PHONE | `TWILIO_ACCOUNT_SID` + `TWILIO_API_KEY` + `TWILIO_API_SECRET` + `TWILIO_VERIFY_SERVICE_SID` all set | Twilio Verify | Twilio generates/delivers/checks the code remotely; LOC's `otp_codes` row for this case carries `otp_hash: null` and exists only for local rate-limit bookkeeping — not a second verification source. Auth is Twilio's Standard API Key scheme (SK key + secret), not the Account Auth Token. |
 | PHONE (fallback) | Twilio not configured | console (dev only) | LOC generates/hashes/stores/verifies the code itself. |
 | EMAIL | `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` both set | SendGrid | "Dumb" delivery channel — LOC generates/hashes/stores/verifies the code itself; SendGrid just sends the email. |
 | EMAIL (fallback) | SendGrid not configured | console (dev only) | Same as above. |
@@ -211,9 +211,10 @@ real user since the login route was still reachable, before Phase 3 shipped.
 See `server/.env.example` for the full list with inline documentation. New in Phase 3:
 `SESSION_COOKIE_SECRET` (required in production, same fail-fast pattern as `JWT_SECRET`), `OTP_LENGTH`,
 `OTP_TTL_MINUTES`, `OTP_MAX_ATTEMPTS`, `OTP_RESEND_COOLDOWN_SECONDS`, `SESSION_TTL_DAYS` (all optional, sane
-defaults), `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_VERIFY_SERVICE_SID`,
-`SENDGRID_API_KEY`/`SENDGRID_FROM_EMAIL` (all optional — console fallback if unset, never required in any
-environment since that would make an environment un-bootable without a paid third-party account).
+defaults), `TWILIO_ACCOUNT_SID`/`TWILIO_API_KEY`/`TWILIO_API_SECRET`/`TWILIO_VERIFY_SERVICE_SID` (Standard API
+Key auth, not the Account Auth Token), `SENDGRID_API_KEY`/`SENDGRID_FROM_EMAIL` (all optional — console
+fallback if unset, never required in any environment since that would make an environment un-bootable without
+a paid third-party account).
 
 ## What Phase 3 deliberately did not implement
 

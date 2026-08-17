@@ -3,15 +3,24 @@ import { logger } from '../../utils/logger.js'
 
 let client = null
 
+// Standard API Key auth (SK... key SID + its secret), not the Account Auth
+// Token — the accountSid must be passed as an explicit option in this mode
+// (bare API Key SID doesn't start with "AC", so the SDK can't infer it the
+// way it does for Auth Token auth). See server/.env.example for the four
+// required vars.
 function getClient() {
   if (!client) {
-    client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    client = twilio(process.env.TWILIO_API_KEY, process.env.TWILIO_API_SECRET, {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+    })
   }
   return client
 }
 
 export function isTwilioConfigured() {
-  return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID)
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_API_KEY && process.env.TWILIO_API_SECRET && process.env.TWILIO_VERIFY_SERVICE_SID
+  )
 }
 
 // Twilio Verify (not raw SMS) — Twilio itself generates, delivers, and

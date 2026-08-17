@@ -1,8 +1,7 @@
 // Phase 3 — unified OTP authentication. Real HTTP against this app's own
 // server, real Postgres — same pattern as every other integration test in
 // this codebase (http.createServer(app), plain fetch(), no mocking). The
-// console OTP provider (active here since TWILIO_*/SENDGRID_* are unset in
-// the test environment) never exposes the code over HTTP by design, so
+// console OTP provider never exposes the code over HTTP by design, so
 // these tests recover it the same way a human tester with real database
 // access would: read the stored otp_hash and brute-force the 6-digit
 // space (10^6 SHA-256 hashes, milliseconds) — this is not a security
@@ -18,6 +17,21 @@ import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import * as otpAuthService from '../../services/otpAuth.service.js'
+
+// This suite must never reach the real Twilio/SendGrid APIs — it asserts
+// against `otp_codes.otp_hash`, which Twilio-Verify-delegated rows never
+// populate (see twilioProvider.js), and it must not send real SMS/email
+// during a normal test run regardless of what real credentials a
+// developer's local .env happens to have configured for manual smoke
+// testing. Cleared here (after dotenv has already populated process.env via
+// app.js's import chain, before any test below issues a request) rather
+// than relying on the environment to simply not have them set.
+delete process.env.TWILIO_ACCOUNT_SID
+delete process.env.TWILIO_API_KEY
+delete process.env.TWILIO_API_SECRET
+delete process.env.TWILIO_VERIFY_SERVICE_SID
+delete process.env.SENDGRID_API_KEY
+delete process.env.SENDGRID_FROM_EMAIL
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
