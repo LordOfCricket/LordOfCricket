@@ -10,6 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'http'
 import express from 'express'
+import cookieParser from 'cookie-parser'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { requireAuth } from '../../middlewares/auth.js'
@@ -21,10 +22,19 @@ import {
   findActiveMembershipForAnyRole,
   setMembershipActive,
 } from '../../models/groundUser.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
+
+const SESSION_COOKIE_SECRET = process.env.SESSION_COOKIE_SECRET || 'dev-only-insecure-cookie-secret-change-me'
 
 function buildTestApp() {
   const app = express()
   app.use(express.json())
+  // Phase 6 — requireGroundRole's GROUND_OWNER/Super-Admin branches now
+  // require req.mfaVerified, which is read off a session cookie
+  // (req.signedCookies). This throwaway app mirrors app.js's real
+  // cookie-parser configuration (same secret) so mintMfaVerifiedSessionCookie
+  // fixtures work against it exactly as they do against the real app.
+  app.use(cookieParser(SESSION_COOKIE_SECRET))
 
   // Mirrors the shape a future real route would take: :publicGroundId in the
   // URL, authorization derived from req.user + DB membership, never from
@@ -107,6 +117,16 @@ async function createGroundFixture(label) {
 
 function authHeader(token) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+}
+
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
+}
+
+function cauth(user) {
+  return { Cookie: user.cookie, 'Content-Type': 'application/json' }
 }
 
 // --- Model-layer / DB integrity tests (Step 24) ---------------------------
@@ -266,8 +286,9 @@ test('Test B — correct active membership -> allowed', async () => {
   const user = await createUser('correct-membership')
   const gf = await createGroundFixture('correct-membership')
   await createMembership({ groundId: gf.ground.id, userId: user.id, role: 'GROUND_OWNER' })
+  await elevate(user)
   try {
-    const res = await fetch(`${testApp.baseUrl}/grounds/${gf.ground.public_ground_id}/owner-only`, { headers: authHeader(user.token) })
+    const res = await fetch(`${testApp.baseUrl}/grounds/${gf.ground.public_ground_id}/owner-only`, { headers: cauth(user) })
     assert.equal(res.status, 200)
     const body = await res.json()
     assert.equal(body.groundId, gf.ground.id)
@@ -285,11 +306,12 @@ test('Test C — membership at Ground A does not authorize Ground B -> 403', asy
   const gfA = await createGroundFixture('wrong-ground-a')
   const gfB = await createGroundFixture('wrong-ground-b')
   await createMembership({ groundId: gfA.ground.id, userId: user.id, role: 'GROUND_OWNER' })
+  await elevate(user)
   try {
-    const okA = await fetch(`${testApp.baseUrl}/grounds/${gfA.ground.public_ground_id}/owner-only`, { headers: authHeader(user.token) })
+    const okA = await fetch(`${testApp.baseUrl}/grounds/${gfA.ground.public_ground_id}/owner-only`, { headers: cauth(user) })
     assert.equal(okA.status, 200)
 
-    const deniedB = await fetch(`${testApp.baseUrl}/grounds/${gfB.ground.public_ground_id}/owner-only`, { headers: authHeader(user.token) })
+    const deniedB = await fetch(`${testApp.baseUrl}/grounds/${gfB.ground.public_ground_id}/owner-only`, { headers: cauth(user) })
     assert.equal(deniedB.status, 403)
   } finally {
     await user.cleanup()
@@ -322,11 +344,12 @@ test('Test E — one user, two grounds, two different roles: each ground enforce
   const gfB = await createGroundFixture('ter-b')
   await createMembership({ groundId: gfA.ground.id, userId: user.id, role: 'GROUND_OWNER' })
   await createMembership({ groundId: gfB.ground.id, userId: user.id, role: 'SCORER' })
+  await elevate(user)
   try {
-    const ownerAtA = await fetch(`${testApp.baseUrl}/grounds/${gfA.ground.public_ground_id}/owner-only`, { headers: authHeader(user.token) })
+    const ownerAtA = await fetch(`${testApp.baseUrl}/grounds/${gfA.ground.public_ground_id}/owner-only`, { headers: cauth(user) })
     assert.equal(ownerAtA.status, 200, 'GROUND_OWNER at Ground A must be allowed')
 
-    const ownerAtB = await fetch(`${testApp.baseUrl}/grounds/${gfB.ground.public_ground_id}/owner-only`, { headers: authHeader(user.token) })
+    const ownerAtB = await fetch(`${testApp.baseUrl}/grounds/${gfB.ground.public_ground_id}/owner-only`, { headers: cauth(user) })
     assert.equal(ownerAtB.status, 403, 'SCORER at Ground B must NOT satisfy an owner-only route')
   } finally {
     await user.cleanup()
@@ -339,9 +362,10 @@ test('Test E — one user, two grounds, two different roles: each ground enforce
 test('Test F — Super Admin bypasses membership entirely, at any ground, without a membership row', async () => {
   const testApp = await startTestApp()
   const superAdmin = await createUser('super-admin', { role: 'staff', staffRoleId: 1 }) // staff_roles.id=1 = super_admin
+  await elevate(superAdmin)
   const gf = await createGroundFixture('super-admin-bypass')
   try {
-    const res = await fetch(`${testApp.baseUrl}/grounds/${gf.ground.public_ground_id}/owner-only`, { headers: authHeader(superAdmin.token) })
+    const res = await fetch(`${testApp.baseUrl}/grounds/${gf.ground.public_ground_id}/owner-only`, { headers: cauth(superAdmin) })
     assert.equal(res.status, 200)
     const body = await res.json()
     assert.equal(body.role, 'SUPER_ADMIN_BYPASS')
@@ -363,6 +387,7 @@ test('IDOR — a ground_id claimed in the request BODY is never consulted for au
   const gfOwned = await createGroundFixture('idor-owned')
   const gfNotOwned = await createGroundFixture('idor-not-owned')
   await createMembership({ groundId: gfOwned.ground.id, userId: user.id, role: 'GROUND_OWNER' })
+  await elevate(user)
   try {
     // Attempt: hit the route for the ground the user does NOT own, while
     // claiming ownership of the OTHER ground in the body. If the body were
@@ -380,7 +405,7 @@ test('IDOR — a ground_id claimed in the request BODY is never consulted for au
     // response must reflect the URL-resolved ground, not the body's claim.
     const res2 = await fetch(`${testApp.baseUrl}/grounds/${gfOwned.ground.public_ground_id}/owner-only`, {
       method: 'POST',
-      headers: authHeader(user.token),
+      headers: cauth(user),
       body: JSON.stringify({ ground_id: gfNotOwned.ground.id }),
     })
     assert.equal(res2.status, 200)

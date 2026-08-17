@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import { socketUrl } from '../services/socket.js'
 import { fetchMatchMessages, sendMatchMessage } from '../services/matchMessageApi.js'
-import { getStoredToken } from '../utils/authToken.js'
 
 // Umpire Communication & Commercial 2.0 — REST does the initial load AND
 // every send (the authoritative write); the socket is realtime-receive
 // only, joining a participant-authorized room (join-match-chat, server-
-// verified via the caller's own JWT) and appending whatever match:message
-// events arrive. Mirrors useSocketMatchTransport's "one connection per
-// hook mount, joined/left on mount/unmount" convention.
+// verified via the caller's own session cookie — see matchChatRealtime.js;
+// this used to send a localStorage JWT that no real user has had since
+// Phase 3's OTP migration, silently breaking match chat entirely, fixed in
+// Phase 8) and appending whatever match:message events arrive. Mirrors
+// useSocketMatchTransport's "one connection per hook mount, joined/left on
+// mount/unmount" convention.
 export function useMatchChat(matchId, { enabled = true } = {}) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -43,10 +45,10 @@ export function useMatchChat(matchId, { enabled = true } = {}) {
         })
     }, 0)
 
-    const socket = io(socketUrl, { transports: ['websocket', 'polling'] })
+    const socket = io(socketUrl, { transports: ['websocket', 'polling'], withCredentials: true })
     socketRef.current = socket
     socket.on('connect', () => {
-      socket.emit('join-match-chat', { matchId: Number(matchId), token: getStoredToken() })
+      socket.emit('join-match-chat', { matchId: Number(matchId) })
     })
     socket.on('match:message', (message) => {
       if (Number(message.matchId) === Number(matchId)) addMessage(message)

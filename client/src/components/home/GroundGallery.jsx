@@ -61,12 +61,12 @@ function EmptyGallery({ className = '', groundName }) {
   )
 }
 
-// Phase 13 Step 21 — takes ground-scoped photos as a prop (GET
-// /api/grounds/:publicGroundId's `photos` array, Phase 12) instead of
+// Takes ground-scoped photos as a prop (GET
+// /api/grounds/:publicGroundId's `photos` array) instead of
 // self-fetching the GLOBAL Cloudinary gallery (category=ground) the way
 // this component used to. That old source (useGroundGallery.js/`/gallery`)
-// is gallery_images, which Phase 12 deliberately left un-scoped by ground
-// (Step 17/24) — showing it here would leak every ground's photos onto
+// is gallery_images, which was deliberately left un-scoped by ground
+// — showing it here would leak every ground's photos onto
 // whichever ground's page happened to render first. ground_photos, by
 // contrast, genuinely has a ground_id now, so this is a real fix, not a
 // workaround: same carousel, same animations, correct data source.

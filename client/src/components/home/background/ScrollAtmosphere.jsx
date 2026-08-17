@@ -2,8 +2,8 @@ import { motion } from 'motion/react'
 import useScrollEnvironment from '../../../hooks/useScrollEnvironment.js'
 
 /**
- * Phase 5 introduced this as a simple 3-point opacity "breathe" on the
- * Ambient + Glow layers, with its own scroll listener. Phase 6 evolves the
+ * This started as a simple 3-point opacity "breathe" on the
+ * Ambient + Glow layers, with its own scroll listener, and has since evolved the
  * curve — not the wrapped layers, and not what this component does — into
  * a section-anchored lighting progression (soft at Gallery, brighter
  * energy at Matches, a warm peak at Booking, calm dark at Footer) sourced

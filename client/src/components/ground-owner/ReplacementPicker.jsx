@@ -3,7 +3,7 @@ import { Star } from 'lucide-react'
 import { fetchEligibleReplacements } from '../../services/groundOwnerApi.js'
 import ReputationBadges from '../common/ReputationBadges.jsx'
 
-// Phase 23, Workstream G — candidate pool for a NO_SHOW slot, fetched
+// Candidate pool for a NO_SHOW slot, fetched
 // on-demand only when the owner actually opens "Find Replacement" (never
 // pre-loaded for every slot). Server already filters to approved + no
 // conflicting match + available + not already on this match

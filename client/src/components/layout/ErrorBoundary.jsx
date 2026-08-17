@@ -1,6 +1,6 @@
 import { Component } from 'react'
 
-// Phase 13 — there was previously no error boundary anywhere in the app: an
+// There was previously no error boundary anywhere in the app: an
 // uncaught render-time exception (a bad API shape reaching a component that
 // doesn't null-check, for example) white-screened the entire site with no
 // recovery path. This is the last line of defense, not a substitute for

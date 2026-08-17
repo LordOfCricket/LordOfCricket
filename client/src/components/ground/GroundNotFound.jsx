@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 
-// Phase 13 Step 30 — a ground id that doesn't exist (or is DRAFT/SUSPENDED,
-// which the API 404s identically — Phase 12) must never fall back to
+// A ground id that doesn't exist (or is DRAFT/SUSPENDED,
+// which the API 404s identically) must never fall back to
 // showing the real seeded ground or auto-redirect anywhere. Styled to match
 // the router-level NotFoundPage.jsx for visual consistency.
 export default function GroundNotFound() {

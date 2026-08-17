@@ -1,4 +1,4 @@
-// Phase 9 — match summary/scorecard client. Every number here comes straight
+// Match summary/scorecard client. Every number here comes straight
 // from the server's read model on every request; nothing is cached client-side.
 import api from './api.js'
 

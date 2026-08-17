@@ -9,7 +9,7 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-/** Feature 8 — the ground's daily timeline, rendered as a proportional horizontal bar PLUS a readable list (never color-only — Part 42). */
+/** The ground's daily timeline, rendered as a proportional horizontal bar PLUS a readable list (never color-only). */
 export default function TimelineView({ segments }) {
   if (!segments || segments.length === 0) return <p className="text-sm text-slate-400">No timeline data.</p>
 

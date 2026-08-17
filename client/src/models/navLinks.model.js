@@ -64,7 +64,7 @@ export function getUmpireAccountLinks() {
   ]
 }
 
-// Phase 13 — the account nav was previously one static list for every
+// The account nav was previously one static list for every
 // logged-in user, which sent staff to `/player/dashboard` (a page for a
 // player profile staff accounts don't have) and never surfaced the match
 // operations hub to staff or approved umpires at all. `user` is the auth
@@ -97,7 +97,7 @@ export function getAccountLinks(user) {
     { label: 'Players', to: '/players', icon: Search },
     { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
     { label: 'Canteen', to: '/canteen', icon: UtensilsCrossed },
-    // Phase 14 Part 3 — staff manage the ground's whole schedule (bookings +
+    // Staff manage the ground's whole schedule (bookings +
     // blocks); everyone else only ever sees their own bookings.
     isStaff ? { label: 'Ground Bookings', to: '/bookings/staff', icon: CalendarClock } : { label: 'My Bookings', to: '/bookings', icon: CalendarClock },
   )

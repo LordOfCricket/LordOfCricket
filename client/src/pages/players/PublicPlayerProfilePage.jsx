@@ -163,7 +163,7 @@ export default function PublicPlayerProfilePage() {
               )}
             </div>
 
-            {/* Phase 16 — bounded, independently-loading; career stats above remain primary. */}
+            {/* Bounded, independently-loading; career stats above remain primary. */}
             <div className="mt-6">
               <AIInsightSection title="AI Performance Insight" fetchFn={fetchPlayerInsight} id={publicPlayerId} kind="person" />
             </div>

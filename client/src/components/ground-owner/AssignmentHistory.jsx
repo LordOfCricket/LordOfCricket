@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchMatchAssignmentHistory } from '../../services/groundOwnerApi.js'
 
-// Phase 23, Workstream H — the smallest useful operational representation:
+// The smallest useful operational representation:
 // a flat, oldest-first list of who/what/when, not a giant audit UI.
 const EVENT_LABEL = {
   ASSIGNED: 'Assigned',

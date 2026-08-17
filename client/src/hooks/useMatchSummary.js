@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchMatchSummary } from '../services/matchSummaryApi.js'
 
-/** Loads the Phase 9 match summary read model for one match. Always hits the
+/** Loads the match summary read model for one match. Always hits the
  * server — no localStorage, no client-side cricket calculation. */
 export function useMatchSummary(matchId) {
   const [summary, setSummary] = useState(null)
@@ -29,10 +29,10 @@ export function useMatchSummary(matchId) {
     load()
   }, [load])
 
-  // Phase 10 Part 3 — a SILENT refetch (no loading-skeleton flash), used when
+  // A SILENT refetch (no loading-skeleton flash), used when
   // the live-match poller detects a lifecycle transition (innings break,
   // second innings starting, match completing) and the page needs the full
-  // scorecard/Playing XI to catch up without a jarring reload (Part 22/75).
+  // scorecard/Playing XI to catch up without a jarring reload.
   const reload = useCallback(() => load(), [load])
 
   return { summary, loading, error, retry, reload }

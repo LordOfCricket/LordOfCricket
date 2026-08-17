@@ -40,11 +40,11 @@ const EMPTY_FORM = {
 }
 
 // "Want to register your ground on LOC" — the Final CTA section's secondary
-// button lands here. Submits a real ground row (status DRAFT) + a
-// GROUND_OWNER membership for the submitting user (POST /grounds); a
-// super_admin then reviews it via /admin/ground-registrations before it's
-// publicly visible anywhere on the platform. Requires being logged in
-// (route is wrapped in RequireAuth — see AppRoutes.jsx).
+// button lands here. Submits a ground_owner_requests row (status PENDING),
+// identified by the logged-in submitter (POST /grounds); no ground exists
+// and no ownership is granted until a super_admin approves it via
+// /admin/ground-registrations. Requires being logged in (route is wrapped
+// in RequireAuth — see AppRoutes.jsx).
 export default function RegisterGroundPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
@@ -63,7 +63,7 @@ export default function RegisterGroundPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const ground = await submitGroundRegistration({
+      const request = await submitGroundRegistration({
         name: form.name,
         description: form.description || undefined,
         addressLine: form.addressLine,
@@ -77,9 +77,9 @@ export default function RegisterGroundPage() {
         latitude: form.latitude || undefined,
         longitude: form.longitude || undefined,
       })
-      setSubmitted(ground)
+      setSubmitted(request)
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not submit your ground. Please check the details and try again.')
+      setError(err.response?.data?.message || 'Could not submit your ground. Please check the details and try again.')
     } finally {
       setSubmitting(false)
     }
@@ -99,10 +99,16 @@ export default function RegisterGroundPage() {
         {submitted ? (
           <div className="flex flex-col items-start gap-3 rounded-2xl border border-emerald-400/20 bg-white/5 p-8">
             <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">Submitted</span>
-            <h1 className="text-2xl font-bold text-white">Thanks — {submitted.name} is in review.</h1>
+            <h1 className="text-2xl font-bold text-white">Thanks — {submitted.groundName} is in review.</h1>
             <p className="text-emerald-100/70">
               Our team will review your ground and activate it soon. Once approved, it'll appear across LOC's discovery pages automatically.
             </p>
+            <p className="rounded-xl border border-emerald-400/20 bg-white/5 px-3 py-2 text-sm text-emerald-100/70">
+              Reference ID: <span className="font-mono font-semibold text-white">{submitted.publicRequestId}</span>
+            </p>
+            <Link to={`/register-ground/status/${submitted.publicRequestId}`} className="text-sm font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-200">
+              Track your submission status
+            </Link>
             <Link
               to="/grounds"
               className="mt-2 inline-flex items-center justify-center rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"

@@ -8,7 +8,7 @@
 // completed (status='ASSIGNED' or 'COMPLETED'; a CANCELLED/NO_SHOW slot
 // isn't a match they're officiating), whose match falls in the current
 // calendar month, since the point is recency of activity. 'COMPLETED' as
-// well as 'ASSIGNED' (Phase 23): the instant a match completes, its slot
+// well as 'ASSIGNED': the instant a match completes, its slot
 // transitions ASSIGNED -> COMPLETED (officiating credit) — without this, a
 // match this umpire officiated earlier this month would drop out of the
 // count the moment it finished, which is backwards for "activity this month".
@@ -17,13 +17,13 @@ export function matchesThisMonth(assignments, now = new Date()) {
   const month = now.getMonth()
   return (assignments || []).filter((a) => {
     if (a.status !== 'ASSIGNED' && a.status !== 'COMPLETED') return false
-    const d = new Date(a.match_date)
-    return d.getFullYear() === year && d.getMonth() === month
+    const matchDate = new Date(a.match_date)
+    return matchDate.getFullYear() === year && matchDate.getMonth() === month
   }).length
 }
 
 // "Grounds Officiated At" — distinct grounds where a slot this umpire held
-// has reached 'COMPLETED' (Phase 23: written the instant its match
+// has reached 'COMPLETED' (written the instant its match
 // completes — genuinely officiated, not merely "currently holding a slot on
 // an upcoming match"). Checking status alone is now sufficient and more
 // precise than the old ASSIGNED + match_status-in-completed/finalized
@@ -47,7 +47,7 @@ export function matchesInLastNMonths(assignments, n, now = new Date()) {
   const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
   return (assignments || []).filter((a) => {
     if (a.status !== 'ASSIGNED' && a.status !== 'COMPLETED') return false
-    const t = new Date(a.match_date).getTime()
-    return t >= start && t < end
+    const matchDateMs = new Date(a.match_date).getTime()
+    return matchDateMs >= start && matchDateMs < end
   }).length
 }

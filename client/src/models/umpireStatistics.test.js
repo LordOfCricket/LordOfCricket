@@ -16,7 +16,7 @@ test('matchesThisMonth counts ASSIGNED and COMPLETED slots whose match falls in 
   assert.equal(matchesThisMonth(assignments, NOW), 2)
 })
 
-test('matchesThisMonth: a match that completed earlier this month still counts (Phase 23 — COMPLETED, not stuck at ASSIGNED)', () => {
+test('matchesThisMonth: a match that completed earlier this month still counts (COMPLETED, not stuck at ASSIGNED)', () => {
   const assignments = [{ status: 'COMPLETED', match_date: '2026-08-01T10:00:00Z' }]
   assert.equal(matchesThisMonth(assignments, NOW), 1)
 })

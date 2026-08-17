@@ -11,6 +11,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -30,13 +31,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// umpire fee/earnings/payment-status commerce).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -102,6 +114,7 @@ async function setupContext({ requiredUmpires = 1 } = {}) {
   const owner = await createUser('setup-owner')
   const teams = await makeTeams()
   await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+  await elevate(owner)
   const match = await matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,
@@ -132,7 +145,7 @@ test('Fee 1/4 — Ground Owner can configure a valid fee, stored as a proper NUM
   try {
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800, currency: 'inr' },
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
@@ -187,7 +200,7 @@ test('Fee 5 — the fee cannot be changed once the match has completed', async (
   try {
     const setBefore = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 500 },
     })
     assert.equal(setBefore.status, 200)
@@ -197,11 +210,11 @@ test('Fee 5 — the fee cannot be changed once the match has completed', async (
     // completeMatchManually requires, same shortcut the Reputation 2.0
     // scenario tests already established for this exact situation.
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
-    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', token: ctx.owner.token })
+    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', cookie: ctx.owner.cookie })
 
     const setAfter = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 900 },
     })
     assert.equal(setAfter.status, 409, 'the fee must be locked once the match has completed')
@@ -222,7 +235,7 @@ test('Earnings 6 — a completed umpire receives an earning record with the agre
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800 },
     })
     const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
@@ -231,7 +244,7 @@ test('Earnings 6 — a completed umpire receives an earning record with the agre
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -253,7 +266,7 @@ test('Earnings 7 — a NO_SHOW umpire never receives an officiating earning', as
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800 },
     })
     const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
@@ -261,7 +274,7 @@ test('Earnings 7 — a NO_SHOW umpire never receives an officiating earning', as
 
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
 
     const { rows } = await pool.query('SELECT * FROM umpire_earnings WHERE umpire_user_id = $1', [umpire.id])
@@ -280,7 +293,7 @@ test('Earnings 8 — an umpire who cancelled their own assignment never receives
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800 },
     })
     await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
@@ -304,7 +317,7 @@ test('Earnings 9 — after a no-show + replacement, only the replacement receive
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800 },
     })
     const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpireA.token })
@@ -312,18 +325,18 @@ test('Earnings 9 — after a no-show + replacement, only the replacement receive
 
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     const replaced = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/replace`,
-      { method: 'POST', token: ctx.owner.token, body: { newUmpireUserId: umpireB.id } },
+      { method: 'POST', cookie: ctx.owner.cookie, body: { newUmpireUserId: umpireB.id } },
     )
     assert.equal(replaced.status, 200, JSON.stringify(replaced.data))
 
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -347,17 +360,17 @@ test('Earnings 10 — no duplicate earning is ever created for the same complete
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 800 },
     })
     await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
 
-    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', token: ctx.owner.token })
+    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', cookie: ctx.owner.cookie })
     // Idempotent no-op the second time (matchService.completeMatchManually's own contract) — must never create a second earning row.
-    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', token: ctx.owner.token })
+    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', cookie: ctx.owner.cookie })
     // Viewing the slots (which self-heals via ensureEarningRecordsForMatch) must also never duplicate.
-    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, { token: ctx.owner.token })
+    await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, { cookie: ctx.owner.cookie })
 
     const { rows } = await pool.query('SELECT * FROM umpire_earnings WHERE umpire_user_id = $1', [umpire.id])
     assert.equal(rows.length, 1, 'exactly one earning row, regardless of how many times completion/self-heal ran')
@@ -375,13 +388,13 @@ test('Earnings 10 — no duplicate earning is ever created for the same complete
 async function completeMatchWithEarning(server, ctx, umpire, amount = 800) {
   await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
     method: 'PATCH',
-    token: ctx.owner.token,
+    cookie: ctx.owner.cookie,
     body: { amount },
   })
   const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
   const slotId = applied.data.slot.id
   await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
-  await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', token: ctx.owner.token })
+  await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, { method: 'POST', cookie: ctx.owner.cookie })
   return slotId
 }
 
@@ -394,21 +407,21 @@ test('Payment status 11 — valid transitions succeed, invalid ones (e.g. PAID -
 
     const toApproved = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/payment-status`,
-      { method: 'PATCH', token: ctx.owner.token, body: { status: 'APPROVED' } },
+      { method: 'PATCH', cookie: ctx.owner.cookie, body: { status: 'APPROVED' } },
     )
     assert.equal(toApproved.status, 200, JSON.stringify(toApproved.data))
     assert.equal(toApproved.data.earning.status, 'APPROVED')
 
     const toPaid = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/payment-status`,
-      { method: 'PATCH', token: ctx.owner.token, body: { status: 'PAID' } },
+      { method: 'PATCH', cookie: ctx.owner.cookie, body: { status: 'PAID' } },
     )
     assert.equal(toPaid.status, 200)
     assert.equal(toPaid.data.earning.status, 'PAID')
 
     const backToPending = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots/${slotId}/payment-status`,
-      { method: 'PATCH', token: ctx.owner.token, body: { status: 'PENDING' } },
+      { method: 'PATCH', cookie: ctx.owner.cookie, body: { status: 'PENDING' } },
     )
     assert.equal(backToPending.status, 409, 'PAID is terminal — no transition back out')
   } finally {
@@ -459,7 +472,7 @@ test('Payment status 13/14 — the umpire can see their own earning status, and 
     assert.equal(asUmpire.data.summary.hasAnyData, true)
 
     const asOwner = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, {
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(asOwner.status, 200)
     const slotWithEarning = asOwner.data.slots.find((s) => s.earning)

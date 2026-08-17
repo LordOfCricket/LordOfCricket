@@ -7,9 +7,9 @@ import ScrollReveal from '../common/ScrollReveal.jsx'
 import StaggerItem from '../common/StaggerItem.jsx'
 import { energeticReveal, staggerContainer } from '../../lib/revealVariants.js'
 
-// Phase 10 Part 1 — homepage match discovery (Part 25/32). One bounded
+// Homepage match discovery. One bounded
 // GET /matches/home call feeds all three previews; a failure here is
-// contained to this section (Part 53) and never crashes the rest of the
+// contained to this section and never crashes the rest of the
 // homepage, since HomePage.jsx renders this as one self-contained subtree.
 
 function PreviewSkeleton() {

@@ -6,6 +6,12 @@ import { pool } from '../config/db.js'
 // separate, later phase). Matches the established minimal model shape
 // (groundPhoto.model.js, amenity.model.js, partner.model.js).
 
+// Phase 4 — accepts an optional transaction client (default `pool`) so the
+// ground-owner-request approval flow (services/groundOwnerRequest.service.js)
+// can create the ground atomically alongside the user/membership rows and
+// the request's own status update, all inside one Postgres transaction.
+// Every existing caller (e.g. the old self-serve registerGround path)
+// continues to work unchanged, since it never passes a client.
 export async function createGround({
   publicGroundId,
   slug,
@@ -22,8 +28,8 @@ export async function createGround({
   email = null,
   website = null,
   status = 'DRAFT',
-}) {
-  const { rows } = await pool.query(
+}, client = pool) {
+  const { rows } = await client.query(
     `INSERT INTO grounds
        (public_ground_id, slug, name, description, address_line, city, state,
         country, postal_code, latitude, longitude, phone, email, website, status)
@@ -34,8 +40,8 @@ export async function createGround({
   return rows[0]
 }
 
-export async function findGroundBySlug(slug) {
-  const { rows } = await pool.query('SELECT * FROM grounds WHERE slug = $1', [slug])
+export async function findGroundBySlug(slug, client = pool) {
+  const { rows } = await client.query('SELECT * FROM grounds WHERE slug = $1', [slug])
   return rows[0] || null
 }
 
@@ -358,26 +364,6 @@ export async function findAllActiveGrounds({ limit, offset, sort = 'name' }) {
     [limit, offset],
   )
   return { rows, total: rows[0]?.total_count ?? 0 }
-}
-
-// Self-serve ground registration (POST /grounds) — submitted grounds start
-// as DRAFT and need a super_admin to review them before they're publicly
-// discoverable. findGroundsByStatus powers the admin "pending" queue;
-// decideGroundStatus is deliberately scoped to DRAFT -> {ACTIVE,SUSPENDED}
-// only (the `AND status = 'DRAFT'` guard) — this is specifically "decide a
-// pending submission," not a general status-editing endpoint, which wasn't
-// asked for and doesn't exist as a feature.
-export async function findGroundsByStatus(status) {
-  const { rows } = await pool.query('SELECT * FROM grounds WHERE status = $1 ORDER BY created_at DESC', [status])
-  return rows
-}
-
-export async function decideGroundStatus(publicGroundId, nextStatus) {
-  const { rows } = await pool.query(
-    `UPDATE grounds SET status = $2, updated_at = NOW() WHERE public_ground_id = $1 AND status = 'DRAFT' RETURNING *`,
-    [publicGroundId, nextStatus],
-  )
-  return rows[0] || null
 }
 
 // Homepage redesign (Stage 1) — real, distinct city names that currently

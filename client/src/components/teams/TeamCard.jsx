@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import TeamBadge from './TeamBadge.jsx'
 
-// Phase 10 Part 2 — public team directory card (Part 10). Every number is
+// Public team directory card. Every number is
 // already computed server-side by buildTeamCard.js.
 export default function TeamCard({ team }) {
   const navigate = useNavigate()

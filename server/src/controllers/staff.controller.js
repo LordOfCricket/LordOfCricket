@@ -1,9 +1,12 @@
-import bcrypt from 'bcryptjs'
-import { findUserByEmail, createStaffUser } from '../models/user.model.js'
-import { findStaffRoleByName } from '../models/staffRole.model.js'
+import { findUserByEmail } from '../models/user.model.js'
+import { createPlatformStaff } from '../services/staffAccount.service.js'
 
 const CREATABLE_STAFF_ROLES = ['admin', 'canteen_staff']
 
+// Phase 6 — creating a platform staff account is step-up-gated (see
+// services/staffAccount.service.js): the actual mutation + step-up
+// consumption happens there, atomically. Everything here is unchanged
+// pre-existing input validation, run before that call.
 export async function createStaff(req, res, next) {
   try {
     const { name, email, password, staffId, role } = req.body
@@ -22,11 +25,8 @@ export async function createStaff(req, res, next) {
       return res.status(409).json({ message: 'An account with this email already exists.' })
     }
 
-    const staffRole = await findStaffRoleByName(role)
-    const passwordHash = await bcrypt.hash(password, 10)
-
     try {
-      const user = await createStaffUser({ name, email, passwordHash, staffId: staffId || null, staffRoleId: staffRole.id })
+      const user = await createPlatformStaff({ name, email, password, staffId, role }, req.session?.id)
       res.status(201).json({ user })
     } catch (err) {
       if (err.code === '23505') {

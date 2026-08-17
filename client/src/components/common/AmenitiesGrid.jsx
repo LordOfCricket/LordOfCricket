@@ -28,8 +28,8 @@ function AmenityCard({ amenity }) {
   )
 }
 
-// Phase 13 Step 22 — takes the selected ground's own amenities as a prop
-// (GET /api/grounds/:publicGroundId's `amenities` array, Phase 12) instead
+// Takes the selected ground's own amenities as a prop
+// (GET /api/grounds/:publicGroundId's `amenities` array) instead
 // of self-fetching the unscoped GET /amenities list, which would leak
 // every ground's amenities onto whichever ground's page rendered first.
 export default function AmenitiesGrid({ amenities = [] }) {

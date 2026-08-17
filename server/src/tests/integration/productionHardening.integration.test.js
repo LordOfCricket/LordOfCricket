@@ -127,15 +127,21 @@ test('a staff-only endpoint rejects an unauthenticated request with 401, and a n
   }
 })
 
-test('the login endpoint is rate-limited: enough rapid attempts eventually get a 429, not an unbounded retry surface', async () => {
+// Phase 8 — this test used to hit the legacy `/auth/login` (email+password)
+// endpoint, removed this phase (zero reachable frontend callers — see
+// docs/AUTH.md). `/auth/verify-otp` is the real credential/code-guessing
+// surface now (guessing a 6-digit OTP is the modern equivalent of guessing
+// a password) and carries its own limiter (otpVerifyLimiter, same 20/15min
+// ceiling authLimiter used to have) — this test now proves that one fires.
+test('the OTP verify endpoint is rate-limited: enough rapid attempts eventually get a 429, not an unbounded retry surface', async () => {
   const server = await startTestApp()
   try {
     let sawRateLimited = false
     for (let i = 0; i < 25; i += 1) {
-      const res = await fetch(`${server.baseUrl}/auth/login`, {
+      const res = await fetch(`${server.baseUrl}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'nobody@example.test', password: 'wrong-password' }),
+        body: JSON.stringify({ identifier: 'nobody@example.test', code: '000000' }),
       })
       if (res.status === 429) {
         sawRateLimited = true
@@ -143,9 +149,9 @@ test('the login endpoint is rate-limited: enough rapid attempts eventually get a
         assert.ok(body.message)
         break
       }
-      assert.equal(res.status, 401)
+      assert.notEqual(res.status, 500, 'a wrong OTP must never crash the request')
     }
-    assert.ok(sawRateLimited, 'expected the auth rate limiter to trigger a 429 within 25 rapid attempts')
+    assert.ok(sawRateLimited, 'expected the OTP verify rate limiter to trigger a 429 within 25 rapid attempts')
   } finally {
     await server.close()
   }

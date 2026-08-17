@@ -18,6 +18,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import { createPlayer } from '../../models/player.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -37,13 +38,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the umpire network end-to-end flow).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 async function makeUser({ label, role = 'player', playerType = null, requestStatuses = [], staffRoleName = null }) {
@@ -104,6 +116,7 @@ test('END-TO-END: Ground Owner creates match -> Umpire discovers/applies/scores 
   ).rows[0]
   const owner = await makeUser({ label: 'e2e-owner' })
   await createMembership({ groundId: ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+  await elevate(owner)
 
   const teamA = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('E2E Team A','E2A') RETURNING *`)).rows[0]
   const teamB = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('E2E Team B','E2B') RETURNING *`)).rows[0]
@@ -125,7 +138,7 @@ test('END-TO-END: Ground Owner creates match -> Umpire discovers/applies/scores 
     // ------------------------------------------------------------------
     const created = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teamA.id, teamBId: teamB.id, matchDate: new Date(Date.now() + 3600000).toISOString(), requiredUmpires: 1, oversPerInnings: 1, ballsPerOver: 6 },
     })
     assert.equal(created.status, 201, JSON.stringify(created.data))
@@ -164,7 +177,7 @@ test('END-TO-END: Ground Owner creates match -> Umpire discovers/applies/scores 
     assert.equal(umpireNotifs.rows.length, 1, 'umpire must receive a real UMPIRE_SLOT_ASSIGNED notification')
 
     // Ground owner dashboard reflects the fill in real time.
-    const ownerMatches = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches`, { token: owner.token })
+    const ownerMatches = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches`, { cookie: owner.cookie })
     const ownerMatchEntry = ownerMatches.data.matches.find((m) => m.id === matchId)
     assert.equal(ownerMatchEntry.filled_slots, 1)
     assert.equal(ownerMatchEntry.total_slots, 1)

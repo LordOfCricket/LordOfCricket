@@ -2,7 +2,7 @@ import ScrollReveal from '../common/ScrollReveal.jsx'
 import { fadeUpSoft, mapReveal } from '../../lib/revealVariants.js'
 import { formatGroundAddress, hasValue } from '../../models/groundDiscovery.model.js'
 
-// Phase 13 Step 19 — ground.description is real API data now, not a
+// ground.description is real API data now, not a
 // hardcoded paragraph. A missing description gets a plain, honest
 // fallback line, never an invented "about this ground" paragraph.
 export default function GroundAbout({ ground }) {

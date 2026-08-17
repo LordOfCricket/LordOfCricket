@@ -7,10 +7,10 @@ import GlowOverlay from '../common/GlowOverlay.jsx'
 
 const PREVIEW_SLOT_COUNT = 4
 
-// Phase 18 Feature 6 — public, no-login availability check on the homepage.
+// Public, no-login availability check on the homepage.
 // Only ever exposes AVAILABLE/UNAVAILABLE (never a reason, never any
 // customer data) — the exact same public shape GET /bookings/availability
-// already returns for an unauthenticated caller (Part 47).
+// already returns for an unauthenticated caller.
 export default function PublicAvailabilityPreview() {
   const [slots, setSlots] = useState(null)
   const [error, setError] = useState(false)

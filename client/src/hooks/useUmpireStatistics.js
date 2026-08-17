@@ -39,7 +39,7 @@ export function useUmpireStatistics() {
     error,
     matchesOfficiated: profile?.matches_officiated ?? 0,
     upcomingAssignments: profile?.upcoming_assignments ?? 0,
-    // Phase 23 — no_shows/cancellations/reliability all come straight from
+    // no_shows/cancellations/reliability all come straight from
     // GET /umpire/profile (getUmpireStats + computeReliability, server-side,
     // sourced from umpire_assignment_events — never fabricated here).
     noShows: profile?.matches_no_show ?? 0,

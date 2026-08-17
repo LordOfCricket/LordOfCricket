@@ -9,7 +9,7 @@ import useHeroSceneMount from '../../hooks/useHeroSceneMount.js'
 import HeroSceneBoundary from './hero3d/HeroSceneBoundary.jsx'
 import { reveal } from '../../lib/motion.js'
 
-// Phase 7.1 — its own chunk, never bundled with Hero/HomePage. Import
+// Its own chunk, never bundled with Hero/HomePage. Import
 // deferred until after first paint (see the idle-mount effect below), so
 // this never competes with the critical render path.
 const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
@@ -22,7 +22,7 @@ const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 export default function Hero({ ground, onViewGallery }) {
   const { showScene, reduceMotion } = useHeroSceneMount()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
-  // Phase 4 — Hero is the pointer "source": one listener here drives the
+  // Hero is the pointer "source": one listener here drives the
   // shared parallax MotionValues that BackgroundSystem's layers and the
   // panels below all read from (see MouseParallaxContext.jsx).
   const { onPointerMove, onPointerLeave, enabled: parallaxEnabled } = useMouseParallax()
@@ -56,7 +56,7 @@ export default function Hero({ ground, onViewGallery }) {
         )}
       </div>
 
-      {/* Phase 7.1 — Hero 3D foundation. Sits above the CSS backdrop and
+      {/* Hero 3D foundation. Sits above the CSS backdrop and
           below the content grid (z-10) purely by DOM order, matching the
           backdrop div's own convention of not needing an explicit
           z-index. Decorative only: pointer-events-none + aria-hidden, and

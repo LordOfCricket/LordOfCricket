@@ -4,7 +4,8 @@ metadata:
   name: loc-frontend
   namespace: loc
 spec:
-  type: NodePort
+  # Phase 7 — see loc-backend-service.yaml's comment: same fix, same reason.
+  type: ClusterIP
 
   selector:
     app: loc-frontend
@@ -13,4 +14,3 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-      nodePort: 30080

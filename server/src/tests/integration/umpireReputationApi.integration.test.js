@@ -12,6 +12,7 @@ import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 import * as matchService from '../../services/match.service.js'
 
 function stubIo() {
@@ -32,13 +33,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the reputation-batching API).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -136,6 +148,7 @@ test('GET /ground-owner/.../umpire-slots and .../eligible-replacements both expo
   let matchId
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -148,7 +161,7 @@ test('GET /ground-owner/.../umpire-slots and .../eligible-replacements both expo
     assert.equal(applied.status, 201, JSON.stringify(applied.data))
     const slotId = applied.data.slot.id
 
-    const slots = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${matchId}/umpire-slots`, { token: owner.token })
+    const slots = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${matchId}/umpire-slots`, { cookie: owner.cookie })
     assert.equal(slots.status, 200)
     const assignedSlot = slots.data.slots.find((s) => s.id === slotId)
     assert.ok(assignedSlot.reputation, 'an ASSIGNED slot must carry a reputation summary for its umpire')
@@ -160,11 +173,11 @@ test('GET /ground-owner/.../umpire-slots and .../eligible-replacements both expo
     // Mark A a no-show, then check the eligible-replacements list for B's reputation.
     await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${matchId}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     const eligible = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${matchId}/umpire-slots/${slotId}/eligible-replacements`,
-      { token: owner.token },
+      { cookie: owner.cookie },
     )
     assert.equal(eligible.status, 200)
     const candidateB = eligible.data.candidates.find((c) => c.id === umpireB.id)

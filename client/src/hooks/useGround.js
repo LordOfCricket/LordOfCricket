@@ -4,9 +4,9 @@ import { fetchGroundProfile } from '../services/groundsApi.js'
 /** Fetches one ground's public profile (GET /api/grounds/:publicGroundId).
  * One-shot, not polled — a ground's profile doesn't change on a live-score
  * cadence. `notFound` is split out from `error` so callers can render a
- * dedicated "Ground Not Found" state (Phase 13 Step 30) instead of the
+ * dedicated "Ground Not Found" state (Step 30) instead of the
  * generic error state for a 404 specifically — an unknown id and a
- * real-but-DRAFT/SUSPENDED ground both 404 identically (Phase 12), so this
+ * real-but-DRAFT/SUSPENDED ground both 404 identically, so this
  * hook can't and shouldn't try to tell those two apart either.
  *
  * `loading` is DERIVED (ground/error/notFound all still unset), not its own

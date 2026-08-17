@@ -653,7 +653,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_actor_user_id_fkey'
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_actor_user_id_fkey'
   ) THEN
     ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_actor_user_id_fkey;
     ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL;
@@ -1375,7 +1375,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
   ) THEN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
@@ -1406,8 +1406,8 @@ ALTER TABLE match_feedback ALTER COLUMN app_rating DROP NOT NULL;
 -- shipped yet (no real rows depend on the old name).
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'match_feedback' AND column_name = 'app_comment')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'match_feedback' AND column_name = 'app_comment_liked') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'match_feedback' AND column_name = 'app_comment')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'match_feedback' AND column_name = 'app_comment_liked') THEN
     ALTER TABLE match_feedback RENAME COLUMN app_comment TO app_comment_liked;
   END IF;
 END $$;
@@ -1467,7 +1467,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
   ) THEN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
@@ -1579,7 +1579,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
   ) THEN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
@@ -1641,7 +1641,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
   ) THEN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
@@ -1705,7 +1705,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ai_insights' AND constraint_name = 'ai_insights_source_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ai_insights' AND constraint_name = 'ai_insights_source_type_check'
   ) THEN
     ALTER TABLE ai_insights DROP CONSTRAINT ai_insights_source_type_check;
   END IF;
@@ -1763,7 +1763,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
   ) THEN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
@@ -1777,3 +1777,407 @@ ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
                    'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
                    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED',
                    'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED'));
+
+-- ============================================================================
+-- PHASE 3 — Unified OTP authentication (email OR phone, no password required)
+-- ============================================================================
+
+-- A user can now be identified by phone alone (no email yet) or, going the
+-- other direction, exist with only an email and no phone — both must be
+-- optional at the column level, with a CHECK guaranteeing at least one is
+-- present. password_hash becomes optional too: an OTP-only signup never sets
+-- a password. None of this affects the 90 existing rows (all already have
+-- both email and password_hash set) — every ALTER here only relaxes a
+-- constraint or adds a nullable/defaulted column, never removes data.
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20) UNIQUE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'users' AND constraint_name = 'users_email_or_phone_present'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_email_or_phone_present;
+  END IF;
+END $$;
+ALTER TABLE users ADD CONSTRAINT users_email_or_phone_present CHECK (email IS NOT NULL OR phone IS NOT NULL);
+
+-- Account status — server-side source of truth for whether a user may
+-- authenticate at all, independent of role. Every existing row defaults to
+-- 'ACTIVE' (zero behavior change for the 90 existing accounts).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'users' AND constraint_name = 'users_status_check'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_status_check;
+  END IF;
+END $$;
+ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DISABLED', 'PENDING'));
+
+-- One row per OTP issued. Never stores the raw code — otp_hash only. status
+-- is the OTP's own lifecycle (independent of whether it was ever delivered
+-- successfully), not the user's account status above. purpose exists so an
+-- OTP issued for one purpose (LOGIN today; e.g. a future PHONE_VERIFY or
+-- PASSWORD_RESET) can never be replayed to satisfy a different one.
+-- otp_hash is nullable: when `provider = 'TWILIO_VERIFY'`, Twilio's Verify
+-- API owns the actual code/verification state remotely (see
+-- services/otpProviders/twilioProvider.js) — this row exists only for local
+-- rate-limiting/audit bookkeeping, not as a second source of verification
+-- truth. Every other provider (SendGrid, console) is a "dumb" delivery
+-- channel for a code LOC itself generates, hashes, and stores here.
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id BIGSERIAL PRIMARY KEY,
+  identifier VARCHAR(150) NOT NULL,
+  identifier_type VARCHAR(10) NOT NULL CHECK (identifier_type IN ('EMAIL', 'PHONE')),
+  purpose VARCHAR(20) NOT NULL DEFAULT 'LOGIN' CHECK (purpose IN ('LOGIN')),
+  provider VARCHAR(20) NOT NULL DEFAULT 'CONSOLE' CHECK (provider IN ('CONSOLE', 'TWILIO_VERIFY', 'SENDGRID')),
+  otp_hash TEXT,
+  status VARCHAR(10) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'VERIFIED', 'EXPIRED', 'LOCKED')),
+  attempts SMALLINT NOT NULL DEFAULT 0,
+  max_attempts SMALLINT NOT NULL DEFAULT 5,
+  expires_at TIMESTAMPTZ NOT NULL,
+  verified_at TIMESTAMPTZ,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- The one query the whole OTP flow hinges on: "find the current live OTP for
+-- this identifier+purpose" (to verify against, invalidate, or rate-limit
+-- new requests). PENDING-only partial index keeps it small regardless of
+-- how many historical (verified/expired) rows accumulate.
+-- These two existed from the first pass of this Phase and are widened here
+-- idempotently, same pattern as every other ALTER in this file.
+ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS provider VARCHAR(20) NOT NULL DEFAULT 'CONSOLE';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_provider_check'
+  ) THEN
+    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_provider_check;
+  END IF;
+END $$;
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_provider_check CHECK (provider IN ('CONSOLE', 'TWILIO_VERIFY', 'SENDGRID'));
+ALTER TABLE otp_codes ALTER COLUMN otp_hash DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_otp_codes_identifier_purpose_pending
+  ON otp_codes(identifier, purpose) WHERE status = 'PENDING';
+-- Identifier-scoped rate limiting (requests-per-hour) needs all recent rows
+-- for that identifier regardless of status, not just the pending one.
+CREATE INDEX IF NOT EXISTS idx_otp_codes_identifier_created ON otp_codes(identifier, created_at);
+
+-- One row per active (or once-active) server-side session. token_hash is a
+-- SHA-256 digest of the random session token the client's cookie actually
+-- holds — the raw token itself is never written to the database, matching
+-- how password_hash never stores a raw password.
+CREATE TABLE IF NOT EXISTS sessions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(64) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ,
+  ip_address VARCHAR(45),
+  user_agent TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+-- ============================================================================
+-- PHASE 4 — Account creation & onboarding
+-- ============================================================================
+
+-- Widen otp_codes for registration flows (Player/Umpire self-registration
+-- collects `name` before the identifier is verified) — additive only, the 2
+-- existing rows from Phase 3 are untouched (metadata defaults NULL, purpose
+-- stays 'LOGIN').
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_purpose_check'
+  ) THEN
+    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
+  END IF;
+END $$;
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE'));
+ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+-- Ground Owner registration request — decoupled from `grounds`/`ground_users`
+-- entirely until approved. A pending/rejected/under-review applicant has NO
+-- row in either of those tables and therefore no ownership of anything; see
+-- services/groundOwnerRequest.service.js#approveRequest for the transaction
+-- that creates them together only on approval. status is never writable by
+-- the client — only the approve/reject/request-information endpoints (all
+-- super_admin-only) change it.
+CREATE TABLE IF NOT EXISTS ground_owner_requests (
+  id SERIAL PRIMARY KEY,
+  public_request_id VARCHAR(20) UNIQUE NOT NULL,
+  applicant_name VARCHAR(100) NOT NULL,
+  applicant_email VARCHAR(150),
+  applicant_phone VARCHAR(20),
+  ground_name VARCHAR(150) NOT NULL,
+  ground_description VARCHAR(500),
+  address_line VARCHAR(255) NOT NULL,
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NOT NULL,
+  country VARCHAR(100) NOT NULL DEFAULT 'India',
+  postal_code VARCHAR(20),
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
+  ground_phone VARCHAR(30) NOT NULL,
+  ground_email VARCHAR(150),
+  ground_website TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'MORE_INFORMATION_REQUIRED')),
+  rejection_reason VARCHAR(500),
+  more_info_notes VARCHAR(500),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_ground_id INTEGER REFERENCES grounds(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT ground_owner_requests_applicant_identifier_present CHECK (applicant_email IS NOT NULL OR applicant_phone IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_ground_owner_requests_status ON ground_owner_requests(status, created_at DESC);
+
+-- Account/onboarding audit trail — deliberately separate from
+-- ground_audit_log (that table's entity_type is hard-scoped to
+-- 'BOOKING'/'BLOCK', a different bounded context). Same proven shape
+-- (actor SET NULL so the trail survives account deletion, JSONB metadata,
+-- append-only).
+CREATE TABLE IF NOT EXISTS account_audit_log (
+  id SERIAL PRIMARY KEY,
+  event_type VARCHAR(40) NOT NULL CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED'
+  )),
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_request_id INTEGER REFERENCES ground_owner_requests(id) ON DELETE SET NULL,
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- PHASE 5 — RBAC, granular Staff permissions, ground-level authorization
+-- ============================================================================
+--
+-- Ground-scoped Staff (GROUND_ADMIN/CANTEEN_STAFF, Phase 4) could log in but
+-- do nothing — every groundOwner.routes.js route was GROUND_OWNER-only. This
+-- lets an Owner grant SPECIFIC staff members SPECIFIC capabilities on THEIR
+-- OWN ground. A minimal, evidence-based catalog (not the brief's illustrative
+-- list) — see docs/AUTHORIZATION.md for the full reasoning on why staff
+-- creation/permission-management itself stays owner-only, never delegable
+-- (delegating STAFF_PERMISSIONS_MANAGE would reopen the exact "staff modifies
+-- another staff's permissions" escalation path the brief forbids).
+CREATE TABLE IF NOT EXISTS permissions (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(50) UNIQUE NOT NULL,
+  description VARCHAR(200) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO permissions (key, description) VALUES
+  ('MATCH_VIEW', 'View matches, umpire slots, incidents, and proposals for a ground'),
+  ('MATCH_MANAGE', 'Create and run matches: start, complete, set umpire fee/payment status'),
+  ('UMPIRE_MANAGE', 'Manage umpire assignment: no-show, replacement, proposals'),
+  ('STAFF_VIEW', 'View the staff list for a ground')
+ON CONFLICT (key) DO NOTHING;
+
+-- Grants are tied to ground_users.id, not a redundant (user_id, ground_id)
+-- pair — a permission grant is structurally impossible without an existing
+-- membership row (FK-enforced), reusing the existing tenancy architecture
+-- instead of duplicating it. revoked_at IS NULL = active; a revoked row is
+-- kept (not deleted) as its own audit trail of "this was once granted."
+CREATE TABLE IF NOT EXISTS staff_permissions (
+  id SERIAL PRIMARY KEY,
+  ground_user_id INTEGER NOT NULL REFERENCES ground_users(id) ON DELETE CASCADE,
+  permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+  granted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  revoked_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+-- The hot authorization-check path (requireGroundPermission, every
+-- permission-gated request): one indexed lookup, never a table scan. The
+-- partial UNIQUE also IS the "no duplicate active grant" guarantee — no
+-- separate application-level check needed.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_permissions_active_unique
+  ON staff_permissions(ground_user_id, permission_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_staff_permissions_ground_user_active
+  ON staff_permissions(ground_user_id) WHERE revoked_at IS NULL;
+
+-- Widen account_audit_log for the 3 new Phase 5 events. A bare
+-- CREATE TABLE IF NOT EXISTS above is a no-op once the table already exists
+-- (it does, as of Phase 4) — this file's own established idempotent-ALTER
+-- pattern (see e.g. ground_notifications_type_check/users_status_check
+-- above) is required to actually widen the CHECK on every re-run.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
+  ) THEN
+    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
+  END IF;
+END $$;
+ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
+  CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED'
+  ));
+CREATE INDEX IF NOT EXISTS idx_account_audit_log_event_type ON account_audit_log(event_type, created_at DESC);
+
+-- ============================================================================
+-- PHASE 6 — Privileged Account MFA & Step-Up Security
+-- ============================================================================
+--
+-- MFA is mandatory for SUPER_ADMIN and GROUND_OWNER only (never PLAYER/
+-- UMPIRE/STAFF) — see docs/AUTHORIZATION.md and docs/MFA.md. WebAuthn
+-- (passkeys) is the primary factor; TOTP is a secondary fallback for anyone
+-- without a compatible authenticator. mfa_verified_at lives directly on
+-- `sessions` (not a separate table) because MFA freshness is inherently a
+-- property of ONE authenticated session, not the user globally — this also
+-- gives session-binding (Phase 6 brief §14) for free: a session's own
+-- mfa_verified_at can never be read/written by a request authenticated with
+-- a DIFFERENT session's cookie, since requireAuth resolves exactly one
+-- session row per request.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified_at TIMESTAMPTZ;
+
+-- One row per registered passkey. A privileged user may register several
+-- (laptop, phone, security key) — see docs/MFA.md. counter/device_type/
+-- backed_up/transports are exactly the fields @simplewebauthn/server's
+-- verifyRegistrationResponse/verifyAuthenticationResponse return, stored
+-- as-is rather than re-derived. No private key is ever stored — public_key
+-- is the authenticator's COSE PUBLIC key, useless to an attacker without
+-- the device's own secure enclave.
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT UNIQUE NOT NULL,
+  public_key BYTEA NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  device_type VARCHAR(20),
+  backed_up BOOLEAN NOT NULL DEFAULT false,
+  transports TEXT[],
+  device_name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id) WHERE revoked_at IS NULL;
+
+-- Short-lived, single-use WebAuthn ceremony challenges (ceremony = either a
+-- registration or an authentication). Always tied to an already-identified
+-- user (Phase 6 never does passwordless-first-factor login — WebAuthn here
+-- is strictly a SECOND factor on top of Phase 3's OTP-authenticated
+-- session), unlike a passwordless-login WebAuthn flow which would need a
+-- nullable user_id resolved only after the ceremony completes.
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  challenge TEXT NOT NULL,
+  purpose VARCHAR(20) NOT NULL CHECK (purpose IN ('REGISTRATION', 'AUTHENTICATION')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_user_purpose ON webauthn_challenges(user_id, purpose) WHERE consumed_at IS NULL;
+
+-- One TOTP enrollment per user (UNIQUE user_id — re-enrolling replaces it,
+-- never accumulates). encrypted_secret is AES-256-GCM ciphertext
+-- (iv:authTag:ciphertext, hex), keyed by MFA_ENCRYPTION_KEY — never a raw
+-- secret, never Base64-only "encryption". verified_at is deliberately
+-- separate from disabled_at: a QR code that was generated but never
+-- confirmed with a real code must NOT count as an active factor (see
+-- hasAnyActiveFactor in mfaState.service.js) — otherwise an abandoned
+-- enrollment attempt would silently satisfy the MFA-mandatory policy.
+-- last_verified_step blocks replaying the same 30-second code twice within
+-- its own validity window, which otplib's window-tolerance alone does not
+-- prevent.
+CREATE TABLE IF NOT EXISTS totp_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  encrypted_secret TEXT NOT NULL,
+  verified_at TIMESTAMPTZ,
+  last_verified_step BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  disabled_at TIMESTAMPTZ
+);
+
+-- Recovery codes — the last-resort factor when every passkey is lost and
+-- TOTP was never enrolled. Hashed (SHA-256, same low-cost reasoning as
+-- otp_codes.otp_hash — these are single-use and revoked immediately on
+-- use, not long-lived secrets needing bcrypt's cost factor), shown to the
+-- user exactly once at generation time, never logged.
+CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_recovery_codes_user ON mfa_recovery_codes(user_id) WHERE used_at IS NULL;
+
+-- Step-up grants — short-lived (default 5 min, STEP_UP_TTL_MINUTES),
+-- single-use proof that the CURRENT session recently re-verified a strong
+-- factor specifically to perform ONE scoped high-risk action. Consumed via
+-- a WHERE-guarded UPDATE (see stepUp.service.js#consumeStepUpGrant) inside
+-- the SAME transaction as the gated mutation itself — the exact
+-- concurrency-safe pattern ground_owner_requests.markApprovedIfEligible
+-- (Phase 4) already established, reused rather than reinvented.
+-- action_scope is a closed CHECK enum, not free text: a typo'd scope
+-- string must never accidentally satisfy (or fail to satisfy) a check.
+CREATE TABLE IF NOT EXISTS step_up_grants (
+  id SERIAL PRIMARY KEY,
+  session_id BIGINT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_scope VARCHAR(50) NOT NULL CHECK (action_scope IN (
+    'WEBAUTHN_ADD', 'WEBAUTHN_REMOVE', 'TOTP_ENABLE', 'TOTP_DISABLE',
+    'RECOVERY_CODES_REGENERATE', 'MFA_DISABLE',
+    'STAFF_CREATE', 'GROUND_OWNER_REQUEST_APPROVE', 'PERMISSION_GRANT', 'STAFF_DISABLE'
+  )),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ
+);
+-- Prevents two simultaneously-live unused grants for the same (session,
+-- scope) — mirrors idx_staff_permissions_active_unique's exact shape
+-- (Phase 5). Freshness (expires_at > NOW()) is enforced by the consuming
+-- UPDATE's WHERE clause, not this index — a partial index predicate can't
+-- reference NOW() (not IMMUTABLE).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_step_up_grants_active ON step_up_grants(session_id, action_scope) WHERE used_at IS NULL;
+
+-- Widen account_audit_log for Phase 6's MFA/step-up/security events.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
+  ) THEN
+    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
+  END IF;
+END $$;
+ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
+  CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
+    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
+    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
+    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
+    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
+    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
+    'SESSION_REVOKED_FOR_SECURITY_REASON'
+  ));

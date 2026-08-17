@@ -17,6 +17,7 @@
     "@base-ui/react": "^1.7.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "@simplewebauthn/browser": "^13.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",

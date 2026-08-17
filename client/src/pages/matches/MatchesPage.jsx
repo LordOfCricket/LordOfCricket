@@ -29,14 +29,14 @@ export default function MatchesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [offset, setOffset] = useState(0)
 
-  // Stable, deliberate default (Part 19): always LIVE, never conditional on
+  // Stable, deliberate default: always LIVE, never conditional on
   // whether live matches currently exist — that would need an extra fetch
   // before the tab bar could render and risks a jarring post-load tab jump.
   const tab = CATEGORIES.some((c) => c.key === searchParams.get('tab')) ? searchParams.get('tab') : 'LIVE'
 
-  // Part 99 — the LIVE tab refreshes itself every ~20s while visible (paused
+  // The LIVE tab refreshes itself every ~20s while visible (paused
   // when hidden, via the shared transport); UPCOMING/RESULTS fetch once per
-  // param change like Part 1 shipped, no reason to auto-poll a fixture list
+  // param change, no reason to auto-poll a fixture list
   // or a results archive.
   const { result, loading, error, retry } = usePublicMatches({ category: tab, limit: PAGE_SIZE, offset, pollIntervalMs: tab === 'LIVE' ? 20000 : undefined })
 

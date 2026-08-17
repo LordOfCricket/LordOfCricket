@@ -1,5 +1,6 @@
 import { createAmenity, findAllAmenities, deleteAmenity } from '../models/amenity.model.js'
 import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { isValidHttpUrl } from '../domain/accountCreation/validation.js'
 import { logger } from '../utils/logger.js'
 
 const CLOUDINARY_FOLDER = 'LOC/amenities'
@@ -18,6 +19,9 @@ export async function addAmenity(req, res, next) {
     const { name, imageUrl, sortOrder } = req.body
     if (!name || !imageUrl) {
       return res.status(400).json({ message: 'name and imageUrl are required' })
+    }
+    if (!isValidHttpUrl(imageUrl)) {
+      return res.status(400).json({ message: 'imageUrl must be a valid http(s) URL.' })
     }
     const amenity = await createAmenity({ groundId: req.ground.id, name, imageUrl, sortOrder })
     res.status(201).json(amenity)

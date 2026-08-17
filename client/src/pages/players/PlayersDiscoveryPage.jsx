@@ -47,7 +47,7 @@ export default function PlayersDiscoveryPage() {
     load()
   }, [load])
 
-  // Reflects filters into the URL (Part 51) — shareable, back-button-friendly.
+  // Reflects filters into the URL — shareable, back-button-friendly.
   useEffect(() => {
     const next = {}
     if (debouncedQuery) next.q = debouncedQuery

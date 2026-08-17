@@ -13,7 +13,7 @@ const EASE = 0.07
  * Hero's own opaque backdrop (exactly like the rest of the atmosphere),
  * visible everywhere below it.
  *
- * requestAnimationFrame + refs only, per the Phase 4 performance brief:
+ * requestAnimationFrame + refs only, per the performance brief:
  * usePointerPosition writes raw pixels to a ref on `mousemove` (no
  * re-render); this component reads that ref once a frame, eases toward it
  * with a simple lerp, and writes the result straight to the DOM node's

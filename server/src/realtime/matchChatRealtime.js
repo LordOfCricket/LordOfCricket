@@ -7,8 +7,11 @@
 // spectator room is left untouched — this uses its own `match-chat:${id}`
 // room so a private chat message can never leak into the public spectator
 // broadcast.
+import { unsign } from 'cookie-signature'
 import { verifyToken } from '../utils/jwt.js'
 import { findUserById } from '../models/user.model.js'
+import { validateSessionToken } from '../services/session.service.js'
+import { SESSION_COOKIE_NAME } from '../middlewares/session.js'
 import { resolveSenderRole } from '../services/matchAccess.service.js'
 import { isSuperAdminUser } from '../middlewares/auth.js'
 import { logger } from '../utils/logger.js'
@@ -20,12 +23,51 @@ export function matchChatRoom(matchId) {
 // No existing socket handler in this codebase authenticates the caller
 // (confirmed by audit — join-match/join-order-room trust the payload
 // alone). Chat is participant-only, so this is the first join handler that
-// must verify a real identity: the client sends its existing JWT (the same
-// token already used for every REST call) as part of the join payload.
-async function authenticateSocketUser(token) {
-  if (!token) return null
+// must verify a real identity.
+//
+// Phase 8 — this used to authenticate ONLY via a JWT the client sent in the
+// join payload (`payload.token`, read from localStorage). A full legacy-JWT
+// dependency audit found that no real user has had a JWT to send since
+// Phase 3 replaced password login with OTP (nothing writes to localStorage's
+// authToken key anymore) — meaning match chat has been completely
+// unreachable for every real user since that deploy, a genuine production
+// bug hiding behind "this looks like intentional auth," not a cosmetic gap.
+// Fixed to authenticate via the same HttpOnly session cookie every REST
+// route uses (requireAuth's primary path) — Socket.IO's handshake carries
+// the browser's cookies once the client connects with
+// `withCredentials: true` and the server's socket.io CORS allows
+// credentials (server.js). The JWT branch is kept only as a fallback (same
+// reasoning as requireAuth's own dual-path design) — harmless since no real
+// client can present one, and matches the rest of the codebase's posture
+// rather than deleting a working fallback path.
+// Same fallback constant as app.js/jwt.js — a production deploy without
+// SESSION_COOKIE_SECRET already refuses to boot (app.js), so this fallback
+// only ever applies in dev/test, exactly like every other consumer of this
+// secret.
+const SESSION_COOKIE_SECRET = process.env.SESSION_COOKIE_SECRET || 'dev-only-insecure-cookie-secret-change-me'
+
+function readSessionCookie(cookieHeader) {
+  if (!cookieHeader) return null
+  const entry = cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
+  if (!entry) return null
+  const raw = decodeURIComponent(entry.slice(SESSION_COOKIE_NAME.length + 1))
+  if (!raw.startsWith('s:')) return null
+  const unsigned = unsign(raw.slice(2), SESSION_COOKIE_SECRET)
+  return unsigned || null
+}
+
+async function authenticateSocketUser(socket, legacyToken) {
+  const sessionToken = readSessionCookie(socket.handshake.headers.cookie)
+  if (sessionToken) {
+    const session = await validateSessionToken(sessionToken)
+    if (session) return findUserById(session.user_id)
+  }
+  if (!legacyToken) return null
   try {
-    const payload = verifyToken(token)
+    const payload = verifyToken(legacyToken)
     return await findUserById(payload.id)
   } catch {
     return null
@@ -41,7 +83,7 @@ export function registerMatchChatRealtime(io) {
         return
       }
       try {
-        const user = await authenticateSocketUser(payload?.token)
+        const user = await authenticateSocketUser(socket, payload?.token)
         if (!user) {
           socket.emit('match:error', { message: 'Authentication required to join match chat.' })
           return

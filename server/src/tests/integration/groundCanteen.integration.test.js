@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { pool } from '../../config/db.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { slugify } from '../../utils/slug.js'
-import { createGround, findGroundBySlug, findGroundById, findAllGrounds } from '../../models/ground.model.js'
+import { createGround, findGroundBySlug, findGroundById } from '../../models/ground.model.js'
 import { createCanteen, findCanteensByGroundId, findCanteenById } from '../../models/canteen.model.js'
 import { seedGroundAndCanteen } from '../../scripts/seedGroundAndCanteen.js'
 
@@ -38,17 +38,32 @@ test('the real canteen was seeded, belongs to the real ground', async () => {
   assert.match(canteens[0].public_canteen_id, /^CAN-/)
 })
 
+// Phase 8 — test-debt fix: this used to assert "exactly one ground exists
+// in the whole database" as its idempotency check, which broke the moment
+// ANY other ground was created (by a real second ground, or by test debris
+// from other integration test files) — a fragile, overly-broad proxy for
+// what this test actually verifies. seedGroundAndCanteen() itself is
+// already correctly idempotent BY SLUG (findGroundBySlug, not "is there
+// exactly one row") — confirmed by reading scripts/seedGroundAndCanteen.js
+// directly, so this was purely a test bug, not a production one. Fixed to
+// check the SPECIFIC seeded ground (by its own slug) before/after, which is
+// what "idempotent" actually means here and holds regardless of how many
+// unrelated grounds exist.
 test('seedGroundAndCanteen() is idempotent: running it again returns the SAME rows, never duplicates', async () => {
-  const before = await findAllGrounds()
-  assert.equal(before.length, 1, 'sanity check: exactly one ground before re-running the seed')
+  const before = await findGroundBySlug('ss-cricket-ground')
+  assert.ok(before, 'sanity check: the real seeded ground exists before re-running the seed')
+
+  const beforeCanteens = await findCanteensByGroundId(before.id)
+  assert.equal(beforeCanteens.length, 1, 'sanity check: exactly one canteen for the seeded ground before re-running the seed')
 
   const result = await seedGroundAndCanteen()
   assert.equal(result.groundInserted, false, 'must not insert a second time')
   assert.equal(result.canteenInserted, false)
-  assert.equal(result.ground.id, before[0].id, 'must return the SAME row, not a new one')
+  assert.equal(result.ground.id, before.id, 'must return the SAME ground row, not a new one')
+  assert.equal(result.canteen.id, beforeCanteens[0].id, 'must return the SAME canteen row, not a new one')
 
-  const after = await findAllGrounds()
-  assert.equal(after.length, 1, 'still exactly one ground after re-running the seed')
+  const afterCanteens = await findCanteensByGroundId(before.id)
+  assert.equal(afterCanteens.length, 1, 'still exactly one canteen for the seeded ground after re-running the seed')
 })
 
 test('grounds.slug is uniquely constrained at the database level', async () => {

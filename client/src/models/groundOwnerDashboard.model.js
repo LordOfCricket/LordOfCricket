@@ -14,14 +14,10 @@ export function slotStatusInfo(match) {
   return { emoji: '🟡', label: `${open} Slot${open === 1 ? '' : 's'} Available` }
 }
 
-export function filterUpcomingMatches(matches) {
-  return (matches || []).filter((m) => m.status === 'upcoming')
-}
-
 // Per-slot rows (from GET /matches/:matchId/umpire-slots) into the display
 // shape the Ground Owner view needs — real assigned-umpire name, or an
 // honest "Slot Available", never a fabricated placeholder. NO_SHOW/COMPLETED
-// (Phase 23) must NOT fall through to "Slot Available" — a NO_SHOW slot
+// must NOT fall through to "Slot Available" — a NO_SHOW slot
 // isn't freely claimable via the normal self-apply flow (it needs a
 // ground-owner-initiated replacement), and a COMPLETED slot is officiating
 // history, not an open slot on a match that's already finished.

@@ -1,6 +1,6 @@
 // "Last 5 matches" strip. DNB and "did not bowl" are shown as literal DNB
 // text, never collapsed into a fake 0-run innings or a 0-wicket spell — the
-// one explicit rule Phase 7 calls out for recent form.
+// one explicit rule for recent form.
 function battingLabel(batting) {
   if (!batting.didBat) return 'DNB'
   return `${batting.runs}${batting.notOut ? '*' : ''}`

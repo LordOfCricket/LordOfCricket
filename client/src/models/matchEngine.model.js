@@ -345,14 +345,22 @@ export function previewCorrection(log, seed, oversLimit, entryId, patch) {
   let affectedDeliveryCount = 0
   const dismissedPlayerChanges = []
   for (let i = 0; i < before.deliveries.length; i++) {
-    const b = before.deliveries[i]
-    const a = after.deliveries[i]
-    if (!a) break
-    if (deliverySignature(b) !== deliverySignature(a)) affectedDeliveryCount += 1
+    const beforeDelivery = before.deliveries[i]
+    const afterDelivery = after.deliveries[i]
+    if (!afterDelivery) break
+    if (deliverySignature(beforeDelivery) !== deliverySignature(afterDelivery)) affectedDeliveryCount += 1
 
-    const bOut = dismissedPlayerId(b)
-    const aOut = dismissedPlayerId(a)
-    if (bOut && aOut && bOut !== aOut) dismissedPlayerChanges.push({ deliveryId: a.id, over: a.over, ball: a.ball, before: bOut, after: aOut })
+    const beforeDismissedId = dismissedPlayerId(beforeDelivery)
+    const afterDismissedId = dismissedPlayerId(afterDelivery)
+    if (beforeDismissedId && afterDismissedId && beforeDismissedId !== afterDismissedId) {
+      dismissedPlayerChanges.push({
+        deliveryId: afterDelivery.id,
+        over: afterDelivery.over,
+        ball: afterDelivery.ball,
+        before: beforeDismissedId,
+        after: afterDismissedId,
+      })
+    }
   }
 
   return {

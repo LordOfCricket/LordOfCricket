@@ -1,5 +1,5 @@
-// Phase 12 — one commentary line. Emphasis for boundaries/wickets/milestones/
-// results never relies on color alone (Part 55): the badge text and bold
+// One commentary line. Emphasis for boundaries/wickets/milestones/
+// results never relies on color alone: the badge text and bold
 // weight carry the meaning too.
 const EMPHASIS_TAGS = ['WICKET', 'FOUR', 'SIX', 'FIFTY', 'HUNDRED', 'RESULT']
 

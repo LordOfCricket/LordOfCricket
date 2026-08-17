@@ -1,6 +1,8 @@
 import { findGroundByPublicId, findSingleGround, AmbiguousGroundError } from '../models/ground.model.js'
 import { findCanteenByPublicId, findSingleCanteen, AmbiguousCanteenError } from '../models/canteen.model.js'
 import { findActiveMembershipForAnyRole } from '../models/groundUser.model.js'
+import { hasActivePermission } from '../models/permission.model.js'
+import { respondMfaRequired } from '../services/mfaState.service.js'
 
 // Phase 9 — ground-scoped authorization primitives, additive alongside the
 // existing global RBAC in auth.js (requireRole/requireStaffRole/
@@ -30,6 +32,9 @@ export function requireGroundRole(...allowedRoles) {
       }
 
       if (isSuperAdmin(req.user)) {
+        // Phase 6 — Super Admin's own MFA mandate applies even when they're
+        // exercising access via this bypass, not just on staff-only routes.
+        if (!req.mfaVerified) return respondMfaRequired(res)
         req.ground = ground
         return next()
       }
@@ -39,8 +44,69 @@ export function requireGroundRole(...allowedRoles) {
         return res.status(403).json({ error: 'You do not have permission to perform this action at this ground.' })
       }
 
+      // Phase 6 — requireGroundRole is only ever called with 'GROUND_OWNER'
+      // as the sole allowed role (verified across the whole route tree), so
+      // a found membership here always means GROUND_OWNER by construction.
+      // Written as an explicit check anyway (not "else assume") so this
+      // stays correct even if a future caller passes additional roles.
+      if (membership.role === 'GROUND_OWNER' && !req.mfaVerified) {
+        return respondMfaRequired(res)
+      }
+
       req.ground = ground
       req.groundMembership = membership
+      next()
+    } catch (err) {
+      next(err)
+    }
+  }
+}
+
+// Phase 5 — granular Staff permissions, layered on top of the same
+// ground_users resolution requireGroundRole uses. GROUND_OWNER never needs a
+// staff_permissions row (full implicit access to their own ground); a
+// GROUND_ADMIN/CANTEEN_STAFF membership must hold an explicit ACTIVE grant
+// for `permissionKey`. Deliberately never checks the dead 'UMPIRE'/'SCORER'
+// ground_users roles — see docs/AUTHORIZATION.md for why those stay dead.
+//
+// Sets req.ground/req.groundMembership identically to requireGroundRole
+// (verified: no service downstream of either middleware reads
+// req.groundMembership — only req.ground — so this is a drop-in swap on any
+// route, not a breaking change to what the controller/service receives).
+const GROUND_STAFF_ROLES = ['GROUND_OWNER', 'GROUND_ADMIN', 'CANTEEN_STAFF']
+
+export function requireGroundPermission(permissionKey) {
+  return async (req, res, next) => {
+    try {
+      const ground = await findGroundByPublicId(req.params.publicGroundId)
+      if (!ground) {
+        return res.status(404).json({ error: 'Ground not found.' })
+      }
+
+      if (isSuperAdmin(req.user)) {
+        if (!req.mfaVerified) return respondMfaRequired(res)
+        req.ground = ground
+        return next()
+      }
+
+      const membership = await findActiveMembershipForAnyRole(req.user.id, ground.id, GROUND_STAFF_ROLES)
+      if (!membership) {
+        return res.status(403).json({ error: 'You do not have permission to perform this action at this ground.' })
+      }
+      req.ground = ground
+      req.groundMembership = membership
+
+      if (membership.role === 'GROUND_OWNER') {
+        // Phase 6 — Owner's own MFA mandate. Never checked for the STAFF
+        // (permission-grant) branch below — MFA is not mandatory for STAFF.
+        if (!req.mfaVerified) return respondMfaRequired(res)
+        return next()
+      }
+
+      const allowed = await hasActivePermission(membership.id, permissionKey)
+      if (!allowed) {
+        return res.status(403).json({ error: 'You do not have permission to perform this action at this ground.' })
+      }
       next()
     } catch (err) {
       next(err)
@@ -95,16 +161,30 @@ function isLegacyStaffAllowed(user, legacyStaffRoles) {
   return user?.role === 'staff' && (legacyStaffRoles === 'any' || legacyStaffRoles.includes(user?.staff_role))
 }
 
+// Phase 6 — returns { allowed, mfaRequired } rather than a bare boolean so
+// callers can answer with a 403 MFA_REQUIRED (matching requireGroundRole/
+// requireGroundPermission) instead of the generic permission-denied message
+// when the ONLY thing missing is MFA verification for a Super Admin or
+// Ground Owner. Plain legacy 'admin'/'canteen_staff' staff and
+// GROUND_ADMIN/CANTEEN_STAFF memberships are never MFA-mandatory — only the
+// isSuperAdmin branch and the GROUND_OWNER membership branch are gated,
+// exactly the same two cases requireGroundRole/requireGroundPermission gate.
 async function authorizeResolvedCanteen(req, canteen, { legacyStaffRoles = [], groundRoles = [] }) {
-  if (isLegacyStaffAllowed(req.user, legacyStaffRoles) || isSuperAdmin(req.user)) {
+  if (isSuperAdmin(req.user)) {
+    if (!req.mfaVerified) return { allowed: false, mfaRequired: true }
     req.canteen = canteen
-    return true
+    return { allowed: true }
+  }
+  if (isLegacyStaffAllowed(req.user, legacyStaffRoles)) {
+    req.canteen = canteen
+    return { allowed: true }
   }
   const membership = await findActiveMembershipForAnyRole(req.user.id, canteen.ground_id, groundRoles)
-  if (!membership) return false
+  if (!membership) return { allowed: false }
+  if (membership.role === 'GROUND_OWNER' && !req.mfaVerified) return { allowed: false, mfaRequired: true }
   req.canteen = canteen
   req.groundMembership = membership
-  return true
+  return { allowed: true }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +230,9 @@ export function requireCanteenStaffAccess({ legacyStaffRoles = [], groundRoles =
       if (!canteen) {
         return res.status(404).json({ error: 'No canteen is configured yet.' })
       }
-      const allowed = await authorizeResolvedCanteen(req, canteen, { legacyStaffRoles, groundRoles })
-      if (!allowed) {
+      const result = await authorizeResolvedCanteen(req, canteen, { legacyStaffRoles, groundRoles })
+      if (result.mfaRequired) return respondMfaRequired(res)
+      if (!result.allowed) {
         return res.status(403).json({ error: 'You do not have permission to perform this action at this canteen.' })
       }
       next()
@@ -242,8 +323,9 @@ export function requireGroundCanteenRole({ legacyStaffRoles = [], groundRoles = 
       }
       req.ground = ground
 
-      const allowed = await authorizeResolvedCanteen(req, canteen, { legacyStaffRoles, groundRoles })
-      if (!allowed) {
+      const result = await authorizeResolvedCanteen(req, canteen, { legacyStaffRoles, groundRoles })
+      if (result.mfaRequired) return respondMfaRequired(res)
+      if (!result.allowed) {
         return res.status(403).json({ error: 'You do not have permission to perform this action at this ground/canteen.' })
       }
       next()

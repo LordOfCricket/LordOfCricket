@@ -146,7 +146,7 @@ body,
 }
 
 /* ============================================================
-   LOC Homepage Background System (Phase 3) — additive only, scoped to
+   LOC Homepage Background System — additive only, scoped to
    the homepage's fixed atmosphere layer (components/home/background/*).
    Every animation here is transform/opacity only (GPU-compositable, no
    layout/paint-thread cost from a loop that runs the whole time a visitor

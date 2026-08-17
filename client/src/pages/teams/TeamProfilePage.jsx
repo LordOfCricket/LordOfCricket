@@ -114,7 +114,7 @@ export default function TeamProfilePage() {
           </div>
         </div>
 
-        {/* Phase 16 — bounded, independently-loading; record/recent matches/top performers above remain primary. */}
+        {/* Bounded, independently-loading; record/recent matches/top performers above remain primary. */}
         <AIInsightSection title="AI Team Insight" fetchFn={fetchTeamInsight} id={team.id} kind="person" />
       </div>
     </main>

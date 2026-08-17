@@ -1,74 +1,96 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './useAuth.js'
 import { getPostLoginPath } from '../models/roleRedirect.model.js'
-import { MIN_PASSWORD_LENGTH } from '../models/auth.model.js'
 
-const LOGIN_AS_VALUES = ['player', 'staff', 'umpire']
+const RESEND_COOLDOWN_SECONDS = 30
+const OTP_LENGTH = 6
 
+// Phase 4 — 'login' (default) reuses Phase 3's find-or-create OTP flow
+// unchanged. 'register-player'/'register-umpire' are new: an explicit
+// self-registration entry point (?mode=register-player/register-umpire on
+// this same page) that collects a name up front and 409s on an identifier
+// that's already registered, rather than silently logging that person in.
+// Either way, verifying the code hits the SAME /auth/verify-otp endpoint —
+// this hook doesn't brand the OTP step itself, only which function
+// requests the code.
+const VALID_MODES = ['login', 'register-player', 'register-umpire']
+
+// Phase 3 — unified OTP login. Two steps only: enter an email or phone
+// number, then enter the code that arrives for it. There is no separate
+// signup step or per-role tab — a brand-new identifier is registered
+// automatically on first successful verification (see
+// server/src/services/otpAuth.service.js's "find-or-create" comment); this
+// hook doesn't need to know or care which happened, it just follows
+// whatever getPostLoginPath sends a freshly authenticated user to, exactly
+// as the old password flow already did.
 export function useAuthPage() {
-  const { login, signup, selectRole, selectPlayerType } = useAuth()
+  const { requestOtp, verifyOtp, registerPlayerOtp, registerUmpireOtp } = useAuth()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // Lets a nav link land directly on a given tab (e.g. the navbar's
-  // "Umpire" button -> /login?as=umpire) without duplicating the whole
-  // login form for each role. Falls back to 'player' for anything
-  // unrecognized, same as the tab's own default.
-  const [loginAs, setLoginAs] = useState(() => {
-    const requested = searchParams.get('as')
-    return LOGIN_AS_VALUES.includes(requested) ? requested : 'player'
-  })
-  const [mode, setMode] = useState('login')
+  const rawMode = searchParams.get('mode')
+  const mode = VALID_MODES.includes(rawMode) ? rawMode : 'login'
+  const isRegisterMode = mode !== 'login'
+
+  const [step, setStep] = useState('identifier')
+  const [identifier, setIdentifier] = useState('')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const cooldownInterval = useRef(null)
 
-  const toggleMode = () => {
-    setMode((current) => (current === 'login' ? 'signup' : 'login'))
+  useEffect(() => {
+    return () => clearInterval(cooldownInterval.current)
+  }, [])
+
+  const setMode = (nextMode) => {
+    setSearchParams(nextMode === 'login' ? {} : { mode: nextMode })
+    setStep('identifier')
     setError('')
+    setCode('')
   }
 
-  const handleSubmit = async (e) => {
+  const startCooldown = (seconds = RESEND_COOLDOWN_SECONDS) => {
+    setResendCooldown(seconds)
+    clearInterval(cooldownInterval.current)
+    cooldownInterval.current = setInterval(() => {
+      setResendCooldown((current) => {
+        if (current <= 1) {
+          clearInterval(cooldownInterval.current)
+          return 0
+        }
+        return current - 1
+      })
+    }, 1000)
+  }
+
+  const sendCodeForMode = () => {
+    const trimmedIdentifier = identifier.trim()
+    if (mode === 'register-player') return registerPlayerOtp(name.trim(), trimmedIdentifier)
+    if (mode === 'register-umpire') return registerUmpireOtp(name.trim(), trimmedIdentifier)
+    return requestOtp(trimmedIdentifier)
+  }
+
+  const requestCode = async (e) => {
     e.preventDefault()
     setError('')
-
-    if (mode === 'signup' && password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`)
+    if (!identifier.trim()) {
+      setError('Enter your email address or phone number.')
+      return
+    }
+    if (isRegisterMode && !name.trim()) {
+      setError('Enter your name.')
       return
     }
 
     setSubmitting(true)
     try {
-      let user = mode === 'login' ? await login(email, password) : await signup(name, email, password)
-
-      // First time through role hasn't been chosen yet (fresh signup, or a
-      // login where role-select was never completed) — honor the tab they
-      // picked. 'umpire' is a player_type, not a role (selectRole only ever
-      // accepts 'player' server-side) — Umpire Login means role='player' +
-      // player_type='umpire', reusing the exact same two existing calls
-      // PlayerTypeSelectPage's "🚩 Umpire" button already makes, just
-      // chained here instead of shown as a separate step.
-      if (user.role === 'user') {
-        if (loginAs === 'umpire') {
-          user = await selectRole('player')
-          user = await selectPlayerType('umpire')
-        } else {
-          user = await selectRole(loginAs)
-        }
-      }
-
-      // A fully set-up account lands on the homepage, not a role-specific
-      // dashboard — never replaced, so Home becomes a real history entry
-      // (Homepage -> Dashboard -> Back correctly returns to Homepage, not
-      // skips past it). A still-incomplete account (mandatory role/
-      // player-type selection) keeps the exact prior replace-redirect
-      // behavior — unaffected by this change.
-      const destination = getPostLoginPath(user)
-      if (destination === '/') navigate('/')
-      else navigate(destination, { replace: true })
+      await sendCodeForMode()
+      setStep('otp')
+      startCooldown()
     } catch (err) {
       setError(err.response?.data?.message || 'Something went wrong. Please try again.')
     } finally {
@@ -76,19 +98,66 @@ export function useAuthPage() {
     }
   }
 
+  const verifyCode = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (code.length !== OTP_LENGTH) {
+      setError(`Enter the ${OTP_LENGTH}-digit code.`)
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const user = await verifyOtp(identifier.trim(), code)
+      const destination = getPostLoginPath(user)
+      if (destination === '/') navigate('/')
+      else navigate(destination, { replace: true })
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invalid or expired code.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const resendCode = async () => {
+    if (resendCooldown > 0 || submitting) return
+    setError('')
+    setSubmitting(true)
+    try {
+      await sendCodeForMode()
+      startCooldown()
+    } catch (err) {
+      setError(err.response?.data?.message || 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const changeIdentifier = () => {
+    setStep('identifier')
+    setCode('')
+    setError('')
+    clearInterval(cooldownInterval.current)
+    setResendCooldown(0)
+  }
+
   return {
-    loginAs,
-    setLoginAs,
     mode,
-    toggleMode,
+    setMode,
+    isRegisterMode,
+    step,
+    identifier,
+    setIdentifier,
     name,
     setName,
-    email,
-    setEmail,
-    password,
-    setPassword,
+    code,
+    setCode,
     error,
     submitting,
-    handleSubmit,
+    resendCooldown,
+    requestCode,
+    verifyCode,
+    resendCode,
+    changeIdentifier,
   }
 }

@@ -49,12 +49,6 @@ export function formatMatchDateTime(dateStr) {
   return new Date(dateStr).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-export function categoryForStatus(status) {
-  if (status === 'LIVE') return 'LIVE'
-  if (status === 'COMPLETED') return 'COMPLETED'
-  return 'UPCOMING'
-}
-
 export function nrrDisplay(nrr) {
   if (nrr == null) return '0.000'
   const sign = nrr > 0 ? '+' : ''

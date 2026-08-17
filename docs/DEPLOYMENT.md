@@ -16,8 +16,13 @@ and fill in real values before deploying. Summary by category:
 | `CLIENT_ORIGIN` | **Yes** | Comma-separated allowed CORS origins. An empty/unset value fails CORS *closed* (blocks every origin), not open — verified. |
 | `TRUST_PROXY` | Only if behind a reverse proxy | Set to `1` only when a real reverse proxy (Nginx/Render/Railway/etc) terminates TLS and sets `X-Forwarded-For`. Leaving this on with no real proxy in front lets a client spoof its own IP and bypass rate limiting entirely. |
 | `PG_*` | **Yes** | PostgreSQL connection — the authoritative datastore. `PG_POOL_MAX` is optional (defaults to 10, pg's own default). |
+| `DATABASE_URL` | **Yes, as of Phase 2A** | Same Postgres instance as `PG_*`, expressed as one connection string because that's what Prisma's `datasource` block requires (`postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public`). The pre-existing `pg` Pool (`config/db.js`) is untouched and keeps reading the discrete `PG_*` vars above — this is additive, consumed only by `prisma/schema.prisma` and `config/prisma.js`. See `docs/DATABASE.md`. |
 | `MONGO_URI` | No | Optional cache/secondary store (canteen menu, AI insight cache). The server boots and every core feature works without it — a connection failure logs a warning, never blocks startup. |
-| `JWT_SECRET` | **Yes in production** | The server **refuses to boot** in production without this set (`utils/jwt.js`) — it will never silently sign real sessions with the public dev fallback secret. Use a long, random value. |
+| `JWT_SECRET` | **Yes in production** | Legacy email+password login, kept alive during the Phase 3 OTP migration window (see `docs/AUTH.md`). The server **refuses to boot** in production without this set (`utils/jwt.js`) — it will never silently sign real sessions with the public dev fallback secret. Use a long, random value. |
+| `SESSION_COOKIE_SECRET` | **Yes in production, as of Phase 3** | Signs the new OTP-login session cookie (separate secret from `JWT_SECRET` — the two auth mechanisms don't share a compromise). Same fail-fast pattern as `JWT_SECRET` (`app.js`). |
+| `OTP_LENGTH` / `OTP_TTL_MINUTES` / `OTP_MAX_ATTEMPTS` / `OTP_RESEND_COOLDOWN_SECONDS` / `SESSION_TTL_DAYS` | No | Phase 3 OTP tuning — sane defaults if unset (`domain/otpAuth/otp.js`). |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_VERIFY_SERVICE_SID` | No | Phase 3 phone OTP delivery via Twilio Verify. All three required together; if any is missing, the console dev-provider is used instead (logs the code server-side, never sends a real SMS) — see `docs/AUTH.md`. Never exposed to the client. |
+| `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` | No | Phase 3 email OTP delivery via SendGrid. Both required together; if either is missing, the console dev-provider is used instead. Never exposed to the client. |
 | `CRICAPI_KEY` | No | Optional external India-match widget; degrades gracefully without it. |
 | `CLOUDINARY_*` | Only if canteen menu images are used | |
 | `GOOGLE_CALENDAR_ID` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | No | Optional ground-calendar sync. Booking works fully without it. |
@@ -25,7 +30,8 @@ and fill in real values before deploying. Summary by category:
 | `GROUND_*` | No | Ground operating policy (hours, slot length, booking horizon) — sensible defaults in `domain/booking/policy.js`. |
 
 **Missing required variables fail fast, with a clear message.** `config/validateEnv.js` runs at
-startup and, in production, refuses to boot if `JWT_SECRET`, any `PG_*`, or `CLIENT_ORIGIN` is unset
+startup and, in production, refuses to boot if `JWT_SECRET`, `SESSION_COOKIE_SECRET`, any `PG_*`, or
+`CLIENT_ORIGIN` is unset
 — the error names exactly which variable(s) are missing rather than surfacing as an opaque downstream
 connection error several layers removed from the actual cause. Every other variable in the table
 above is genuinely optional by design (the app boots and every core feature works without it) and is
@@ -59,6 +65,11 @@ regression, not hardening.
    `MONGO_URI` to a real Atlas/self-hosted connection string and make sure the deploying environment's
    outbound IP is allow-listed on the Atlas cluster (the single most common real-world cause of
    "MongoDB connection failed" in this app's logs).
+5. Set `DATABASE_URL` (Phase 2A onward) to the same Postgres instance and run
+   `npx prisma migrate deploy --schema=server/prisma/schema.prisma` once, against a fresh deployment
+   target that already has `schema.sql` applied — see `docs/DATABASE.md` for the full Prisma migration
+   strategy and why this is a controlled, explicit step rather than something run automatically at
+   container startup.
 
 ## Google Calendar setup (optional)
 
@@ -115,6 +126,37 @@ is required by the architecture; pick whichever fits. Concrete config included i
 - **Frontend build/start commands**: build command `npm run build`, output directory `dist`, no
   start command needed (static files only).
 
+## Kubernetes / Cloudflare tunnel
+
+`k8s/` holds manifests for a Kubernetes deployment with a Cloudflare Tunnel front door: the tunnel
+(`k8s/cloudflared-deployment.yaml`/`cloudflared-config.yaml`) routes `lordofcricket.com` to an
+in-cluster `nginx-ingress-controller` Service, which the Ingress (`k8s/loc-ingress.yaml`) then routes to
+`loc-backend`/`loc-frontend` by path. Both backend and frontend `Service`s are `ClusterIP` (Phase 7 — see
+`docs/SECURITY.md` finding #3) precisely because that traffic path never needs a node-level port; a
+`NodePort` there would bypass the tunnel and ingress controller entirely. Both container images run as
+non-root where practical (`server/Dockerfile` — the frontend's Nginx image is a documented, deferred
+exception; see `docs/SECURITY.md`).
+
+## Container image tagging
+
+**Never deploy `:latest` to production.** Both `k8s/loc-backend-deployment.yaml` and
+`k8s/loc-frontend-deployment.yaml` check in `image: loc-*:latest` as a placeholder only (commented
+in-file) — a real release must override it to an immutable, per-commit tag before applying:
+
+```
+docker build -t loc-backend:$(git rev-parse --short HEAD) -f server/Dockerfile server
+docker build -t loc-frontend:$(git rev-parse --short HEAD) -f client/Dockerfile client
+kubectl set image deployment/loc-backend  loc-backend=loc-backend:$(git rev-parse --short HEAD)   -n loc
+kubectl set image deployment/loc-frontend loc-frontend=loc-frontend:$(git rev-parse --short HEAD) -n loc
+```
+
+This repo has no Kustomize/Helm templating (introducing one is a bigger change than a tagging fix
+warrants at this scale) — the tag substitution above is a documented step in the deployment procedure
+(below), not automated. `.github/workflows/ci.yml` builds both images tagged by the commit SHA on every
+push as a build-reproducibility smoke test (not pushed anywhere — no container registry is configured
+in this repo yet); wiring that build step to also push to a real registry is the natural next step once
+one is chosen.
+
 ## Pre-deploy checklist
 
 - [ ] `NODE_ENV=production` and a real, random `JWT_SECRET` are set — the server will refuse to start otherwise.
@@ -132,15 +174,49 @@ is required by the architecture; pick whichever fits. Concrete config included i
 ## Backup & restore
 
 **PostgreSQL is the sole source of truth for every core feature** (scoring, players, teams,
-tournaments, booking) — see `docs/ARCHITECTURE.md` principle #1. Back it up like you would any
-production relational database: this app does not implement its own backup mechanism, and shouldn't
-— that's the hosting platform/database provider's job, not application code's.
+tournaments, booking) — see `docs/ARCHITECTURE.md` principle #1.
 
-- **Managed Postgres (Render/Railway/Supabase/RDS/etc)**: enable the provider's automated daily
-  backups and point-in-time recovery if offered. This is almost always a dashboard toggle, not
-  something to build.
-- **Self-managed Postgres**: `pg_dump` on a schedule (cron), stored off-box. Restore with `pg_restore`
-  (or `psql < dump.sql` for a plain-text dump) against a fresh database, then point `PG_*` at it.
+**Phase 8 — a real, working backup/restore mechanism now exists**, replacing this section's previous
+prose-only guidance. `npm run backup:postgres [outDir]` (`server/src/scripts/backupPostgres.js`) does a
+real logical backup over a plain `pg` connection — every table in `public`, discovered dynamically via
+`information_schema` (never a hand-maintained table list), dumped to one timestamped JSON file.
+Deliberately not a `pg_dump` wrapper: many managed Postgres providers don't grant shell access to run
+`pg_dump` at all, but always grant a normal connection.
+
+`npm run restore:postgres <backup.json> <targetSchema>` (`server/src/scripts/restorePostgres.js`)
+restores into a caller-named Postgres **schema** (via `search_path`), never directly into `public` —
+schema reconstruction replays `schema.sql` (already the authoritative, idempotent schema source; see
+`docs/DATABASE.md`), then inserts the backed-up rows, resolving foreign-key insert order by retrying
+whatever doesn't yet satisfy a constraint until a full pass makes no further progress (rather than a
+hand-maintained topological table order). For a genuine disaster-recovery restore into a **fresh, empty
+database**, pass `public` as the schema.
+
+**Actually tested, not just described** (2026-08-17, against this project's own dev database): backed
+up 60 tables / 3,647 rows (~1.5s), restored into a disposable schema (~3s including schema
+reconstruction), then verified — all 59 restorable tables' row counts matched the source exactly (the
+60th, `_prisma_migrations`, is Prisma's own migration-bookkeeping table, not application data, and isn't
+recreated by a schema.sql replay), zero orphaned foreign keys (every restored session's `user_id`
+resolved to a restored user), a sampled session row matched the source byte-for-byte, and a query
+against the restored schema in the exact shape the app itself would run succeeded. The disposable schema
+was dropped immediately after — `public` was never touched.
+
+- **RPO**: as tight as you can afford to run `backup:postgres` on a schedule — the mechanism itself has
+  no inherent lag (it's a live snapshot read at invocation time), so RPO is purely "how often you run
+  it," not a property of the tool. For continuous point-in-time recovery instead of periodic snapshots,
+  use the managed-provider option below.
+- **RTO**: ~3 seconds to restore this project's current dataset size (3,647 rows). This will grow with
+  data volume — the restore inserts row-by-row inside per-table transactions, not via `COPY`, so a
+  production-scale dataset (millions of rows) would need a `COPY`-based rewrite for acceptable RTO; not
+  needed at this project's current scale, called out here so it isn't forgotten later.
+- **Limitations found during testing**: `_prisma_migrations` isn't restorable via this mechanism
+  (documented above — not application data); JSON/JSONB columns needed explicit re-serialization before
+  re-insertion (`pg` encodes a bound JS array/object parameter as a Postgres ARRAY/ROW literal by
+  default, not JSON — fixed in the script, not a residual gap).
+- **Managed Postgres (Render/Railway/Supabase/RDS/etc)**: enabling the provider's own automated daily
+  backups and point-in-time recovery (almost always a dashboard toggle) is still the recommended
+  primary mechanism for continuous protection — `backup:postgres`/`restore:postgres` are the
+  portable, always-available fallback that works with nothing but a connection string, and what this
+  phase's restore test actually exercised.
 - **MongoDB**: optional and non-authoritative (canteen menu catalog, AI insight cache — both are
   either re-enterable by staff or regenerable on demand). Losing it is an inconvenience, never a data
   -loss incident for LOC's actual cricket record. Back it up if convenient (most managed Atlas tiers
@@ -150,6 +226,36 @@ production relational database: this app does not implement its own backup mecha
   container platforms are — a redeploy wipes it), these are lost on redeploy today. Not addressed in
   this phase (see Known Limitations) — Cloudinary already exists as the intended path for images that
   need to survive redeploys; this is only relevant for the subset of uploads that bypass it.
+
+### Known migration-safety limitation (found during the restore test, 2026-08-17)
+
+`schema.sql` replays its full multi-phase history top-to-bottom on every run, including several
+tables' CHECK constraints being defined narrow-then-widened-again in later blocks (e.g.
+`account_audit_log_event_type_check` is first added with only the Phase 4/5 event names, then dropped
+and re-added later in the same file with the full Phase 6 MFA/step-up list added). Confirmed via direct
+reproduction: replaying the full file against a database whose `account_audit_log` **already contains**
+rows using the later (Phase 6) event names fails at the earlier, narrower `ADD CONSTRAINT` — the
+narrower definition rejects data that only the final definition (moments later in the same file) was
+ever meant to allow. This only manifests when re-running `schema.sql` from scratch against an
+**already-populated** database (a genuine disaster-recovery-from-total-loss scenario, or the restore
+test above run against a target schema that already had rows) — it does **not** affect the normal path
+of applying `schema.sql` incrementally as each phase adds to it, and does **not** affect a restore into
+a schema that starts empty (schema creation completes before any data is inserted). Confirmed
+Postgres's simple-query-protocol transaction batching means a failed multi-statement run of `schema.sql`
+rolls back cleanly with zero partial state — a failed re-run cannot corrupt an already-correct schema.
+**Deferred, not fixed this phase**: consolidating each such constraint to a single, final definition
+(rather than replaying its full historical narrow-then-widen sequence) needs a careful pass across the
+whole file with the same attention to historical-DDL correctness as the rest of `schema.sql` already
+gets — a dedicated task, not a same-session patch. Tracked as a real, documented finding, not silently
+absorbed.
+
+A related, smaller fix **was** made and verified safe: every such guarded
+`DROP CONSTRAINT`/`RENAME COLUMN IF EXISTS`-style check in `schema.sql` queried
+`information_schema.table_constraints`/`columns` without a `table_schema` filter — harmless when only
+one schema exists, but a false-positive risk if another schema with identically-named tables exists in
+the same database (exactly the restore-into-a-disposable-schema scenario above). Every such check now
+filters on `table_schema = current_schema()`; re-verified against the real `public` schema via
+`npm run db:migrate` with no behavior change (resolves to `public` there, identical to before).
 
 ## Disaster recovery
 

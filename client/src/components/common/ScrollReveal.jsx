@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { fadeUp } from '../../lib/revealVariants.js'
 
 /**
- * Phase 5 — shared scroll-reveal wrapper. One IntersectionObserver
+ * Shared scroll-reveal wrapper. One IntersectionObserver
  * (framer-motion's `whileInView`) per instance; each call site passes its
  * own `variant` from revealVariants.js so no two sections move identically.
  * `once` defaults true — this is a one-time entrance, not a scroll-repeat

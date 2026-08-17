@@ -8,11 +8,12 @@ import matchRoutes from './match.routes.js'
 import indiaMatchRoutes from './indiaMatch.routes.js'
 import partnerRoutes from './partner.routes.js'
 import groundRoutes from './ground.routes.js'
-import groundReviewRoutes from './groundReview.routes.js'
+import groundOwnerRequestRoutes from './groundOwnerRequest.routes.js'
 import geocodeRoutes from './geocode.routes.js'
 import canteenMenuRoutes, { groundScopedRouter as groundScopedCanteenMenuRoutes } from './canteenMenu.routes.js'
 import canteenOrderRoutes, { groundScopedRouter as groundScopedCanteenOrderRoutes } from './canteenOrder.routes.js'
 import authRoutes from './auth.routes.js'
+import mfaRoutes from './mfa.routes.js'
 import umpireRequestRoutes from './umpireRequest.routes.js'
 import staffRoutes from './staff.routes.js'
 import meRoutes from './me.routes.js'
@@ -104,6 +105,8 @@ router.use('/stats', topUmpiresRoutes)
 
 // Site-wide auth (single login for players, staff, umpires)
 router.use('/auth', authRoutes)
+// Phase 6 — privileged-account MFA/WebAuthn/step-up, also under /auth.
+router.use('/auth', mfaRoutes)
 router.use('/umpire-requests', umpireRequestRoutes)
 router.use('/staff', staffRoutes)
 router.use('/me', meRoutes)
@@ -136,10 +139,14 @@ router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/orders', groundSc
 // canteen-scoped mounts above, regardless of registration order.
 router.use('/grounds', groundRoutes)
 
-// Admin review queue for self-serve ground registrations (POST /grounds) —
-// its own top-level route, not under /grounds, same reasoning as
-// umpireRequestRoutes: an admin queue, not a public ground resource.
-router.use('/ground-review', groundReviewRoutes)
+// Phase 4 — Ground Owner request/approval (public submission + super_admin
+// review queue). Replaces the old GET/PATCH /ground-review admin queue
+// (retired) — see ground.controller.js#registerGround and
+// groundOwnerRequest.service.js for why: reviewing/deciding now happens
+// against a ground_owner_requests row (which never grants membership on its
+// own), not a DRAFT grounds row (which used to grant it immediately on
+// submission, before any review — the bug this phase fixes).
+router.use('/ground-owner-requests', groundOwnerRequestRoutes)
 
 // Grounds page — landmark search (free-text -> real lat/lng via OpenStreetMap
 // Nominatim, no paid geocoding service). Its own top-level route, not under

@@ -1,0 +1,13 @@
+# Phase 8 — with 2 replicas (loc-backend-deployment.yaml), this ensures a
+# voluntary disruption (node drain, cluster upgrade) can never take the
+# backend to zero available pods at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: loc-backend-pdb
+  namespace: loc
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: loc-backend

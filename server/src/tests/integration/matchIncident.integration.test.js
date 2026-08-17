@@ -11,6 +11,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -30,13 +31,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// incident reporting).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -103,6 +115,7 @@ test('the assigned umpire can report an incident; the ground owner sees it and g
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -139,7 +152,7 @@ test('the assigned umpire can report an incident; the ground owner sees it and g
     assert.equal(asUmpire.data.incidents.length, 1)
 
     const asOwner = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/incidents`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(asOwner.status, 200)
     assert.equal(asOwner.data.incidents.length, 1)

@@ -28,6 +28,7 @@ import { findSingleCanteen } from '../../models/canteen.model.js'
 import MenuItemMongo from '../../models/canteenMenuItemMongoLegacy.model.js'
 import { uploadImageFileDetailed, deleteImageByPublicId } from '../../utils/cloudinaryUpload.js'
 import { runMenuItemMigration } from '../../scripts/migrateMenuItemsToPostgres.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 await connectMongo()
 
@@ -98,9 +99,16 @@ async function createStaffUser({ staffRole } = {}) {
       [`integration-test-canteen-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, staffRoleId],
     )
   ).rows[0]
+  // Phase 6 — authorizeResolvedCanteen's Super-Admin/GROUND_OWNER branches
+  // now require req.mfaVerified, which a bare JWT can never satisfy. A REAL,
+  // already-MFA-verified session cookie is minted directly — see
+  // helpers/mfaFixtures.js (this file isn't testing MFA, only canteen menu
+  // CRUD).
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
   return {
     id: user.id,
     token: signToken({ id: user.id }),
+    cookie,
     async cleanup() {
       await pool.query('DELETE FROM users WHERE id = $1', [user.id])
     },
@@ -111,12 +119,13 @@ function uniqueName(label) {
   return `Integration Test — ${label} — ${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-async function createItem(baseUrl, token, { name, category = 'Snacks', price = 100, description = '', defaultStock = 10, image } = {}) {
+async function createItem(baseUrl, actor, { name, category = 'Snacks', price = 100, description = '', defaultStock = 10, image } = {}) {
   const body = new URLSearchParams({ name, category, price: String(price), description, defaultStock: String(defaultStock) })
   if (image) body.set('image', image)
+  const authHeaders = actor?.cookie ? { Cookie: actor.cookie } : { Authorization: `Bearer ${actor?.token ?? actor}` }
   const res = await fetch(`${baseUrl}/canteen/menu/master`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { ...authHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   })
   const json = await res.json()
@@ -178,7 +187,7 @@ test('create menu item as plain staff (no staff_role_id) is rejected (403) — a
   const server = await startTestApp()
   const plainStaff = await createStaffUser()
   try {
-    const { status } = await createItem(server.baseUrl, plainStaff.token, { name: 'Should never be created', category: 'x' })
+    const { status } = await createItem(server.baseUrl, plainStaff, { name: 'Should never be created', category: 'x' })
     assert.equal(status, 403)
   } finally {
     await plainStaff.cleanup()
@@ -207,7 +216,7 @@ test('authorized create/read/update/delete round-trip preserves the exact respon
   let createdId = null
   try {
     const name = uniqueName('CRUD')
-    const created = await createItem(server.baseUrl, admin.token, { name, category: 'Mains', price: 149.5, description: 'desc', defaultStock: 20, image: 'https://example.com/pic.jpg' })
+    const created = await createItem(server.baseUrl, admin, { name, category: 'Mains', price: 149.5, description: 'desc', defaultStock: 20, image: 'https://example.com/pic.jpg' })
     assert.equal(created.status, 201)
     createdId = Number(created.body.item.id)
     assert.equal(typeof created.body.item.id, 'string')
@@ -238,7 +247,7 @@ test('authorized create/read/update/delete round-trip preserves the exact respon
     // Update.
     const updateRes = await fetch(`${server.baseUrl}/canteen/menu/master/${created.body.item.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ price: '199' }),
     })
     assert.equal(updateRes.status, 200)
@@ -250,7 +259,7 @@ test('authorized create/read/update/delete round-trip preserves the exact respon
     // Delete (soft — isActive:false).
     const deleteRes = await fetch(`${server.baseUrl}/canteen/menu/master/${created.body.item.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${admin.token}` },
+      headers: { Cookie: admin.cookie },
     })
     assert.equal(deleteRes.status, 200)
     const deleteBody = await deleteRes.json()
@@ -274,14 +283,14 @@ test('update/delete with an invalid or nonexistent id is a clean 404, never a 50
   try {
     const updateRes = await fetch(`${server.baseUrl}/canteen/menu/master/not-a-valid-id`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ price: '1' }),
     })
     assert.equal(updateRes.status, 404)
 
     const deleteRes = await fetch(`${server.baseUrl}/canteen/menu/master/999999999`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${admin.token}` },
+      headers: { Cookie: admin.cookie },
     })
     assert.equal(deleteRes.status, 404)
   } finally {
@@ -294,10 +303,10 @@ test('invalid create payload (missing name/category, non-numeric price) is rejec
   const server = await startTestApp()
   const admin = await createStaffUser({ staffRole: 'super_admin' })
   try {
-    const missingName = await createItem(server.baseUrl, admin.token, { name: '', category: 'x', price: 10 })
+    const missingName = await createItem(server.baseUrl, admin, { name: '', category: 'x', price: 10 })
     assert.equal(missingName.status, 400)
 
-    const badPrice = await createItem(server.baseUrl, admin.token, { name: 'x', category: 'y', price: 'not-a-number' })
+    const badPrice = await createItem(server.baseUrl, admin, { name: 'x', category: 'y', price: 'not-a-number' })
     assert.equal(badPrice.status, 400)
   } finally {
     await admin.cleanup()
@@ -316,13 +325,13 @@ test("TodayMenu publish validates ids against Postgres MenuItem, and getTodaysMe
   const todayMenuSnapshot = await snapshotTodayMenu()
   let createdId = null
   try {
-    const created = await createItem(server.baseUrl, admin.token, { name: uniqueName('today-menu'), category: 'Snacks', price: 75, defaultStock: 5 })
+    const created = await createItem(server.baseUrl, admin, { name: uniqueName('today-menu'), category: 'Snacks', price: 75, defaultStock: 5 })
     createdId = Number(created.body.item.id)
     const itemId = created.body.item.id
 
     const publishRes = await fetch(`${server.baseUrl}/canteen/menu/today`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: [
           { id: itemId, available: true, stock: 3, dailyPrice: 60 },
@@ -365,13 +374,13 @@ test('deleting a MenuItem removes it from a published TodayMenu (existing cross-
   const todayMenuSnapshot = await snapshotTodayMenu()
   let createdId = null
   try {
-    const created = await createItem(server.baseUrl, admin.token, { name: uniqueName('delete-cleans-today'), category: 'Snacks', price: 20 })
+    const created = await createItem(server.baseUrl, admin, { name: uniqueName('delete-cleans-today'), category: 'Snacks', price: 20 })
     createdId = Number(created.body.item.id)
     const itemId = created.body.item.id
 
     await fetch(`${server.baseUrl}/canteen/menu/today`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: [{ id: itemId, available: true, stock: 1, dailyPrice: 20 }] }),
     })
 
@@ -380,7 +389,7 @@ test('deleting a MenuItem removes it from a published TodayMenu (existing cross-
 
     const deleteRes = await fetch(`${server.baseUrl}/canteen/menu/master/${itemId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${admin.token}` },
+      headers: { Cookie: admin.cookie },
     })
     assert.equal(deleteRes.status, 200)
 
@@ -429,7 +438,7 @@ test('deleting a MenuItem never changes a historical Order that already snapshot
   const customer = await createStaffUser()
   let createdId = null
   try {
-    const created = await createItem(server.baseUrl, admin.token, { name: uniqueName('order-snapshot'), category: 'Snacks', price: 88 })
+    const created = await createItem(server.baseUrl, admin, { name: uniqueName('order-snapshot'), category: 'Snacks', price: 88 })
     createdId = Number(created.body.item.id)
     const itemId = created.body.item.id
 
@@ -442,7 +451,7 @@ test('deleting a MenuItem never changes a historical Order that already snapshot
     const orderId = (await orderRes.json()).order.id
 
     // Delete (deactivate) the MenuItem the order referenced.
-    await fetch(`${server.baseUrl}/canteen/menu/master/${itemId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin.token}` } })
+    await fetch(`${server.baseUrl}/canteen/menu/master/${itemId}`, { method: 'DELETE', headers: { Cookie: admin.cookie } })
 
     const orderAfter = await findOrderById(orderId, canteen.id)
     assert.equal(orderAfter.items[0].name, created.body.item.name, 'the order keeps its own snapshot, independent of the MenuItem row')
@@ -452,6 +461,53 @@ test('deleting a MenuItem never changes a historical Order that already snapshot
     await cleanupItem(createdId)
     await admin.cleanup()
     await customer.cleanup()
+    await server.close()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Phase 7 — this route was the one upload endpoint in the app with no
+// fileFilter/size limit at all (every sibling — ground-photos/amenities/
+// gallery/partners — caps at 10MB and allow-lists image MIME types). Both
+// checks run inside multer itself, before Cloudinary is ever reached, so
+// neither test needs the cloudinaryUploadWorks preflight guard above.
+// ---------------------------------------------------------------------------
+
+test('canteen menu upload: rejects a non-image MIME type and a file over the 10MB limit', async () => {
+  const server = await startTestApp()
+  const admin = await createStaffUser({ staffRole: 'super_admin' })
+  try {
+    const badMimeForm = new FormData()
+    badMimeForm.append('imageFile', new Blob([Buffer.from('not an image')], { type: 'text/plain' }), 'evil.txt')
+    badMimeForm.append('name', uniqueName('bad-mime'))
+    badMimeForm.append('category', 'Snacks')
+    badMimeForm.append('price', '10')
+    const badMimeRes = await fetch(`${server.baseUrl}/canteen/menu/master`, {
+      method: 'POST',
+      headers: { Cookie: admin.cookie },
+      body: badMimeForm,
+    })
+    assert.equal(badMimeRes.status, 400, 'a non-image MIME type must be rejected')
+
+    const oversizedForm = new FormData()
+    oversizedForm.append('imageFile', new Blob([Buffer.alloc(11 * 1024 * 1024)], { type: 'image/png' }), 'huge.png')
+    oversizedForm.append('name', uniqueName('oversized'))
+    oversizedForm.append('category', 'Snacks')
+    oversizedForm.append('price', '10')
+    const oversizedRes = await fetch(`${server.baseUrl}/canteen/menu/master`, {
+      method: 'POST',
+      headers: { Cookie: admin.cookie },
+      body: oversizedForm,
+    })
+    assert.equal(oversizedRes.status, 400, 'a file over 10MB must be rejected')
+
+    const leaked = (await pool.query('SELECT id FROM menu_items WHERE name IN ($1, $2)', [
+      badMimeForm.get('name'),
+      oversizedForm.get('name'),
+    ])).rows
+    assert.equal(leaked.length, 0, 'neither rejected upload must have created a menu item row')
+  } finally {
+    await admin.cleanup()
     await server.close()
   }
 })
@@ -475,7 +531,7 @@ test(
       form.append('price', '10')
       const res = await fetch(`${server.baseUrl}/canteen/menu/master`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${admin.token}` },
+        headers: { Cookie: admin.cookie },
         body: form,
       })
       assert.equal(res.status, 201)

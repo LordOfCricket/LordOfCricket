@@ -1,7 +1,7 @@
 import api from './api.js'
 
-// Phase 14 Part 3 — ground booking client. Every number/slot here comes
-// straight from the server (Part 9/10) — the client never computes
+// Ground booking client. Every number/slot here comes
+// straight from the server — the client never computes
 // availability itself.
 export async function fetchAvailability(dateStr) {
   const { data } = await api.get('/bookings/availability', { params: { date: dateStr } })

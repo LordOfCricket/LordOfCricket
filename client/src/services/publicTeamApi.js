@@ -1,4 +1,4 @@
-// Phase 10 Part 2 — public team ecosystem client. Every number here comes
+// Public team ecosystem client. Every number here comes
 // straight from the server's read model; React never computes a win/loss
 // record or a top performer itself.
 import api from './api.js'
@@ -13,7 +13,7 @@ export async function fetchTeamProfile(teamId) {
   return data
 }
 
-// Phase 13 — staff-only team roster management.
+// Staff-only team roster management.
 export async function addPlayerToTeam(teamId, publicPlayerId) {
   const { data } = await api.post(`/teams/${teamId}/players`, { publicPlayerId })
   return data

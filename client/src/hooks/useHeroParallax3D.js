@@ -1,7 +1,7 @@
 import useMouseParallax from './useMouseParallax.js'
 
 /**
- * Phase 7.1 — bridges Phase 4's existing MouseParallaxProvider into the R3F
+ * Bridges the existing MouseParallaxProvider into the R3F
  * tree. This is NOT a new pointer listener: `x`/`y` are the exact same
  * springed MotionValues Hero's DOM-side ParallaxLayer already reads. React
  * context propagates through <Canvas> normally (R3F's custom renderer
@@ -15,7 +15,7 @@ export default function useHeroParallax3D() {
 }
 
 /**
- * Phase 7.4 — a shared response curve for the 3D scene's two pointer
+ * A shared response curve for the 3D scene's two pointer
  * consumers (CameraRig, CricketBall). The raw -1..1 values are already
  * spring-smoothed by MouseParallaxProvider, but consumed linearly they made
  * the scene track the cursor everywhere, all the time — reading as "default

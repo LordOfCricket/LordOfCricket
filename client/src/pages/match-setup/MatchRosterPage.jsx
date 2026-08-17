@@ -34,7 +34,7 @@ function topBowler(state, playersById) {
   return entries.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0]
 }
 
-// Phase 14 Part 1 (3) — availability is informational only, shown to help the
+// Availability is informational only, shown to help the
 // organizer build the roster; it never drives selection/locking itself.
 const AVAILABILITY_BADGE = {
   AVAILABLE: { label: 'Available', className: 'bg-emerald-500/15 text-emerald-300' },
@@ -75,7 +75,7 @@ function PlayerCheckboxList({ players, selectedIds, disabledIds, onToggle, avail
   )
 }
 
-// Phase 13 — captain/wicketkeeper designation. The backend/summary display
+// Captain/wicketkeeper designation. The backend/summary display
 // already fully support isCaptain/isWicketkeeper (match_players columns,
 // rendered as "(C)"/"(WK)" badges); this was the missing input. Only players
 // selected but not yet locked into a saved roster are eligible, since

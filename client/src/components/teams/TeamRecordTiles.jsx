@@ -1,4 +1,4 @@
-// Phase 10 Part 2 — official record tiles (Part 17/65). Finalized-matches-only,
+// Official record tiles. Finalized-matches-only,
 // computed server-side by domain/team/teamRecord.js — this component only formats.
 function Tile({ label, value }) {
   return (

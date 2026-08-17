@@ -1,13 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as authApi from '../services/authApi.js'
+import * as mfaApi from '../services/mfaApi.js'
 import { fetchMyPlayer, updateMyPlayer, uploadMyPlayerPhoto } from '../services/playerApi.js'
-import { getStoredToken, setStoredToken, clearStoredToken } from '../utils/authToken.js'
 import { AuthContext } from './authContext.js'
+
+const DEFAULT_MFA = { enrolled: false, required: false, verified: false }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [player, setPlayer] = useState(null)
-  const [status, setStatus] = useState(() => (getStoredToken() ? 'loading' : 'unauthenticated'))
+  // Phase 6 — server-authoritative MFA state for the current session. Never
+  // trust anything about this beyond what /auth/me or a verify/step-up
+  // response just returned; every actual privileged route independently
+  // re-checks req.mfaVerified server-side regardless of what this says (see
+  // docs/MFA.md) — this only drives UI (the RequireMfaVerified guard,
+  // Security Settings page).
+  const [mfa, setMfa] = useState(DEFAULT_MFA)
+  // Always starts 'loading': the new session cookie is HttpOnly (invisible
+  // to JS, unlike the old localStorage token), so there's no client-side
+  // signal to skip the check — every mount asks the server via /auth/me,
+  // which resolves quickly either way (200 authenticated, 401 not).
+  const [status, setStatus] = useState('loading')
 
   const refreshPlayer = useCallback(async () => {
     try {
@@ -20,43 +33,103 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (!getStoredToken()) return
-
     authApi
       .fetchMe()
-      .then((fetchedUser) => {
+      .then(({ user: fetchedUser, mfa: fetchedMfa }) => {
         setUser(fetchedUser)
+        setMfa(fetchedMfa || DEFAULT_MFA)
         setStatus('authenticated')
         if (fetchedUser?.role === 'player') refreshPlayer()
       })
       .catch(() => {
-        clearStoredToken()
         setStatus('unauthenticated')
       })
   }, [refreshPlayer])
 
-  const login = async (email, password) => {
-    const { token, user: loggedInUser } = await authApi.login({ email, password })
-    setStoredToken(token)
-    setUser(loggedInUser)
-    setStatus('authenticated')
-    if (loggedInUser?.role === 'player') refreshPlayer()
-    return loggedInUser
+  // Re-fetches only the mfa key — used after enrollment/disable/verify so
+  // the UI (RequireMfaVerified, Security Settings) reflects the server's
+  // current view without a full page reload.
+  const refreshMfaStatus = useCallback(async () => {
+    try {
+      const { mfa: fetchedMfa } = await authApi.fetchMe()
+      setMfa(fetchedMfa || DEFAULT_MFA)
+      return fetchedMfa
+    } catch {
+      return mfa
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Unified OTP login — the primary auth path. requestOtp just proxies the
+  // call (nothing to store client-side yet); verifyOtp mirrors login/
+  // signup's existing state-transition shape exactly (set user, set
+  // status, conditionally refreshPlayer()) so every downstream consumer of
+  // AuthContext behaves identically regardless of which method the user
+  // signed in with.
+  const requestOtp = async (identifier) => {
+    return authApi.sendOtp(identifier)
   }
 
-  const signup = async (name, email, password) => {
-    const { token, user: newUser } = await authApi.signup({ name, email, password })
-    setStoredToken(token)
-    setUser(newUser)
-    setStatus('authenticated')
-    return newUser
+  // Phase 4 — Player/Umpire self-registration. Only requests the code;
+  // verifyOtp below (unchanged) completes it, since the backend's single
+  // /auth/verify-otp endpoint creates the right kind of account based on
+  // the verified code's purpose, not on anything the client tracks.
+  const registerPlayerOtp = async (name, identifier) => {
+    return authApi.registerPlayer(name, identifier)
   }
 
-  const logout = () => {
-    clearStoredToken()
+  const registerUmpireOtp = async (name, identifier) => {
+    return authApi.registerUmpire(name, identifier)
+  }
+
+  const verifyOtp = async (identifier, code) => {
+    const verifiedUser = await authApi.verifyOtp(identifier, code)
+    setUser(verifiedUser)
+    setStatus('authenticated')
+    if (verifiedUser?.role === 'player') refreshPlayer()
+    // A fresh OTP login always creates a brand-new session — mfa.verified
+    // starts false regardless of what a previous session's state was.
+    // enrolled/required need a real /auth/me read (they depend on the
+    // resolved role/factors, not anything verifyOtp's own response carries).
+    await refreshMfaStatus()
+    return verifiedUser
+  }
+
+  // Revokes the server-side session. Clears local state unconditionally
+  // even if the revoke call fails (e.g. offline) — the user's intent to
+  // log out on this device should never get stuck behind a network error.
+  const logout = async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // already logging out regardless — see comment above
+    }
     setUser(null)
     setPlayer(null)
+    setMfa(DEFAULT_MFA)
     setStatus('unauthenticated')
+  }
+
+  // Baseline MFA verification — proves an already-enrolled factor, unlocks
+  // the privileged session (server sets sessions.mfa_verified_at). Never
+  // enrolls a new factor. On success, re-reads /auth/me so `mfa.verified`
+  // reflects the server's own freshness window, not an optimistic local flip.
+  const verifyMfa = async (payload) => {
+    await mfaApi.mfaVerify(payload)
+    return refreshMfaStatus()
+  }
+
+  // Step-up — short-lived, single-use, scoped to one action. `startStepUp`
+  // returns either { alreadyGranted: true } (a fresh grant already exists,
+  // nothing further to do) or a real WebAuthn/TOTP challenge for the caller
+  // to complete via completeStepUp. Never touches `mfa` state — a step-up
+  // grant is a separate, per-action thing from the standing verified session.
+  const startStepUp = async (actionScope) => {
+    return mfaApi.stepUpOptions(actionScope)
+  }
+
+  const completeStepUp = async (actionScope, payload) => {
+    return mfaApi.stepUpVerify(actionScope, payload)
   }
 
   const savePlayer = async (fields) => {
@@ -83,7 +156,26 @@ export function AuthProvider({ children }) {
     return updated
   }
 
-  const value = { user, player, status, login, signup, logout, selectRole, selectPlayerType, refreshPlayer, savePlayer, uploadPlayerPhoto }
+  const value = {
+    user,
+    player,
+    status,
+    mfa,
+    logout,
+    selectRole,
+    selectPlayerType,
+    refreshPlayer,
+    savePlayer,
+    uploadPlayerPhoto,
+    requestOtp,
+    verifyOtp,
+    registerPlayerOtp,
+    registerUmpireOtp,
+    refreshMfaStatus,
+    verifyMfa,
+    startStepUp,
+    completeStepUp,
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

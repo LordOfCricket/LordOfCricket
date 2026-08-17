@@ -7,7 +7,7 @@ const DEFAULT_MATCH_HISTORY_LIMIT = 10
  * Loads official career statistics for either the signed-in user (no args)
  * or a specific player by public ID. Always hits PostgreSQL through the
  * statistics API — never reads/writes localStorage — so a browser refresh
- * always reproduces identical numbers (Phase 7 acceptance requirement).
+ * always reproduces identical numbers (an acceptance requirement).
  */
 export function useCareerStats(publicPlayerId = null) {
   const [stats, setStats] = useState(null)

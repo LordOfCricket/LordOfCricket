@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { createStaff } from '../services/staffApi.js'
 import { MIN_PASSWORD_LENGTH } from '../models/auth.model.js'
+import { useStepUp } from './useStepUp.js'
 
 const EMPTY_FORM = { name: '', email: '', password: '', staffId: '', role: 'admin' }
 
+// Phase 6 — creating a platform staff account is step-up-gated server-side
+// (STAFF_CREATE — docs/MFA.md).
 export function useCreateStaff() {
+  const stepUp = useStepUp()
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -30,6 +34,7 @@ export function useCreateStaff() {
 
     setSubmitting(true)
     try {
+      await stepUp.requestStepUp('STAFF_CREATE')
       const created = await createStaff({
         name: form.name,
         email: form.email,
@@ -40,11 +45,23 @@ export function useCreateStaff() {
       setSuccessMessage(`Staff account created for ${created.name} (${created.role === 'staff' ? form.role : created.role}).`)
       setForm(EMPTY_FORM)
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to create staff account.')
+      if (err.message !== 'Step-up verification was cancelled.') {
+        setError(err.response?.data?.error || err.response?.data?.message || 'Unable to create staff account.')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
-  return { form, setField, handleSubmit, submitting, error, successMessage }
+  return {
+    form,
+    setField,
+    handleSubmit,
+    submitting,
+    error,
+    successMessage,
+    stepUpModal: stepUp.pending,
+    submitStepUp: stepUp.handleSubmit,
+    cancelStepUp: stepUp.handleCancel,
+  }
 }

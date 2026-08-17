@@ -37,7 +37,13 @@ function uploadSingleImage(req, res, next) {
 
 const router = express.Router()
 
-router.get('/', listAmenities)
+// Phase 7 — same fix as groundPhoto.routes.js: findAllAmenities has no
+// ground WHERE clause and was reachable with zero authentication, leaking
+// internal `id`/`cloudinary_public_id` across every ground. Its only real
+// consumer is the super-admin amenities panel; the public AmenitiesGrid
+// takes its data from the ground-scoped profile endpoint instead (see
+// AmenitiesGrid.jsx's own comment).
+router.get('/', requireAuth, requireStaffRole('super_admin'), listAmenities)
 router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addAmenity)
 router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
 router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeAmenity)

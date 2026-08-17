@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchGroundTimeline, fetchGroundDashboard, fetchGroundReport, fetchGroundUtilization, fetchBookingHistory, fetchGroundAuditLog } from '../services/groundOpsApi.js'
 import { todayDateInputValue } from '../models/booking.model.js'
 
-// Phase 18 — small, focused hooks for the new staff Ground Operations
+// Small, focused hooks for the new staff Ground Operations
 // surfaces. Same "load in a deferred effect, never setState synchronously in
 // the effect body" pattern every other hook in this codebase already uses
 // (react-hooks/set-state-in-effect).

@@ -1,9 +1,9 @@
-// Phase 10 Part 1 — centralized public match-discovery labels/formatting
-// (Part 15/3): every surface (MatchCard, MatchesPage, homepage previews)
-// imports from here instead of re-deriving its own status text. Mirrors the
-// same four labels Phase 9's MatchHero.jsx already established, kept as an
-// independent copy here (this is presentation text for the NEW discovery
-// surfaces, not a change to the existing Match Summary read model).
+// Centralized public match-discovery labels/formatting: every surface
+// (MatchCard, MatchesPage, homepage previews) imports from here instead of
+// re-deriving its own status text. Mirrors the same four labels
+// MatchHero.jsx already established, kept as an independent copy here (this
+// is presentation text for the NEW discovery surfaces, not a change to the
+// existing Match Summary read model).
 
 export const STATUS_LABEL = {
   upcoming: 'Upcoming',

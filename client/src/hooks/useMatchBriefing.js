@@ -4,7 +4,7 @@ import { fetchMatchUmpireSlots } from '../services/umpireSelfApi.js'
 import { fetchMatchChecklist, updateMatchChecklistItem, checkInForMatch, reportMatchIncident, fetchMatchIncidents } from '../services/matchApi.js'
 import { useAuth } from './useAuth.js'
 
-// Phase 23, Workstream B — composes three existing/small endpoints
+// Workstream B — composes three existing/small endpoints
 // (match summary, umpire slots, checklist, incidents) into one briefing
 // view rather than a new match-detail endpoint, per the plan's own "do not
 // build a second match-detail model" constraint. Always hits the server —

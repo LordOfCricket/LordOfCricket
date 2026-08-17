@@ -18,6 +18,18 @@ export function hasCloudinaryConfig() {
   return isCloudinaryConfigured
 }
 
+// Phase 7 — file.originalname is fully attacker-controlled (the multipart
+// form field's filename) and was being interpolated into `public_id`
+// unsanitized. Cloudinary treats '/' in a public_id as folder nesting, so an
+// originalname like "../other-folder/x.png" could place the asset outside
+// the intended `folder` namespace. Strip to a safe charset — this is a
+// display/organizational name only, never used to look the asset back up
+// (callers always store/read the full public_id or secure_url Cloudinary
+// returns).
+export function safePublicIdSegment(originalname) {
+  return originalname.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 100)
+}
+
 export async function uploadImageFile(file, folder = 'canteen-menu') {
   if (!file) return ''
 
@@ -30,7 +42,7 @@ export async function uploadImageFile(file, folder = 'canteen-menu') {
       {
         folder,
         resource_type: 'image',
-        public_id: `${Date.now()}-${file.originalname.replace(/\.[^.]+$/, '')}`,
+        public_id: `${Date.now()}-${safePublicIdSegment(file.originalname)}`,
       },
       (error, result) => {
         if (error) {
@@ -63,7 +75,7 @@ export async function uploadImageFileDetailed(file, folder) {
       {
         folder,
         resource_type: 'image',
-        public_id: `${Date.now()}-${file.originalname.replace(/\.[^.]+$/, '')}`,
+        public_id: `${Date.now()}-${safePublicIdSegment(file.originalname)}`,
       },
       (error, result) => {
         if (error) {

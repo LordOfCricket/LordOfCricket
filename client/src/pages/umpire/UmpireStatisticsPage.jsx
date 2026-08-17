@@ -7,7 +7,7 @@ import LineChart from '../../components/analytics/LineChart.jsx'
 import { useUmpireStatistics } from '../../hooks/useUmpireStatistics.js'
 
 // Umpire Intelligence & Scale 2.0, Workstreams G/H — reuses the existing,
-// dependency-free LineChart (Phase 17) rather than adding a chart library.
+// dependency-free LineChart rather than adding a chart library.
 // A month with no real terminal history reports null upstream (never a
 // fabricated 0) — filtered out of a metric's own series here, so the line
 // only ever connects genuinely-known points, and "Not enough data yet"

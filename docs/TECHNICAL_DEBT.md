@@ -379,6 +379,14 @@ tournament context instead of a bare flag); a real per-match time range would ne
 `match_date` + duration/end-time column on `matches`, unchanged since Phase 14 first documented
 this gap.
 
+**Registration's pre-check and account creation are not atomic with each other (Phase 4).**
+`POST /auth/register/player`/`/register/umpire` 409s if the identifier already has a real account, but
+that check and the actual account creation (at OTP-verify time) aren't one atomic operation — a second
+registration attempt for the same identifier in the gap between them won't see the first attempt's account
+yet. Handled defensively (`otpAuthService.verifyLoginOtp` re-checks for this race and falls back to an
+ordinary login rather than double-creating or erroring, verified directly), not a data-integrity risk, but
+worth knowing about. See `docs/ACCOUNT_CREATION.md`'s "Known limitation" section.
+
 ## P3 — Future
 
 **No caching layer (Redis or otherwise).** Every measured endpoint (match discovery ~2ms, live

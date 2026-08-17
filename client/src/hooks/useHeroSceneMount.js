@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useReducedMotion } from 'motion/react'
 import useWebGLCapability from './useWebGLCapability.js'
 
-// Extracted from Hero.jsx (Phase 7.1's original mount-decision logic) so the
+// Extracted from Hero.jsx (the original mount-decision logic) so the
 // new platform-level hero can reuse the exact same "when is it safe/worth it
 // to mount the 3D scene" decision instead of a second copy of it.
 // Unsupported/low-end devices (useWebGLCapability) and reduced-motion users

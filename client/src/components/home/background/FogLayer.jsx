@@ -7,7 +7,7 @@
  * the rays read as if cutting through it.
  *
  * `.loc-bg-fog` (index.css) carries its own static position/opacity/blur
- * outside the keyframe — same discipline as the rest of Phase 3 — so
+ * outside the keyframe — same discipline as the rest of this system — so
  * `prefers-reduced-motion` just removes the drift and leaves a still,
  * still-atmospheric layer, never an empty one.
  */

@@ -49,30 +49,30 @@ const REVIEW_DECISION_LABELS = { out: 'OUT', 'not-out': 'NOT OUT', 'umpires-call
 
 /** Human-readable line for a non-scoring match event, used by the unified timeline. */
 export function describeMatchEvent(entry, match) {
-  const p = entry.payload || {}
-  const batsman = getPlayer(match, p.batsmanId)
-  const bowler = getPlayer(match, p.bowlerId)
-  const fielder = getPlayer(match, p.fielderId)
+  const payload = entry.payload || {}
+  const batsman = getPlayer(match, payload.batsmanId)
+  const bowler = getPlayer(match, payload.bowlerId)
+  const fielder = getPlayer(match, payload.fielderId)
 
   switch (entry.event) {
     case 'catch-dropped':
       return `Catch Dropped! ${fielder?.name || 'A fielder'} spills a chance off ${batsman?.name || 'the batsman'}${bowler ? `, bowled by ${bowler.name}` : ''}.`
     case 'fielding-event':
-      return `${fieldingEventLabel(p.fieldingType)}${fielder ? ` — ${fielder.name}` : ''}.`
+      return `${fieldingEventLabel(payload.fieldingType)}${fielder ? ` — ${fielder.name}` : ''}.`
     case 'appeal':
-      return `Appeal for ${appealLabel(p.appealType)} — ${p.decision === 'out' ? 'OUT' : 'NOT OUT'}.`
+      return `Appeal for ${appealLabel(payload.appealType)} — ${payload.decision === 'out' ? 'OUT' : 'NOT OUT'}.`
     case 'review':
-      return `${reviewTypeLabel(p.reviewType)} — ${REVIEW_DECISION_LABELS[p.decision] || p.decision}.`
+      return `${reviewTypeLabel(payload.reviewType)} — ${REVIEW_DECISION_LABELS[payload.decision] || payload.decision}.`
     case 'penalty-runs':
-      return `Penalty! +${p.runs} runs to the ${p.awardedTo === 'batting' ? 'batting' : 'fielding'} side.`
+      return `Penalty! +${payload.runs} runs to the ${payload.awardedTo === 'batting' ? 'batting' : 'fielding'} side.`
     case 'strike-swap':
       return 'Strike swapped.'
     case 'batsman-in':
-      return `${getPlayer(match, p.playerId)?.name || 'New batsman'} comes to the crease.`
+      return `${getPlayer(match, payload.playerId)?.name || 'New batsman'} comes to the crease.`
     case 'bowler-change':
-      return `${getPlayer(match, p.bowlerId)?.name || 'New bowler'} to bowl.`
+      return `${getPlayer(match, payload.bowlerId)?.name || 'New bowler'} to bowl.`
     case 'retire':
-      return `${getPlayer(match, p.playerId)?.name || 'Batsman'} retires ${p.type === 'retired-hurt' ? 'hurt' : 'out'}.`
+      return `${getPlayer(match, payload.playerId)?.name || 'Batsman'} retires ${payload.type === 'retired-hurt' ? 'hurt' : 'out'}.`
     default:
       return entry.event
   }

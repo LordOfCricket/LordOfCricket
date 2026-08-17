@@ -1,10 +1,10 @@
 import { ballLabel, ballClass } from './ballChip.js'
 
-// Factual ball/event feed — never generated commentary text (Phase 9 Part 32:
-// this is NOT "AI Commentary", a future phase may build that on top of this
+// Factual ball/event feed — never generated commentary text (
+// this is NOT "AI Commentary"; a future addition may build that on top of this
 // same structured feed). Newest-first, matching how a live ball-by-ball feed
 // is conventionally read; the Overs tab covers the chronological scorecard
-// reading order instead (Part 73 — one deliberate choice per tab, documented
+// reading order instead (one deliberate choice per tab, documented
 // rather than adding a toggle).
 
 const EVENT_LABEL = {

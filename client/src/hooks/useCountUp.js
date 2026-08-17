@@ -10,7 +10,7 @@ function parseStat(value) {
 }
 
 /**
- * Phase 5 — About section stat count-up. Counts from 0 to the stat's target
+ * About section stat count-up. Counts from 0 to the stat's target
  * once it scrolls into view, once per page load. Non-numeric or reduced-
  * motion cases skip straight to the final text (no partial/garbled count).
  */

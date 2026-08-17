@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { listMatches } from '../services/matchApi.js'
 import { fetchMyAvailability, setMyAvailability } from '../services/matchAvailabilityApi.js'
 
-// Phase 14 Part 1 — the player dashboard's "Next Match" widget previously
+// The player dashboard's "Next Match" widget previously
 // always rendered its empty state (NextMatchCard.jsx's own comment: "No
 // per-player match schedule/availability API exists yet"). This is that API,
 // wired up: the soonest upcoming match for the player's team, plus their own

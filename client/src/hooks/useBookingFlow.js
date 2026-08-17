@@ -3,8 +3,8 @@ import { useAuth } from './useAuth.js'
 import { fetchAvailability, createBooking } from '../services/bookingApi.js'
 import { todayDateInputValue } from '../models/booking.model.js'
 
-// Phase 14 Part 3 — the homepage booking modal's state machine. Every step
-// re-fetches from the server (Part 9/18) — nothing here decides availability
+// The homepage booking modal's state machine. Every step
+// re-fetches from the server — nothing here decides availability
 // itself, and CONFIRM always sends the exact `startTime` instant the server
 // already told this client about (never client-computed date+hour+minute
 // math — see groundBooking.controller.js#resolveSlotInput).

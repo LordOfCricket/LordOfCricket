@@ -26,9 +26,11 @@ router.get('/cities', listGroundCities)
 // any future full-browse view.
 router.get('/', listAllGrounds)
 // Self-serve ground registration — "want to register your ground on LOC."
-// Any logged-in user, not staff-only; creates a DRAFT ground pending
-// super_admin review (see GET/PATCH /ground-review). Method-distinct from
-// the GET '/' above so there's no path-ordering concern.
+// Any logged-in user, not staff-only; creates a PENDING ground_owner_requests
+// row for super_admin review (see /ground-owner-requests) rather than a
+// ground itself — no ground or membership exists until that request is
+// approved. Method-distinct from the GET '/' above so there's no
+// path-ordering concern.
 router.post('/', groundWriteLimiter, requireAuth, registerGround)
 router.get('/:publicGroundId', getGroundProfile)
 

@@ -1,7 +1,7 @@
 import { BarChart3, AlertCircle } from 'lucide-react'
 
 // Shared loading/error/empty widgets for every career-statistics surface
-// (Dashboard Career Overview, Profile tabs). Phase 7 rule: never show a "0"
+// (Dashboard Career Overview, Profile tabs). Rule: never show a "0"
 // or "0.00" while data is still loading or failed to load — those are
 // meaningfully different from an actual zero-value career statistic.
 

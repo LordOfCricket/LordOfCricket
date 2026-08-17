@@ -3,7 +3,7 @@ import { MapPin, CalendarDays } from 'lucide-react'
 import { formatMatchDate, formatMatchTime, statusLabel } from '../../models/matchDiscovery.model.js'
 import { canCancelAssignment, canEnterScoring } from '../../models/umpireDashboard.model.js'
 
-// Phase 23 — status now reflects real history (ASSIGNED/COMPLETED/
+// Status now reflects real history (ASSIGNED/COMPLETED/
 // CANCELLED/NO_SHOW), not just "Assigned" forever.
 const SLOT_STATUS_LABEL = {
   ASSIGNED: 'Assigned',

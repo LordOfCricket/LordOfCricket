@@ -53,7 +53,7 @@ export default function MatchHero({ summary, liveScore = null }) {
                 </div>
               )
             }
-            // Phase 10 Part 3: if the live poller is tracking THIS exact
+            // If the live poller is tracking THIS exact
             // innings, its numbers supersede the page-load snapshot — one
             // authoritative score, never two drifting apart on screen.
             const score = liveScore && liveScore.inningsId === latest.inningsId ? liveScore : latest.score

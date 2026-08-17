@@ -56,7 +56,7 @@ export default function PlatformHero() {
           mobile gets a materially heavier overall wash — the image reads
           as atmosphere there rather than a precise composition, which is
           the safer choice since exactly what survives the crop can't be
-          verified without a browser (see the Phase 13 report's disclosed
+          verified without a browser (a disclosed
           testing gap). Desktop keeps a lighter touch since the full width,
           and both players, are actually visible there. */}
       <div aria-hidden="true" className="absolute inset-0 bg-loc-dark/55 lg:bg-transparent" />

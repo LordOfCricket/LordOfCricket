@@ -1,4 +1,4 @@
-// Phase 10 Part 3 (Part 28/29/36). Strike is marked with text ("*"), never
+// Strike is marked with text ("*"), never
 // color alone. A missing batsman (post-wicket, before the scorer seats a
 // replacement) is shown honestly — never a stale or fabricated name.
 function BatsmanRow({ figure, isStriker }) {

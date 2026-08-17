@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { WifiOff } from 'lucide-react'
 
-// Phase 20 Feature 10 — a real browser-level offline state (no network at
+// A real browser-level offline state (no network at
 // all) previously looked identical to a slow/failed API call: whatever
 // generic fallback message the hook that happened to be loading showed.
 // This adds one global, unmissable signal for the specific "you have no

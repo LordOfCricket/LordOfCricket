@@ -5,7 +5,7 @@ import { useBookingFlow } from '../../hooks/useBookingFlow.js'
 import { formatSlotTime, formatBookingDate, todayDateInputValue } from '../../models/booking.model.js'
 import Button from '../ui/Button.jsx'
 
-// Phase 14 Part 3 (43/44/45/46) — Homepage -> Book Ground -> Calendar ->
+// Homepage -> Book Ground -> Calendar ->
 // Choose Date -> Available Times -> Booking Details -> Confirm -> Confirmed.
 // Internally scrollable (max-h + overflow-y-auto) so it fits at 390x844
 // without the page itself scrolling.

@@ -4,7 +4,13 @@ metadata:
   name: loc-backend
   namespace: loc
 spec:
-  type: NodePort
+  # Phase 7 — was NodePort (exposed directly on every node's IP at :30500).
+  # Confirmed the real traffic path is the Cloudflare tunnel ->
+  # nginx-ingress-controller (cloudflared-config.yaml) -> this Service's
+  # ClusterIP via loc-ingress.yaml -> pod, which never touches the NodePort
+  # at all. ClusterIP removes the unintended direct-to-node bypass of
+  # Cloudflare/the ingress controller without changing that traffic path.
+  type: ClusterIP
 
   selector:
     app: loc-backend
@@ -13,4 +19,3 @@ spec:
     - protocol: TCP
       port: 5000
       targetPort: 5000
-      nodePort: 30500

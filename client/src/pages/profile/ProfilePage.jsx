@@ -26,7 +26,7 @@ function Field({ label, value }) {
 }
 
 // Batting panel is visually primary unless the player's role says otherwise
-// (Part 46: role changes presentation emphasis, never which stats are true).
+// (role changes presentation emphasis, never which stats are true).
 function OverviewPanels({ role, matches, batting, bowling }) {
   const primary = statPriorityForRole(role)[0]
   const bowlingFirst = primary === 'wickets' || primary === 'economy'

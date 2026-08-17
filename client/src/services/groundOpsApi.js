@@ -1,6 +1,6 @@
 import api from './api.js'
 
-// Phase 18 — ground operations client. Every number/segment here comes
+// Ground operations client. Every number/segment here comes
 // straight from the server's central availability engine — the client never
 // computes occupancy/utilization itself.
 

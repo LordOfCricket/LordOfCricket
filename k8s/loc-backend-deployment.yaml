@@ -4,11 +4,23 @@ metadata:
   name: loc-backend
   namespace: loc
 spec:
-  replicas: 1
+  # Phase 8 — 2 replicas: the app was already architecturally verified
+  # multi-replica-safe (all auth/OTP/MFA/step-up state is Postgres-backed,
+  # not in-process — see docs/SECURITY.md); this actually exercises that,
+  # and is required for the PodDisruptionBudget below to mean anything.
+  replicas: 2
 
   selector:
     matchLabels:
       app: loc-backend
+
+  # Zero-downtime rolling update: a new pod must pass its readiness probe
+  # (which checks real Postgres connectivity) before an old one is removed.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
   template:
     metadata:
@@ -16,10 +28,55 @@ spec:
         app: loc-backend
 
     spec:
+      # No K8s API access is ever needed from inside this pod — mounting the
+      # default ServiceAccount token would be an unused credential sitting in
+      # every pod's filesystem for no reason.
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        # Matches server/Dockerfile's `USER node` (node:20-alpine's built-in
+        # non-root user, uid 1000) — explicit here too so a future image
+        # change can't silently drop back to root without this failing loudly.
+        runAsUser: 1000
+        runAsGroup: 1000
+
       containers:
         - name: loc-backend
+          # Phase 8 — `:latest` checked in here is a PLACEHOLDER, never what
+          # a real deploy should actually apply: a real release MUST
+          # override this to an immutable tag (`loc-backend:<git-sha>`)
+          # before `kubectl apply`, e.g.
+          # `kubectl set image deployment/loc-backend loc-backend=loc-backend:$(git rev-parse --short HEAD) -n loc`
+          # — see docs/DEPLOYMENT.md's "Container image tagging" section.
+          # Not templated here (no Kustomize/Helm exists in this repo, and
+          # introducing one is a bigger change than a tagging-convention fix
+          # warrants) — this is a documented operator responsibility.
           image: loc-backend:latest
           imagePullPolicy: IfNotPresent
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            # Not set to true this phase — verifying the app has zero local
+            # disk write needs (uploads use Cloudinary memory-storage only,
+            # per docs/SECURITY.md's file-upload audit) requires a real
+            # cluster boot to confirm safely; documented as a follow-up
+            # rather than applied unverified. See docs/DEPLOYMENT.md.
+            readOnlyRootFilesystem: false
+
+          # Phase 8 — conservative starting values for the app's current
+          # scale, not derived from a production load test (see the Phase 8
+          # report's Performance Baseline section) — intended to be tuned
+          # from real metrics once deployed, not treated as final.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 
           ports:
             - containerPort: 5000

@@ -14,6 +14,7 @@ import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -79,6 +80,21 @@ async function createUser(label, { role = 'player', staffRoleId = null } = {}) {
       await pool.query('DELETE FROM users WHERE id = $1', [user.id])
     },
   }
+}
+
+// Phase 6 — requireGroundCanteenRole's Super-Admin/GROUND_OWNER branches
+// (via authorizeResolvedCanteen) now require req.mfaVerified. `elevate`
+// mints a REAL, already-MFA-verified session cookie — see
+// helpers/mfaFixtures.js (this file isn't testing MFA, only ground/canteen
+// tenancy resolution).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
+}
+
+function cauth(user) {
+  return { Cookie: user.cookie, 'Content-Type': 'application/json' }
 }
 
 function authHeader(token) {
@@ -151,10 +167,11 @@ test('AUTH MATRIX: Super Admin -> ALLOW at both Ground A/A and Ground B/B, with 
   const fxB = await createGroundCanteenFixture('matrix-sa-b')
   const superAdminRoleId = (await pool.query(`SELECT id FROM staff_roles WHERE name = 'super_admin'`)).rows[0].id
   const superAdmin = await createUser('matrix-super-admin', { role: 'staff', staffRoleId: superAdminRoleId })
+  await elevate(superAdmin)
   try {
-    const aa = await fetch(menuTodayUrl(server.baseUrl, fxA.ground, fxA.canteen), { method: 'PATCH', headers: authHeader(superAdmin.token), body: JSON.stringify({ items: [] }) })
+    const aa = await fetch(menuTodayUrl(server.baseUrl, fxA.ground, fxA.canteen), { method: 'PATCH', headers: cauth(superAdmin), body: JSON.stringify({ items: [] }) })
     assert.equal(aa.status, 200)
-    const bb = await fetch(menuTodayUrl(server.baseUrl, fxB.ground, fxB.canteen), { method: 'PATCH', headers: authHeader(superAdmin.token), body: JSON.stringify({ items: [] }) })
+    const bb = await fetch(menuTodayUrl(server.baseUrl, fxB.ground, fxB.canteen), { method: 'PATCH', headers: cauth(superAdmin), body: JSON.stringify({ items: [] }) })
     assert.equal(bb.status, 200)
 
     const memberships = await pool.query('SELECT * FROM ground_users WHERE user_id = $1', [superAdmin.id])
@@ -318,11 +335,12 @@ test('SAME USER MULTI-GROUND: one user with OWNER at Ground A and SCORER-equival
   const user = await createUser('multi-ground-user', { role: 'staff' })
   const membershipOwnerA = await createMembership({ groundId: fxA.ground.id, userId: user.id, role: 'GROUND_OWNER' })
   const membershipStaffB = await createMembership({ groundId: fxB.ground.id, userId: user.id, role: 'CANTEEN_STAFF' })
+  await elevate(user)
   try {
     // Same JWT, same user, two different requests -> two independently
     // resolved contexts. Nothing about "which ground" is cached anywhere
     // between requests (no ground context in the JWT — Phase 9/Step 25).
-    const ownerAtA = await fetch(menuTodayUrl(server.baseUrl, fxA.ground, fxA.canteen), { method: 'PATCH', headers: authHeader(user.token), body: JSON.stringify({ items: [] }) })
+    const ownerAtA = await fetch(menuTodayUrl(server.baseUrl, fxA.ground, fxA.canteen), { method: 'PATCH', headers: cauth(user), body: JSON.stringify({ items: [] }) })
     assert.equal(ownerAtA.status, 200, 'GROUND_OWNER at Ground A must manage Ground A\'s menu')
 
     // CANTEEN_STAFF at Ground B is NOT sufficient for menu management there (mirrors the legacy split).

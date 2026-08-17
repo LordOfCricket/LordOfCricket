@@ -55,7 +55,7 @@ export function formatDistance(distanceKm) {
   return `${Math.round(distanceKm)} km away`
 }
 
-// A ground's public contact fields are all optional (Phase 12 — a ground
+// A ground's public contact fields are all optional (a ground
 // row can have null phone/email/website). Step 20 requires hiding missing
 // fields rather than rendering a placeholder, so callers check this instead
 // of relying on falsy-string coercion sprinkled through JSX.

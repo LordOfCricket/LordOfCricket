@@ -3,7 +3,7 @@ import { statusLabel } from '../../models/matchDiscovery.model.js'
 import useGlowHover from '../../hooks/useGlowHover.js'
 import GlowOverlay from '../common/GlowOverlay.jsx'
 
-// Phase 10 Part 1 — the homepage's prominent single live match (Part 27/28).
+// The homepage's prominent single live match.
 // Deterministic selection: whichever match listPublicMatches({category:'LIVE'})
 // returns first (most recently started) — no manual "featured_match" flag.
 // Every number here is server-computed (buildMatchCard.js); this component

@@ -2,13 +2,14 @@ import 'dotenv/config'
 import http from 'http'
 import { Server } from 'socket.io'
 import app from './app.js'
-import { connectPostgres } from './config/db.js'
+import { connectPostgres, pool } from './config/db.js'
+import { connectPrisma, disconnectPrisma } from './config/prisma.js'
 import { allowedOrigins } from './config/corsOrigins.js'
 import { registerCricketRealtime } from './realtime/cricketRealtime.js'
 import { registerBookingRealtime } from './realtime/bookingRealtime.js'
 import { registerMatchChatRealtime } from './realtime/matchChatRealtime.js'
 import { validateEnv } from './config/validateEnv.js'
-import { startReminderScheduler } from './services/reminderScheduler.service.js'
+import { startReminderScheduler, stopReminderScheduler } from './services/reminderScheduler.service.js'
 import { logger } from './utils/logger.js'
 
 // ES module imports (including app.js's own chain, which is where
@@ -41,6 +42,12 @@ const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PATCH'],
+    // Phase 8 — required for matchChatRealtime.js's cookie-based socket
+    // auth: without this, a credentialed (`withCredentials: true`) socket
+    // handshake from an allowed origin is rejected by the CORS layer before
+    // the cookie ever reaches `socket.handshake.headers.cookie`. Mirrors
+    // app.js's own HTTP `cors({ credentials: true })` setting.
+    credentials: true,
   },
 })
 
@@ -84,6 +91,15 @@ registerMatchChatRealtime(io)
 // integration tests to call themselves, independently, when they run.
 async function start() {
   await connectPostgres()
+  // Phase 2A — Prisma foundation. Not yet on any live request path (raw `pg`
+  // via config/db.js remains authoritative this phase), so a Prisma-specific
+  // connectivity problem is logged, not fatal — connectPostgres() above is
+  // still the one hard boot dependency.
+  try {
+    await connectPrisma()
+  } catch (err) {
+    logger.warn('Prisma connectivity check failed at boot (continuing — not yet on the live request path)', { error: err.message })
+  }
   server.listen(PORT, () => logger.info(`Server listening on port ${PORT}`))
   // Phase 23, Workstream D — umpire match reminders. Only started here (the
   // real server boot path), never by integration tests, which start their
@@ -93,3 +109,55 @@ async function start() {
 }
 
 start()
+
+// Phase 8 — Kubernetes sends SIGTERM on pod termination (rolling update,
+// scale-down, node drain) and waits out `terminationGracePeriodSeconds`
+// (default 30s) before SIGKILL. Previously nothing handled it at all, so
+// the process died mid-request on every rollout. Order matters: stop taking
+// NEW work first (reminder poller, then refuse new HTTP/socket connections
+// via server.close()), only THEN close the connections those in-flight
+// requests still need (Postgres pool, Prisma) — closing the DB first would
+// fail every request that was still draining.
+let shuttingDown = false
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  logger.info(`${signal} received — starting graceful shutdown`)
+
+  stopReminderScheduler()
+
+  // Force-exit safety net: an open keep-alive HTTP connection or a socket
+  // that never disconnects would otherwise hang server.close()'s callback
+  // forever, past Kubernetes' own grace period anyway — better to exit
+  // loudly on our own timeline than be SIGKILLed mid-cleanup.
+  const forceExitTimer = setTimeout(() => {
+    logger.error('Graceful shutdown timed out — forcing exit')
+    process.exit(1)
+  }, 10000)
+  forceExitTimer.unref()
+
+  // Closes every open Socket.IO connection (match chat, cricket/booking
+  // realtime, canteen rooms) before the HTTP server itself stops — a
+  // socket left open would otherwise keep server.close() waiting.
+  io.close()
+
+  server.close(async (err) => {
+    if (err) logger.error('Error while closing HTTP server', { error: err.message })
+    try {
+      await pool.end()
+    } catch (poolErr) {
+      logger.error('Error while closing Postgres pool', { error: poolErr.message })
+    }
+    try {
+      await disconnectPrisma()
+    } catch (prismaErr) {
+      logger.error('Error while disconnecting Prisma', { error: prismaErr.message })
+    }
+    clearTimeout(forceExitTimer)
+    logger.info('Graceful shutdown complete')
+    process.exit(0)
+  })
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))

@@ -3,7 +3,7 @@ import { CalendarDays, Check, X } from 'lucide-react'
 import { useNextMatchAvailability } from '../../hooks/useNextMatchAvailability.js'
 import { formatMatchDate, formatMatchTime } from '../../models/matchDiscovery.model.js'
 
-// Phase 14 Part 1 — real per-player match schedule + RSVP, replacing the
+// Real per-player match schedule + RSVP, replacing the
 // previous permanent empty-state stub.
 export default function NextMatchCard({ teamId }) {
   const navigate = useNavigate()

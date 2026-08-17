@@ -65,6 +65,7 @@ import {
   updateOrderStatusByPublicId,
 } from '../../models/canteenOrder.model.js'
 import { createMembership } from '../../models/groundUser.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 const realCanteen = await findSingleCanteen()
 const realGround = (await pool.query('SELECT * FROM grounds WHERE id = $1', [realCanteen.ground_id])).rows[0]
@@ -366,11 +367,18 @@ test('requireCanteenStaffAccess: legacy super_admin still works unchanged (no re
     )
   ).rows[0]
   try {
+    // Phase 6 — authorizeResolvedCanteen's Super-Admin branch now requires
+    // req.mfaVerified, which a bare JWT can never satisfy. A REAL,
+    // already-MFA-verified session cookie is minted directly — see
+    // helpers/mfaFixtures.js (this test isn't about MFA, only that legacy
+    // super_admin canteen access still works).
+    const { cookie } = await mintMfaVerifiedSessionCookie(admin.id)
+
     // Republish the SAME snapshot back — a real write path exercise without
     // actually changing observable content.
     const res = await fetch(`${server.baseUrl}/canteen/menu/today`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${signToken({ id: admin.id })}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: snapshot ? snapshot.items : [] }),
     })
     assert.equal(res.status, 200, 'legacy super_admin must still be able to manage the menu, exactly as before Phase 10')

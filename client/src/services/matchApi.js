@@ -1,6 +1,6 @@
-// Client for the Phase 5 real-match lifecycle API (create/roster/toss/start).
+// Client for the real-match lifecycle API (create/roster/toss/start).
 // Live scoring itself still goes through scoringApi.js — this file is only
-// match setup, kept separate from that file's documented Phase 3/4 scope.
+// match setup, kept separate from that file's scope.
 import api from './api.js'
 
 export async function listMatches() {
@@ -42,7 +42,7 @@ export async function fetchMatchInnings(matchId) {
   return data.innings
 }
 
-// Phase 23 — umpire operational actions on a match, all gated server-side by
+// Umpire operational actions on a match, all gated server-side by
 // the same requireMatchScorerByParam gate as toss/start (only the actively
 // assigned umpire may call these).
 export async function checkInForMatch(matchId, { latitude, longitude } = {}) {

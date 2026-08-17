@@ -40,12 +40,20 @@ function GroundCard({ ground }) {
         </div>
       </div>
 
-      <Link
-        to={`/ground-owner/grounds/${ground.public_ground_id}`}
-        className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-2xl bg-linear-to-r from-green-700 via-green-500 to-lime-500 text-sm font-semibold text-white shadow-md shadow-green-900/40 transition-all hover:brightness-110"
-      >
-        Manage Ground
-      </Link>
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <Link
+          to={`/ground-owner/grounds/${ground.public_ground_id}`}
+          className="inline-flex h-11 items-center justify-center rounded-2xl bg-linear-to-r from-green-700 via-green-500 to-lime-500 text-sm font-semibold text-white shadow-md shadow-green-900/40 transition-all hover:brightness-110"
+        >
+          Manage Ground
+        </Link>
+        <Link
+          to={`/ground-owner/grounds/${ground.public_ground_id}/staff`}
+          className="inline-flex h-11 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-sm font-semibold text-white transition-all hover:bg-white/10"
+        >
+          Staff
+        </Link>
+      </div>
     </div>
   )
 }

@@ -8,10 +8,10 @@ export function slotSummary(match) {
   return { total, filled, open: Math.max(total - filled, 0) }
 }
 
-// Buckets for "My Matches" (U4, extended Phase 23 Workstream P). An
+// Buckets for "My Matches" (U4). An
 // ASSIGNED slot's bucket follows the MATCH's lifecycle (upcoming/live/past);
 // a slot already COMPLETED (officiating credit, written the instant its
-// match completes — Phase 23) always belongs in `completed` regardless of
+// match completes) always belongs in `completed` regardless of
 // match_status, since match_status only reaches 'finalized' after. CANCELLED
 // and NO_SHOW are their own buckets — real, disclosed history, not hidden
 // the way U4 originally deferred it.
@@ -37,7 +37,7 @@ export function bucketAssignments(assignments) {
   return { upcoming, live, completed, cancelled, noShow }
 }
 
-// The single soonest upcoming assignment (Phase 23 — Umpire Dashboard's
+// The single soonest upcoming assignment (Umpire Dashboard's
 // "Next Assignment" card). `upcoming` isn't guaranteed date-sorted (the
 // backend orders by match_date DESC for the whole list), so this picks the
 // minimum explicitly rather than trusting index 0.

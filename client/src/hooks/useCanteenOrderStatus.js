@@ -60,7 +60,7 @@ export function useOrderStatus() {
       }
     }
 
-    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // Socket.IO drops room membership on disconnect and never
     // auto-rejoins an app-level room on its own reconnect; re-emit the joins
     // every time, and resync the order via HTTP on any reconnect (not the
     // first connect) since a status update published while disconnected would

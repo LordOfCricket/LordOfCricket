@@ -1,7 +1,7 @@
-// Client for the server-authoritative scoring API (Phase 3 recording +
-// Phase 4 correction). Nothing else in the client should call these routes
-// directly — see the Phase 4 report for which parts of the Umpire Testing
-// prototype are (not yet) wired to this file.
+// Client for the server-authoritative scoring API (recording and
+// correction). Nothing else in the client should call these routes
+// directly — the Umpire Testing prototype only wires some of these
+// endpoints.
 import api from './api.js'
 
 // One idempotency key per user-initiated scoring/correction action. Reuse the

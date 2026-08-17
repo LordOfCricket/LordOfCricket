@@ -5,14 +5,14 @@ import LightingRig from './LightingRig.jsx'
 import usePointerCapability from '../../../hooks/usePointerCapability.js'
 
 /**
- * Phase 7.1 — the actual R3F root, lazily imported by Hero.jsx as its own
+ * The actual R3F root, lazily imported by Hero.jsx as its own
  * chunk (`lazy(() => import('./hero3d/HeroScene.jsx'))`). Everything this
  * file imports — Canvas, three, drei, the rig components — bundles into
  * that same chunk; nothing here is imported anywhere else in the app, so
  * none of it can leak into the main bundle or block first paint.
  *
  * Transparent canvas (`gl={{ alpha: true }}`), no environment/background
- * node of its own — the existing BackgroundSystem (Phases 3/3.5/6) is the
+ * node of its own — the existing BackgroundSystem is the
  * environment this scene sits inside, not a second parallel one.
  *
  * Mobile strategy (device-capability tier, not a blanket phone exclusion):

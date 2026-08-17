@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchTeamProfile } from '../services/publicTeamApi.js'
 
-/** Loads the Phase 10 Part 2 public team profile read model. Always hits the
+/** Loads the public team profile read model. Always hits the
  * server — no localStorage, no client-side cricket calculation (same
  * contract as useMatchSummary.js). */
 export function useTeamProfile(teamId) {

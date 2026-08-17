@@ -4,18 +4,18 @@ import { BRIGHTNESS_STOPS, SCENE_STOPS, TINT_STOPS } from '../lib/environmentTim
 import { ScrollEnvironmentContext } from './scrollEnvironmentContext.js'
 
 /**
- * Phase 6 — one shared whole-page scroll-progress source feeding the
+ * One shared whole-page scroll-progress source feeding the
  * background's environmental grading (BackgroundSystem's ScrollAtmosphere +
  * EnvironmentTint). A direct `window` scroll listener, not framer-motion's
  * own `useScroll()` — that hook doesn't track this page's Lenis-driven
- * scroll reliably here (confirmed in Phase 5: its `scrollYProgress` stayed
- * pinned at its mount-time value under Lenis's `root` mode). Phase 5's
- * ScrollAtmosphere carried its own copy of this exact listener; this
+ * scroll reliably here (its `scrollYProgress` stayed
+ * pinned at its mount-time value under Lenis's `root` mode). ScrollAtmosphere
+ * previously carried its own copy of this exact listener; this
  * provider replaces it as the ONE shared source, so a second consumer
  * (EnvironmentTint) doesn't need a second listener.
  *
  * Scoped inside BackgroundSystem.jsx only — nothing outside the background
- * system needs scroll-driven environment values this phase, so this stays
+ * system needs scroll-driven environment values, so this stays
  * out of HomePage.jsx entirely.
  */
 export function ScrollEnvironmentProvider({ children }) {

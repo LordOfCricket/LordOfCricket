@@ -3,6 +3,9 @@ import { BOOKING_ERROR_HTTP_STATUS } from '../domain/booking/errors.js'
 import { TOURNAMENT_ERROR_HTTP_STATUS } from '../domain/tournament/errors.js'
 import { UMPIRE_ASSIGNMENT_ERROR_HTTP_STATUS } from '../domain/umpireAssignment/errors.js'
 import { FEEDBACK_ERROR_HTTP_STATUS } from '../domain/feedback/errors.js'
+import { OTP_AUTH_ERROR_HTTP_STATUS } from '../domain/otpAuth/errors.js'
+import { ACCOUNT_CREATION_ERROR_HTTP_STATUS } from '../domain/accountCreation/errors.js'
+import { MFA_ERROR_HTTP_STATUS } from '../domain/mfa/errors.js'
 import { logger } from '../utils/logger.js'
 
 export function notFound(req, res, next) {
@@ -20,9 +23,38 @@ const DOMAIN_ERROR_HTTP_STATUS_MAPS = [
   TOURNAMENT_ERROR_HTTP_STATUS,
   UMPIRE_ASSIGNMENT_ERROR_HTTP_STATUS,
   FEEDBACK_ERROR_HTTP_STATUS,
+  OTP_AUTH_ERROR_HTTP_STATUS,
+  ACCOUNT_CREATION_ERROR_HTTP_STATUS,
+  MFA_ERROR_HTTP_STATUS,
 ]
 
+// Phase 2A — Prisma errors (`PrismaClientKnownRequestError`) carry their own
+// `code`/`P####` scheme, distinguishable from every domain error above by
+// the `clientVersion` field Prisma always attaches (domain errors never
+// have it, so this can never misfire on an existing domain error). No live
+// route uses Prisma yet, but this keeps the same "never leak driver
+// internals" guarantee the moment one does.
+const PRISMA_ERROR_HTTP_STATUS = {
+  P2002: 409, // unique constraint violation
+  P2003: 409, // foreign key constraint violation
+  P2025: 404, // record not found
+}
+const PRISMA_ERROR_MESSAGE = {
+  P2002: 'A record with these details already exists.',
+  P2003: 'This action references a record that no longer exists.',
+  P2025: 'The requested record was not found.',
+}
+
 export function errorHandler(err, req, res, next) {
+  if (err.clientVersion && err.code) {
+    const status = PRISMA_ERROR_HTTP_STATUS[err.code] || 500
+    const message = PRISMA_ERROR_MESSAGE[err.code] || 'A database error occurred.'
+    if (status === 500) {
+      logger.error('Unhandled Prisma error', { method: req.method, path: req.originalUrl, prismaCode: err.code, error: err.message })
+    }
+    return res.status(status).json({ success: false, message })
+  }
+
   if (err.code) {
     for (const statusMap of DOMAIN_ERROR_HTTP_STATUS_MAPS) {
       if (statusMap[err.code]) {

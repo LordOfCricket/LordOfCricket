@@ -85,34 +85,3 @@ export function getShotVisual(action) {
   return { color: 'rgba(226,232,240,0.55)', width: 2, marker: 'dot' }
 }
 
-export function summarizeActions(actions) {
-  let runs = 0
-  let wickets = 0
-  let balls = 0
-  let extras = 0
-
-  for (const action of actions) {
-    if (action.outcome === 'runs' || action.outcome === 'wicket') {
-      runs += action.runs || 0
-      balls += 1
-      if (action.outcome === 'wicket') wickets += 1
-    } else if (action.outcome === 'wide' || action.outcome === 'no-ball') {
-      extras += 1
-    }
-  }
-
-  return { runs, wickets, balls, extras }
-}
-
-export function describeAction(action) {
-  switch (action.outcome) {
-    case 'wicket':
-      return action.region ? `Wicket • ${action.region}` : 'Wicket'
-    case 'wide':
-      return 'Wide'
-    case 'no-ball':
-      return action.region ? `No Ball • ${action.region}` : 'No Ball'
-    default:
-      return `${action.runs} ${action.runs === 1 ? 'Run' : 'Runs'}${action.region ? ` • ${action.region}` : ''}`
-  }
-}

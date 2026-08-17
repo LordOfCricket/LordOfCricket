@@ -1,10 +1,10 @@
 import { Component } from 'react'
 
 /**
- * Phase 7.1 — catches WebGL context failures or R3F/three.js runtime
+ * Catches WebGL context failures or R3F/three.js runtime
  * errors so they can never take down the rest of the homepage. Falls back
  * to rendering nothing: the CSS backdrop Hero already has underneath
- * stands on its own, exactly as it did before this phase existed — a
+ * stands on its own, exactly as it did before this component existed — a
  * failure here must be invisible, not a broken page.
  *
  * A class component is required here: React error boundaries (render-time

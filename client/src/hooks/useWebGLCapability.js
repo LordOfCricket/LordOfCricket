@@ -29,7 +29,7 @@ function isLowEndDevice() {
 }
 
 /**
- * Phase 7.1 — one-time, synchronous capability probe, checked in Hero.jsx
+ * One-time, synchronous capability probe, checked in Hero.jsx
  * *before* HeroScene's dynamic import ever fires. Unsupported or low-end
  * devices never download the three.js chunk at all — not a visual
  * fallback after the fact, an avoided network request. Mirrors

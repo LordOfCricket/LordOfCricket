@@ -15,6 +15,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import { createPlayer } from '../../models/player.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -34,13 +35,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the Phase 23 operational end-to-end flow).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -110,6 +122,34 @@ function cleanupMatchRows(matchId) {
   })()
 }
 
+// Phase 8 — NEW finding (not one of the 16 previously-documented pre-
+// existing failures), root-caused, not fixed here. FOUND: `matches.
+// match_date` is `TIMESTAMP WITHOUT TIME ZONE` (confirmed via information_
+// schema), and this Postgres server's session timezone is `Asia/Calcutta`
+// (confirmed via `SHOW TIMEZONE`) — inserting a UTC instant into that
+// column type, under that session timezone, silently shifts it by -5:30
+// (reproduced directly: inserting match_date='2026-08-17T04:16:35.517Z'
+// and reading it straight back via INSERT...RETURNING yielded
+// '2026-08-16T22:46:35.517Z' — a different CALENDAR DAY). This scenario's
+// step 2/3 (umpire B marks a UTC calendar date unavailable, matching the
+// domain layer's own UTC-based date math — see domain/umpireAssignment/
+// availability.js's own comment) sits right at that boundary, so the
+// stored match_date's shifted calendar day no longer matches the
+// override's date, and the NOT_AVAILABLE gate is silently skipped (201
+// instead of the expected 409). Confirmed via direct reproduction this
+// is NOT caused by anything in Phase 8 (or Phase 6/7) — verified the
+// domain/model layer (isUmpireAvailableForMatch, specific_date::text
+// casting) is already correct in isolation; the bug is purely the
+// column-type + session-timezone interaction.
+// DEFERRED (not fixed this phase): the low-risk fix is forcing the pool's
+// session timezone to UTC (matches every other UTC assumption already
+// throughout this codebase), but this is a SHARED dev database with
+// pre-existing rows already written under the current (buggy) timezone
+// interpretation — flipping session timezone now would change how THOSE
+// existing rows are read back, not just new ones. That needs a proper
+// audit of every TIMESTAMP WITHOUT TIME ZONE column plus a backfill
+// decision, not a same-phase blind fix. Documented in the Phase 8 report
+// as a real, deferred finding — not silently accepted as "flaky."
 test('SCENARIO 1: Ground Owner creates match with 2 umpire slots -> A available/assigned, B unavailable -> A checks in -> owner starts understaffed -> A scores + reports an incident -> match auto-completes -> A gets officiating credit -> feedback + reliability reflect it', async () => {
   const server = await startTestApp()
 
@@ -121,6 +161,7 @@ test('SCENARIO 1: Ground Owner creates match with 2 umpire slots -> A available/
   ).rows[0]
   const owner = await makeUser({ label: 's1-owner' })
   await createMembership({ groundId: ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+  await elevate(owner)
 
   const teamA = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('P23E2E A1','P2A1') RETURNING *`)).rows[0]
   const teamB = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('P23E2E B1','P2B1') RETURNING *`)).rows[0]
@@ -141,7 +182,7 @@ test('SCENARIO 1: Ground Owner creates match with 2 umpire slots -> A available/
     const matchDate = new Date(Date.now() + 3600000).toISOString()
     const created = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teamA.id, teamBId: teamB.id, matchDate, requiredUmpires: 2, oversPerInnings: 1, ballsPerOver: 6 },
     })
     assert.equal(created.status, 201, JSON.stringify(created.data))
@@ -183,13 +224,13 @@ test('SCENARIO 1: Ground Owner creates match with 2 umpire slots -> A available/
     const toss = await json(`${server.baseUrl}/matches/${matchId}/toss`, { method: 'PATCH', token: umpireA.token, body: { tossWinnerId: teamA.id, tossDecision: 'bat' } })
     assert.equal(toss.status, 200, JSON.stringify(toss.data))
 
-    const blockedStart = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/start`, { method: 'POST', token: owner.token })
+    const blockedStart = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/start`, { method: 'POST', cookie: owner.cookie })
     assert.equal(blockedStart.status, 409, JSON.stringify(blockedStart.data))
     assert.equal(blockedStart.data.details?.understaffed, true)
 
     const started = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/start`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { confirmUnderstaffed: true },
     })
     assert.equal(started.status, 200, JSON.stringify(started.data))
@@ -271,6 +312,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
   ).rows[0]
   const owner = await makeUser({ label: 's2-owner' })
   await createMembership({ groundId: ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+  await elevate(owner)
 
   const teamA = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('P23E2E A2','P2A2') RETURNING *`)).rows[0]
   const teamB = (await pool.query(`INSERT INTO teams (name, short_name) VALUES ('P23E2E B2','P2B2') RETURNING *`)).rows[0]
@@ -287,7 +329,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
     // 1. Umpire A is assigned to a match requiring 1 umpire.
     const created = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teamA.id, teamBId: teamB.id, matchDate: new Date(Date.now() + 3600000).toISOString(), requiredUmpires: 1, oversPerInnings: 1, ballsPerOver: 6 },
     })
     assert.equal(created.status, 201, JSON.stringify(created.data))
@@ -305,7 +347,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
     // 2. Ground Owner marks Umpire A a NO_SHOW.
     const noShow = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(noShow.status, 200, JSON.stringify(noShow.data))
     assert.equal(noShow.data.slot.status, 'NO_SHOW')
@@ -313,7 +355,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
     // 3. Ground Owner finds eligible replacements -> Umpire B is listed.
     const eligible = await json(
       `${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/umpire-slots/${slotId}/eligible-replacements`,
-      { token: owner.token },
+      { cookie: owner.cookie },
     )
     assert.equal(eligible.status, 200, JSON.stringify(eligible.data))
     assert.ok(eligible.data.candidates.some((c) => c.id === umpireB.id))
@@ -321,7 +363,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
     // 4. Ground Owner assigns Umpire B as the replacement.
     const replaced = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/umpire-slots/${slotId}/replace`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { newUmpireUserId: umpireB.id },
     })
     assert.equal(replaced.status, 200, JSON.stringify(replaced.data))
@@ -343,7 +385,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
     //    Scenario 1's auto-completion path.
     const completed = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(completed.status, 200, JSON.stringify(completed.data))
     assert.equal(completed.data.match.status, 'completed')
@@ -359,7 +401,7 @@ test('SCENARIO 2: Umpire A assigned -> no-show -> Ground Owner finds + assigns r
 
     // 8. History preserves the full timeline on the same slot: A assigned,
     //    A no-show, B replacement-assigned, B completed.
-    const history = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/umpire-history`, { token: owner.token })
+    const history = await json(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/matches/${matchId}/umpire-history`, { cookie: owner.cookie })
     assert.equal(history.status, 200)
     const timeline = history.data.events.map((e) => ({ type: e.event_type, umpireId: e.umpire_user_id }))
     assert.deepEqual(timeline, [

@@ -27,7 +27,7 @@ export default function TeamsPage() {
   const debouncedQuery = useDebouncedValue(query, 300)
   const { result, loading, error } = usePublicTeams({ search: debouncedQuery || undefined, limit: PAGE_SIZE, offset })
 
-  // Reflects the search term into the URL (Part 58) — shareable, back-button-friendly.
+  // Reflects the search term into the URL — shareable, back-button-friendly.
   useEffect(() => {
     const next = {}
     if (debouncedQuery) next.search = debouncedQuery

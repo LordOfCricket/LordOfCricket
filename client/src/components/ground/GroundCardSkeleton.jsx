@@ -1,4 +1,4 @@
-// Phase 13 Step 14 — loading state for the discovery grid. Same shape as
+// Loading state for the discovery grid. Same shape as
 // GroundCard so the layout doesn't jump when real cards replace these.
 export default function GroundCardSkeleton() {
   return (

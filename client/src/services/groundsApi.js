@@ -1,6 +1,6 @@
 import api from './api.js'
 
-// Public reads (GET /api/grounds/*, Phase 12 + Stage 1 homepage redesign) —
+// Public reads (GET /api/grounds/*, Stage 1 homepage redesign) —
 // thin wrappers over the shared axios instance, matching amenities.js/
 // gallery.js/groundPhotos.js's existing convention. No auth header is
 // required for these (the backend routes are public), but the shared `api`

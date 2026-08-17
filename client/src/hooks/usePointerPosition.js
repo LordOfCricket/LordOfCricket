@@ -11,7 +11,7 @@ import usePointerCapability from './usePointerCapability.js'
  * the whole page instead, for effects that need to work while scrolled
  * past Hero too.
  *
- * Gated by the same usePointerCapability() every Phase 4 interaction
+ * Gated by the same usePointerCapability() every interaction
  * uses (fine pointer + hover-capable + not prefers-reduced-motion): when
  * disabled, the `mousemove` listener is never attached at all, so mobile/
  * touch/reduced-motion users pay zero extra JS cost, not just a hidden

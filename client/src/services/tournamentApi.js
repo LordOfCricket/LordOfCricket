@@ -1,4 +1,4 @@
-// Phase 15 — tournament management client. React never computes standings,
+// Tournament management client. React never computes standings,
 // NRR, qualification, or a winner itself; every number here comes straight
 // from the server's read model.
 import api from './api.js'

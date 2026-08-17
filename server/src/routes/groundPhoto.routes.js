@@ -37,7 +37,16 @@ function uploadSingleImage(req, res, next) {
 
 const router = express.Router()
 
-router.get('/', listGroundPhotos)
+// Phase 7 — this returns internal `id`/`cloudinary_public_id` across EVERY
+// ground with no WHERE clause (findAllGroundPhotos), unlike the public
+// ground-profile endpoint's ground-scoped, internal-field-free read
+// (findGroundPhotosByGroundId). Its only real consumer is the super-admin
+// photo management panel (client/src/hooks/useAdminPhotos.js) — the public
+// AmenitiesGrid/ground-profile pages deliberately avoid this exact route
+// (see AmenitiesGrid.jsx's own comment) precisely because it isn't
+// ground-scoped. Was reachable with zero authentication; now matches the
+// POST/upload/DELETE routes below.
+router.get('/', requireAuth, requireStaffRole('super_admin'), listGroundPhotos)
 router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addGroundPhoto)
 router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadGroundPhoto)
 router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeGroundPhoto)

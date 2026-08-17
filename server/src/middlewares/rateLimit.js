@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { logger } from '../utils/logger.js'
 
 // Phase 19 Feature 5 — rate limiting for the endpoint classes the spec calls
@@ -11,22 +11,42 @@ import { logger } from '../utils/logger.js'
 // so repeated hits are visible in the server log without being noisy per
 // request.
 
-function makeLimiter({ windowMs, max, message }) {
+function makeLimiter({ windowMs, max, message, keyGenerator }) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message },
+    ...(keyGenerator ? { keyGenerator } : {}),
     handler: (req, res, _next, options) => {
-      logger.warn('Rate limit exceeded', { path: req.originalUrl, ip: req.ip })
+      logger.warn('Rate limit exceeded', { path: req.originalUrl, ip: req.ip, userId: req.user?.id })
       res.status(options.statusCode).json(options.message)
     },
   })
 }
 
-// Brute-force protection on credential endpoints — tight window, low ceiling.
-export const authLimiter = makeLimiter({
+// Phase 6 — keyed by the authenticated user's id, not IP: these endpoints
+// always run after requireAuth, and keying by IP would let unrelated staff
+// behind the same office NAT/VPN rate-limit each other. Falls back to IP
+// only for the (should-never-happen, since requireAuth already 401'd)
+// case req.user is somehow absent.
+function byUserId(req) {
+  return req.user?.id ? `user:${req.user.id}` : ipKeyGenerator(req.ip)
+}
+
+// Phase 3 — OTP request/verify endpoints. This is the IP-based layer only;
+// §9 explicitly warns IP rotation defeats IP-only limiting, so this is
+// layered UNDER an identifier-based limit enforced in otp.service.js
+// itself (backed by a real Postgres read of otp_codes rows — correctly
+// shared across every backend replica, no in-memory/per-pod state). Two
+// independent dimensions, neither sufficient alone.
+export const otpRequestLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many OTP requests from this device. Please try again later.',
+})
+export const otpVerifyLimiter = makeLimiter({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: 'Too many attempts. Please try again later.',
@@ -75,4 +95,27 @@ export const groundWriteLimiter = makeLimiter({
   windowMs: 10 * 60 * 1000,
   max: 10,
   message: 'Too many ground registration attempts. Please try again shortly.',
+})
+
+// Phase 6 — MFA/WebAuthn/TOTP/step-up/factor-management, all keyed by user
+// id (see byUserId above). Two tiers: ceremony/verification attempts (an
+// attacker guessing TOTP codes or replaying WebAuthn responses) get the
+// tighter limit; read-only/options endpoints get the more generous one.
+export const mfaVerifyLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many verification attempts. Please try again later.',
+  keyGenerator: byUserId,
+})
+export const mfaManageLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many requests. Please try again later.',
+  keyGenerator: byUserId,
+})
+export const stepUpLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: 'Too many step-up attempts. Please try again later.',
+  keyGenerator: byUserId,
 })

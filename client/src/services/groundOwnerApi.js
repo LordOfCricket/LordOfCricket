@@ -58,8 +58,6 @@ export async function completeGroundMatch(publicGroundId, matchId) {
   return data.match
 }
 
-// Phase 23, Workstreams F/G/H — no-show, replacement, and the lightweight
-// assignment history timeline.
 export async function markUmpireNoShow(publicGroundId, matchId, slotId) {
   const { data } = await api.post(`/ground-owner/grounds/${publicGroundId}/matches/${matchId}/umpire-slots/${slotId}/no-show`)
   return data.slot
@@ -78,4 +76,38 @@ export async function assignReplacementUmpire(publicGroundId, matchId, slotId, n
 export async function fetchMatchAssignmentHistory(publicGroundId, matchId) {
   const { data } = await api.get(`/ground-owner/grounds/${publicGroundId}/matches/${matchId}/umpire-history`)
   return data.events
+}
+
+// Phase 4 — ground-scoped Staff (GROUND_ADMIN/CANTEEN_STAFF), distinct from
+// the platform-wide admin-staff endpoints (adminStaffApi.js). Server-side
+// authorization is the same requireGroundRole('GROUND_OWNER') every other
+// function on this file already relies on.
+export async function fetchGroundStaff(publicGroundId) {
+  const { data } = await api.get(`/ground-owner/grounds/${publicGroundId}/staff`)
+  return data.staff
+}
+
+export async function createGroundStaff(publicGroundId, { name, identifier, role }) {
+  const { data } = await api.post(`/ground-owner/grounds/${publicGroundId}/staff`, { name, identifier, role })
+  return data
+}
+
+// Phase 5 — granular Staff permissions. The catalog is ground-agnostic (the
+// same 4 permissions exist for every ground); grant/revoke/disable are
+// Owner-only server-side, same as createGroundStaff above.
+export async function fetchPermissionCatalog() {
+  const { data } = await api.get('/ground-owner/permissions/catalog')
+  return data.permissions
+}
+
+export async function grantStaffPermission(publicGroundId, membershipId, permissionKey) {
+  await api.post(`/ground-owner/grounds/${publicGroundId}/staff/${membershipId}/permissions`, { permissionKey })
+}
+
+export async function revokeStaffPermission(publicGroundId, membershipId, permissionKey) {
+  await api.delete(`/ground-owner/grounds/${publicGroundId}/staff/${membershipId}/permissions/${permissionKey}`)
+}
+
+export async function disableGroundStaff(publicGroundId, membershipId) {
+  await api.patch(`/ground-owner/grounds/${publicGroundId}/staff/${membershipId}/disable`)
 }

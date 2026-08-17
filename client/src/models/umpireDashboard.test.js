@@ -24,7 +24,7 @@ test('bucketAssignments sorts ASSIGNED slots by match status', () => {
   assert.deepEqual(completed.map((a) => a.match_id), [3, 4])
 })
 
-test('bucketAssignments: a COMPLETED slot always lands in completed, regardless of match_status (officiating credit, Phase 23)', () => {
+test('bucketAssignments: a COMPLETED slot always lands in completed, regardless of match_status (officiating credit)', () => {
   const assignments = [{ status: 'COMPLETED', match_status: 'completed', match_id: 10 }]
   assert.deepEqual(bucketAssignments(assignments).completed.map((a) => a.match_id), [10])
 })

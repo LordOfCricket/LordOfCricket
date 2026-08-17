@@ -9,6 +9,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -28,9 +29,20 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token } = {}) {
-  const res = await fetch(url, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+async function json(url, { method = 'GET', token, cookie } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
+  const res = await fetch(url, { method, headers: authHeaders })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the operations summary).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -91,6 +103,7 @@ test('umpire operations summary: matches this month, fully staffed, no-show coun
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     // Match 1: fully staffed (1/1).
     const m1 = await matchService.createMatch({
@@ -127,7 +140,7 @@ test('umpire operations summary: matches this month, fully staffed, no-show coun
       owner.id,
     ])
 
-    const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/umpire-operations-summary`, { token: owner.token })
+    const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/umpire-operations-summary`, { cookie: owner.cookie })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     assert.equal(res.data.summary.matchesThisMonth, 3)
     assert.equal(res.data.summary.fullyStaffed, 1)
@@ -149,6 +162,7 @@ test('umpire operations summary is scoped to the owning Ground Owner and denied 
   const outsider = await createUser('scope-outsider')
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const denied = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/umpire-operations-summary`, { token: outsider.token })
     assert.equal(denied.status, 403)
     const noAuth = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/umpire-operations-summary`)
@@ -168,6 +182,7 @@ test('staffing forecast is attached to each upcoming match in the ground-owner m
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const soon = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -183,7 +198,7 @@ test('staffing forecast is attached to each upcoming match in the ground-owner m
       requiredUmpires: 1,
     })
 
-    const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, { token: owner.token })
+    const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, { cookie: owner.cookie })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     const soonRow = res.data.matches.find((m) => m.id === soon.id)
     const laterRow = res.data.matches.find((m) => m.id === later.id)

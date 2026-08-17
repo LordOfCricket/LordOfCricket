@@ -1,6 +1,6 @@
 import { Link, useRouteError } from 'react-router-dom'
 
-// Phase 19 Feature 11 — without an errorElement, an uncaught render/loader
+// Without an errorElement, an uncaught render/loader
 // error on any route falls through to React Router's own default error
 // screen (a bare, unstyled dump), and a network blip (ERR_FAILED, etc.)
 // during route transition had no recovery path other than a manual

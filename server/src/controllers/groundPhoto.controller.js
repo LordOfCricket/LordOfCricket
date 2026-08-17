@@ -4,6 +4,7 @@ import {
   deleteGroundPhoto,
 } from '../models/groundPhoto.model.js'
 import { uploadImageFileDetailed, deleteImageByPublicId } from '../utils/cloudinaryUpload.js'
+import { isValidHttpUrl } from '../domain/accountCreation/validation.js'
 import { logger } from '../utils/logger.js'
 
 const CLOUDINARY_FOLDER = 'LOC/ground-photos'
@@ -22,6 +23,9 @@ export async function addGroundPhoto(req, res, next) {
     const { title, imageUrl, sortOrder } = req.body
     if (!imageUrl) {
       return res.status(400).json({ message: 'imageUrl is required' })
+    }
+    if (!isValidHttpUrl(imageUrl)) {
+      return res.status(400).json({ message: 'imageUrl must be a valid http(s) URL.' })
     }
     // Externally-hosted URL, not an upload through this app — no Cloudinary
     // asset of ours exists for it, so cloudinaryPublicId stays null.

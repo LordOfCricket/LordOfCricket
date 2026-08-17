@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-// Shared team-logo fallback (Part 11/86) — reused by TeamCard, TeamHero, and
+// Shared team-logo fallback — reused by TeamCard, TeamHero, and
 // MatchCard's team rows so a broken/missing logo never shows a broken image
 // icon anywhere in the app: falls back to the team's stored short name.
 const SIZE_CLASSES = {

@@ -9,11 +9,11 @@ import { fetchPublicMatches } from '../services/publicMatchApi.js'
 const NO_POLL_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 /**
- * Phase 10 Part 1's public match list, now (Part 10 Part 3) built on the one
- * shared visibility-aware polling transport (Part 52) instead of its own
+ * The public match list, now built on the one
+ * shared visibility-aware polling transport instead of its own
  * bespoke fetch effect. `pollIntervalMs` is optional — omitted, this behaves
- * exactly as Part 1 shipped it (one fetch per param change, no auto-refresh).
- * Passed (Part 99 — the /matches LIVE tab), it auto-refreshes on that
+ * exactly as it did before (one fetch per param change, no auto-refresh).
+ * Passed (the /matches LIVE tab), it auto-refreshes on that
  * cadence while the tab is visible, pausing when hidden, reusing the exact
  * same request-race/backoff/offline handling every other spectator polling
  * surface gets for free.

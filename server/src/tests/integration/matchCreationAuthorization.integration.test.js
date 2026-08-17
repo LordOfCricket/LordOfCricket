@@ -10,6 +10,7 @@ import http from 'http'
 import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -29,13 +30,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireStaffRole('super_admin') on POST /matches now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the U5.1 super_admin-only match-creation restriction).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 async function makeUser({ label, role = 'player', playerType = null, staffRoleName = null, requestStatuses = [] }) {
@@ -100,9 +112,10 @@ test('super_admin CAN still create a match through the legacy endpoint (unchange
   const server = await startTestApp()
   const teams = await makeTeams()
   const admin = await makeUser({ label: 'super-admin', role: 'staff', staffRoleName: 'super_admin' })
+  await elevate(admin)
   const createdIds = []
   try {
-    const { status, data } = await json(`${server.baseUrl}/matches`, { method: 'POST', token: admin.token, body: payload(teams) })
+    const { status, data } = await json(`${server.baseUrl}/matches`, { method: 'POST', cookie: admin.cookie, body: payload(teams) })
     assert.equal(status, 201, JSON.stringify(data))
     createdIds.push(data.match.id)
   } finally {
@@ -158,10 +171,11 @@ test('existing match creation validation remains intact (same teams rejected wit
   const server = await startTestApp()
   const teams = await makeTeams()
   const admin = await makeUser({ label: 'validation-admin', role: 'staff', staffRoleName: 'super_admin' })
+  await elevate(admin)
   try {
     const { status, data } = await json(`${server.baseUrl}/matches`, {
       method: 'POST',
-      token: admin.token,
+      cookie: admin.cookie,
       body: { teamAId: teams.teamA.id, teamBId: teams.teamA.id, matchDate: new Date(Date.now() + 86400000).toISOString() },
     })
     assert.equal(status, 400, JSON.stringify(data))
@@ -176,12 +190,13 @@ test('an approved umpire CAN still officiate: apply for a slot and score an assi
   const server = await startTestApp()
   const teams = await makeTeams()
   const admin = await makeUser({ label: 'setup-admin', role: 'staff', staffRoleName: 'super_admin' })
+  await elevate(admin)
   const umpire = await makeUser({ label: 'still-officiates', playerType: 'umpire', requestStatuses: ['approved'] })
   const createdIds = []
   try {
     const created = await json(`${server.baseUrl}/matches`, {
       method: 'POST',
-      token: admin.token,
+      cookie: admin.cookie,
       body: { ...payload(teams), requiredUmpires: 1 },
     })
     assert.equal(created.status, 201)

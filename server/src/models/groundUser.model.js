@@ -4,8 +4,12 @@ import { pool } from '../config/db.js'
 // match_players/tournament_teams (schema.sql), this is an internal
 // membership/join row, never addressed directly by its own API resource.
 
-export async function createMembership({ groundId, userId, role, isActive = true }) {
-  const { rows } = await pool.query(
+// Phase 4 — accepts an optional transaction client (default `pool`), same
+// reasoning as ground.model.js#createGround: lets the ground-owner-request
+// approval flow and ground-scoped staff creation write this row atomically
+// alongside other statements. Existing callers are unaffected.
+export async function createMembership({ groundId, userId, role, isActive = true }, client = pool) {
+  const { rows } = await client.query(
     `INSERT INTO ground_users (ground_id, user_id, role, is_active)
      VALUES ($1,$2,$3,$4)
      RETURNING *`,
@@ -43,8 +47,37 @@ export async function findMembershipsByUserId(userId) {
   return rows
 }
 
+// Phase 5 — the IDOR guard every grant/revoke/disable staff-permission
+// endpoint needs: requireGroundRole/requireGroundPermission only prove the
+// caller owns :publicGroundId, they say nothing about whether a client-
+// supplied :membershipId actually belongs to THAT ground. Callers must
+// re-verify membership.ground_id === ground.id themselves (see
+// groundStaff.service.js#resolveOwnedStaffMembership) — this function only
+// resolves the row, it does not authorize anything on its own.
+export async function findMembershipById(id) {
+  const { rows } = await pool.query('SELECT * FROM ground_users WHERE id = $1', [id])
+  return rows[0] || null
+}
+
 export async function findMembershipsByGroundId(groundId) {
   const { rows } = await pool.query('SELECT * FROM ground_users WHERE ground_id = $1 ORDER BY id', [groundId])
+  return rows
+}
+
+// Phase 4 — groundStaff.service.js#listStaffForGround's read: same rows as
+// findMembershipsByGroundId, scoped to a role list and joined out to the
+// user's name/email/phone so the Ground Owner Staff Management page has
+// something to display beyond a bare user id. Never selects password_hash
+// or any other sensitive user column.
+export async function findMembershipsByGroundIdAndRoles(groundId, roles) {
+  const { rows } = await pool.query(
+    `SELECT gu.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone
+     FROM ground_users gu
+     JOIN users u ON u.id = gu.user_id
+     WHERE gu.ground_id = $1 AND gu.role = ANY($2::varchar[]) AND gu.is_active = true
+     ORDER BY gu.id`,
+    [groundId, roles],
+  )
   return rows
 }
 
@@ -78,8 +111,12 @@ export async function findGroundsOwnedByUser(userId, role = 'GROUND_OWNER') {
   return rows
 }
 
-export async function setMembershipActive(id, isActive) {
-  const { rows } = await pool.query(
+// Phase 5 — accepts an optional transaction client (default `pool`), same
+// reasoning as createMembership above: disableStaffMembership
+// (groundStaff.service.js) writes this alongside an account_audit_log row in
+// one transaction.
+export async function setMembershipActive(id, isActive, client = pool) {
+  const { rows } = await client.query(
     `UPDATE ground_users SET is_active = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
     [id, isActive],
   )

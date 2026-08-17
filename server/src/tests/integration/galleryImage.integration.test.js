@@ -31,6 +31,7 @@ import { insertGalleryImage } from '../../models/galleryImage.model.js'
 import { uploadImageFileDetailed, deleteImageByPublicId } from '../../utils/cloudinaryUpload.js'
 import GalleryImageMongo from '../../models/galleryImageMongoLegacy.model.js'
 import { runGalleryMigration } from '../../scripts/migrateGalleryToPostgres.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 await connectMongo()
 
@@ -76,9 +77,15 @@ async function createSuperAdminUser() {
       [`integration-test-super-admin-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, superAdminRoleId],
     )
   ).rows[0]
+  // Phase 6 — requireStaffRole('super_admin') now requires req.mfaVerified,
+  // which a bare JWT can never satisfy. This file isn't testing MFA, only
+  // gallery CRUD authorization, so a REAL, already-MFA-verified session
+  // cookie is minted directly — see helpers/mfaFixtures.js.
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
   return {
     id: user.id,
     token: signToken({ id: user.id }),
+    cookie,
     async cleanup() {
       await pool.query('DELETE FROM users WHERE id = $1', [user.id])
     },
@@ -128,15 +135,16 @@ async function createFixtureRow(overrides = {}) {
   })
 }
 
-async function uploadImage(baseUrl, token, { title, category, order }) {
+async function uploadImage(baseUrl, actor, { title, category, order }) {
   const form = new FormData()
   form.append('image', new Blob([ONE_PX_PNG], { type: 'image/png' }), 'test.png')
   form.append('title', title)
   if (category) form.append('category', category)
   if (order !== undefined) form.append('order', String(order))
+  const headers = actor?.cookie ? { Cookie: actor.cookie } : { Authorization: `Bearer ${actor?.token ?? actor}` }
   const res = await fetch(`${baseUrl}/gallery`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
     body: form,
   })
   const body = await res.json()
@@ -166,7 +174,7 @@ test('gallery upload as a non-super_admin staff user is rejected (403) — only 
   const server = await startTestApp()
   const plainStaff = await createPlainStaffUser()
   try {
-    const { status } = await uploadImage(server.baseUrl, plainStaff.token, { title: 'Should never be created' })
+    const { status } = await uploadImage(server.baseUrl, plainStaff, { title: 'Should never be created' })
     assert.equal(status, 403)
   } finally {
     await plainStaff.cleanup()
@@ -182,7 +190,7 @@ test('gallery upload with no file is rejected (400), not a 500', async () => {
     form.append('title', 'Missing file test')
     const res = await fetch(`${server.baseUrl}/gallery`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${admin.token}` },
+      headers: { Cookie: admin.cookie },
       body: form,
     })
     assert.equal(res.status, 400)
@@ -264,7 +272,7 @@ test('active/inactive — deactivating an image (via PATCH) removes it from the 
 
     const patchRes = await fetch(`${server.baseUrl}/gallery/${row.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: false }),
     })
     assert.equal(patchRes.status, 200)
@@ -287,7 +295,7 @@ test('PATCH updates title/order/category and rejects an empty title or unknown c
   try {
     const ok = await fetch(`${server.baseUrl}/gallery/${row.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Updated Title', order: 7, category: 'tournament' }),
     })
     assert.equal(ok.status, 200)
@@ -298,14 +306,14 @@ test('PATCH updates title/order/category and rejects an empty title or unknown c
 
     const emptyTitle = await fetch(`${server.baseUrl}/gallery/${row.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: '   ' }),
     })
     assert.equal(emptyTitle.status, 400)
 
     const badCategory = await fetch(`${server.baseUrl}/gallery/${row.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json' },
+      headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ category: 'not-a-real-category' }),
     })
     assert.equal(badCategory.status, 400)
@@ -346,7 +354,7 @@ test('DELETE removes the database row (Cloudinary destroy of a fixture asset suc
   try {
     const deleteRes = await fetch(`${server.baseUrl}/gallery/${row.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${admin.token}` },
+      headers: { Cookie: admin.cookie },
     })
     assert.equal(deleteRes.status, 200)
     const deleteBody = await deleteRes.json()
@@ -378,7 +386,7 @@ test(
     let createdId = null
     try {
       const title = uniqueTitle('upload e2e')
-      const { status, body } = await uploadImage(server.baseUrl, admin.token, { title, category: 'ground', order: 999 })
+      const { status, body } = await uploadImage(server.baseUrl, admin, { title, category: 'ground', order: 999 })
       assert.equal(status, 201)
       createdId = body.image.id
       assert.match(body.image.originalImageUrl, /^https:\/\/res\.cloudinary\.com\//)
@@ -388,7 +396,7 @@ test(
 
       const deleteRes = await fetch(`${server.baseUrl}/gallery/${createdId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${admin.token}` },
+        headers: { Cookie: admin.cookie },
       })
       assert.equal(deleteRes.status, 200)
       createdId = null

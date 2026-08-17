@@ -5,7 +5,7 @@ import { fetchMatch } from '../services/matchApi.js'
 // Backend-authoritative real scorer state. This hook NEVER computes cricket
 // state itself (strike rotation, over completion, wicket effects, ...) — it
 // only calls scoringApi.js and stores exactly what the server returns. See
-// Phase 5 Part 18: the server is the only source of truth for official
+// The server is the only source of truth for official
 // matches (the practice /testing sandbox is the one place a client engine is
 // still allowed to own that logic).
 export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
@@ -20,7 +20,7 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
   const [actionError, setActionError] = useState('')
   const [conflictNotice, setConflictNotice] = useState('')
   const [pending, setPending] = useState(false)
-  // Phase 6 Part 1 fix: bowler selection is tracked as "chosen id, FOR which
+  // Bowler selection is tracked as "chosen id, FOR which
   // over" rather than just an id, and re-derived from authoritative state on
   // every load/refresh — never assumed from the URL alone. Opening over (0)
   // is seeded from the setup flow's URL param; every other over is either

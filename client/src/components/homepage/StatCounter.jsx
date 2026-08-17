@@ -5,7 +5,7 @@ import { staggerItemUp } from '../../lib/revealVariants.js'
 const CARD_CLASSNAME =
   'w-40 rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent px-4 py-6 text-center shadow-lg shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-400/40'
 
-// Phase 5 — About section stat. Same DOM node drives both the count-up
+// About section stat. Same DOM node drives both the count-up
 // trigger (useCountUp's `ref` = in-view detector) and the stagger-reveal
 // (motion.div `variants`, inherited from the parent ScrollReveal's
 // staggerContainer state) — see useCountUp.js / revealVariants.js.

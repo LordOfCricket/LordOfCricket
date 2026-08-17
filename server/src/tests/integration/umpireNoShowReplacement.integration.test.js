@@ -15,6 +15,7 @@ import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import { createTeamsFixture } from './fixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -34,13 +35,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundRole/requireGroundPermission's GROUND_OWNER branch
+// now requires req.mfaVerified. `elevate` mints a REAL, already-MFA-verified
+// session cookie — see helpers/mfaFixtures.js (this file isn't testing MFA,
+// only no-show/replacement).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -104,11 +116,12 @@ test('ground owner marks an ASSIGNED umpire as NO_SHOW: slot transitions, event 
   const teams = await createTeamsFixture()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const { match, slotId } = await makeAssignedMatch(server, gf.ground, umpire, teams)
 
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     assert.equal(res.data.slot.status, 'NO_SHOW')
@@ -147,6 +160,7 @@ test('a non-owner cannot mark a no-show (404); marking a slot that is not ASSIGN
   const teams = await createTeamsFixture()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const { match, slotId } = await makeAssignedMatch(server, gf.ground, umpire, teams)
 
     // requireGroundRole('GROUND_OWNER') rejects a non-member with 403 before
@@ -161,13 +175,13 @@ test('a non-owner cannot mark a no-show (404); marking a slot that is not ASSIGN
 
     const first = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(first.status, 200)
 
     const second = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(second.status, 409, JSON.stringify(second.data))
     assert.equal(second.data.code, 'SLOT_NOT_ELIGIBLE')
@@ -193,10 +207,11 @@ test('eligible replacements: excludes an unavailable candidate and a candidate w
   const teams2 = await createTeamsFixture()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const { match, slotId } = await makeAssignedMatch(server, gf.ground, noShowUmpire, teams)
     await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
 
     // unavailableCandidate marks the whole day of the match unavailable.
@@ -220,7 +235,7 @@ test('eligible replacements: excludes an unavailable candidate and a candidate w
 
     const res = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/eligible-replacements`,
-      { token: owner.token },
+      { cookie: owner.cookie },
     )
     assert.equal(res.status, 200, JSON.stringify(res.data))
     const ids = res.data.candidates.map((c) => c.id)
@@ -250,15 +265,16 @@ test('assigning a replacement: new umpire gets ASSIGNED + scoring access, histor
   const teams = await createTeamsFixture()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const { match, slotId } = await makeAssignedMatch(server, gf.ground, noShowUmpire, teams)
     await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
 
     const assign = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/replace`,
-      { method: 'POST', token: owner.token, body: { newUmpireUserId: replacement.id } },
+      { method: 'POST', cookie: owner.cookie, body: { newUmpireUserId: replacement.id } },
     )
     assert.equal(assign.status, 200, JSON.stringify(assign.data))
     assert.equal(assign.data.slot.status, 'ASSIGNED')
@@ -276,7 +292,7 @@ test('assigning a replacement: new umpire gets ASSIGNED + scoring access, histor
     assert.equal(asNoShow.status, 403)
 
     const history = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-history`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(history.status, 200)
     const timeline = history.data.events.map((e) => ({ type: e.event_type, umpireId: e.umpire_user_id }))
@@ -306,15 +322,16 @@ test('assigning a replacement rejects a candidate who is not an approved umpire,
   const teams2 = await createTeamsFixture()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const { match, slotId } = await makeAssignedMatch(server, gf.ground, noShowUmpire, teams)
     await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
 
     const withNormalPlayer = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/replace`,
-      { method: 'POST', token: owner.token, body: { newUmpireUserId: normalPlayer.id } },
+      { method: 'POST', cookie: owner.cookie, body: { newUmpireUserId: normalPlayer.id } },
     )
     assert.equal(withNormalPlayer.status, 403, JSON.stringify(withNormalPlayer.data))
     assert.equal(withNormalPlayer.data.code, 'NOT_APPROVED_UMPIRE')
@@ -330,7 +347,7 @@ test('assigning a replacement rejects a candidate who is not an approved umpire,
 
     const withBusy = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/replace`,
-      { method: 'POST', token: owner.token, body: { newUmpireUserId: busyCandidate.id } },
+      { method: 'POST', cookie: owner.cookie, body: { newUmpireUserId: busyCandidate.id } },
     )
     assert.equal(withBusy.status, 409, JSON.stringify(withBusy.data))
     assert.equal(withBusy.data.code, 'OVERLAPPING_ASSIGNMENT')

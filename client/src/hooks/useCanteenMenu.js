@@ -91,7 +91,7 @@ export function useMenu() {
       }
     }
 
-    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // Socket.IO drops room membership on disconnect and never
     // auto-rejoins an app-level room on its own reconnect. Without re-emitting
     // 'join-user-room' here, a dropped connection silently stopped receiving
     // every canteen event forever after the first reconnect. On any reconnect

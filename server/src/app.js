@@ -3,11 +3,20 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
+import cookieParser from 'cookie-parser'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import routes from './routes/index.js'
 import { notFound, errorHandler } from './middlewares/errorHandler.js'
 import { allowedOrigins } from './config/corsOrigins.js'
+
+// Phase 3 — same fail-fast pattern as utils/jwt.js's JWT_SECRET check: a
+// production deployment that forgets to set SESSION_COOKIE_SECRET must
+// never silently sign session cookies with a well-known fallback value.
+if (!process.env.SESSION_COOKIE_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('SESSION_COOKIE_SECRET must be set in production — refusing to start with the insecure development fallback secret.')
+}
+const SESSION_COOKIE_SECRET = process.env.SESSION_COOKIE_SECRET || 'dev-only-insecure-cookie-secret-change-me'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -39,6 +48,7 @@ app.use(compression())
 app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use(cookieParser(SESSION_COOKIE_SECRET))
 app.use('/uploads', express.static(join(__dirname, '../uploads')))
 app.use('/uploads/canteen', express.static(canteenUploadsDir))
 

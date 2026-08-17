@@ -4,7 +4,31 @@ import { listMenu, listMasterMenu, getTodaysMenuConfig, updateTodaysMenu, create
 import { requireAuth } from '../middlewares/auth.js'
 import { attachCurrentCanteen, requireCanteenStaffAccess, attachGroundCanteenContext, requireGroundCanteenRole } from '../middlewares/groundAccess.js'
 
-const upload = multer({ storage: multer.memoryStorage() })
+// Phase 7 — this was the one upload route in the app with no fileFilter/
+// size limit (every sibling — groundPhoto/amenity/galleryImage/partner —
+// caps at 10MB and allow-lists image MIME types). Matches that convention.
+const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      return cb(new Error('Only JPEG, PNG, or WEBP images are allowed.'))
+    }
+    cb(null, true)
+  },
+})
+
+function uploadSingleImage(req, res, next) {
+  upload.single('imageFile')(req, res, (err) => {
+    if (!err) return next()
+    err.statusCode = 400
+    if (err.code === 'LIMIT_FILE_SIZE') err.message = 'Image must be 10MB or smaller.'
+    next(err)
+  })
+}
 
 // Phase 11 — ONE route table, reused for both URL schemes (Step 2/13: never
 // duplicate this logic). `attachContext` resolves req.canteen with no auth;
@@ -25,8 +49,8 @@ function buildCanteenMenuRouter({ attachContext, staffAccess }) {
   // before Phase 10).
   const menuAccess = staffAccess({ legacyStaffRoles: ['super_admin', 'admin'], groundRoles: ['GROUND_OWNER', 'GROUND_ADMIN'] })
   router.patch('/today', requireAuth, menuAccess, updateTodaysMenu)
-  router.post('/master', requireAuth, menuAccess, upload.single('imageFile'), createMenuItem)
-  router.patch('/master/:id', requireAuth, menuAccess, upload.single('imageFile'), updateMenuItem)
+  router.post('/master', requireAuth, menuAccess, uploadSingleImage, createMenuItem)
+  router.patch('/master/:id', requireAuth, menuAccess, uploadSingleImage, updateMenuItem)
   router.delete('/master/:id', requireAuth, menuAccess, deleteMenuItem)
   return router
 }

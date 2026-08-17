@@ -64,10 +64,10 @@ function PageError({ message, onRetry }) {
   )
 }
 
-// Phase 13 — Level 2: the reusable per-ground template (Step 17). Every
-// section reads from `ground` (GET /api/grounds/:publicGroundId, Phase 12);
+// Level 2: the reusable per-ground template (Step 17). Every
+// section reads from `ground` (GET /api/grounds/:publicGroundId);
 // nothing here is specific to any one ground's id/name — a second ground
-// renders through this exact same component (see Phase 13 report's
+// renders through this exact same component (see the
 // two-fixture verification). The URL's :publicGroundId is the ONLY tenancy
 // signal (Step 28) — no global "current ground" state exists anywhere.
 export default function GroundHomePage() {
@@ -127,8 +127,8 @@ export default function GroundHomePage() {
           <GroundAbout ground={ground} />
         </div>
 
-        {/* Partners — platform-wide, not ground-specific (Phase 12 never
-            scoped partners to a ground; unchanged here). */}
+        {/* Partners — platform-wide, not ground-specific (partners have never
+            been scoped to a ground; unchanged here). */}
         <div className="flex w-full flex-col items-center gap-10 px-6 py-6">
           <SectionHeading
             eyebrow="Our Network"
@@ -139,7 +139,7 @@ export default function GroundHomePage() {
         </div>
 
         {/* Booking — the ground's booking system isn't ground-scoped on the
-            backend yet (out of scope, same boundary Phase 8-12 drew), so
+            backend yet (out of scope), so
             this stays exactly as it was: a single, global booking flow. */}
         <div id="booking" className="relative w-full scroll-mt-24 px-6 py-6">
           <div

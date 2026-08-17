@@ -43,16 +43,15 @@ export default function MatchSummaryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { summary, loading, error, retry, reload } = useMatchSummary(matchId)
 
-  // Phase 10 Part 3 — the ONE live poller for this page (Part 53). Disabled
+  // The ONE live poller for this page. Disabled
   // until `summary` has loaded once (initialStatus known), and self-latches
-  // off once the server reports a terminal match status (Part 17/96).
+  // off once the server reports a terminal match status.
   const { liveState, loading: liveLoading, connectionStatus, lastUpdatedAt, refresh: refreshLive } = useLiveMatch(matchId, { initialStatus: summary?.match?.status })
 
   // When the live poller detects a lifecycle transition the initial summary
   // fetch doesn't know about yet (upcoming -> live, innings break -> second
-  // innings, live -> completed), silently refetch the full Phase 9 summary
-  // so the static scorecard/Playing XI/result catch up too — no page reload
-  // (Part 20/22/39).
+  // innings, live -> completed), silently refetch the full summary
+  // so the static scorecard/Playing XI/result catch up too — no page reload.
   const liveLifecycleSignature = liveState ? `${liveState.match.status}:${liveState.match.isInningsBreak}:${liveState.currentInnings?.number ?? 0}` : null
   const summaryLifecycleSignature = summary ? `${summary.match.status}:${summary.match.isInningsBreak}:${summary.innings.length}` : null
   useEffect(() => {
@@ -111,7 +110,7 @@ export default function MatchSummaryPage() {
         <BackButton fallback="/matches" />
 
         <div className="mt-4 space-y-4">
-          {/* Phase 15 Part 55 — only present for a tournament-linked match; never clutters a normal match. */}
+          {/* Only present for a tournament-linked match; never clutters a normal match. */}
           {summary.tournamentContext && (
             <Link
               to={`/tournaments/${summary.tournamentContext.publicTournamentId}`}
@@ -177,7 +176,7 @@ export default function MatchSummaryPage() {
             </>
           )}
 
-          {/* Phase 16 — clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
+          {/* Clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
           <AIInsightSection title="AI Match Insight" fetchFn={fetchMatchInsight} id={matchId} kind="match" />
         </div>
       </div>

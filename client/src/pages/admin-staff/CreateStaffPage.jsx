@@ -1,10 +1,11 @@
 import AdminLayout from '../../components/admin/AdminLayout.jsx'
 import Button from '../../components/ui/Button.jsx'
 import Input from '../../components/ui/Input.jsx'
+import StepUpModal from '../../components/security/StepUpModal.jsx'
 import { useCreateStaff } from '../../hooks/useCreateStaff.js'
 
 export default function CreateStaffPage() {
-  const { form, setField, handleSubmit, submitting, error, successMessage } = useCreateStaff()
+  const { form, setField, handleSubmit, submitting, error, successMessage, stepUpModal, submitStepUp, cancelStepUp } = useCreateStaff()
 
   return (
     <AdminLayout title="Create Staff" subtitle="Create Admin or Canteen Staff accounts. Staff sign in with email and password.">
@@ -33,6 +34,8 @@ export default function CreateStaffPage() {
           {submitting ? 'Creating…' : 'Create Staff'}
         </Button>
       </form>
+
+      <StepUpModal pending={stepUpModal} onSubmit={submitStepUp} onCancel={cancelStepUp} />
     </AdminLayout>
   )
 }

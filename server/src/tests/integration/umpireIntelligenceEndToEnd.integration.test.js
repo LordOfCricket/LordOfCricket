@@ -21,6 +21,7 @@ import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import { upsertWeeklyAvailability } from '../../models/umpireAvailability.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -40,13 +41,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the umpire intelligence end-to-end flow).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -144,6 +156,7 @@ test('Ground Owner scenario — recommend, filter, rank, assign via the existing
       conflictMatch.id,
       umpireConflict.id,
     ])
+    await elevate(owner)
 
     // umpireUnavailable has marked themselves unavailable every day.
     for (let day = 0; day <= 6; day++) {
@@ -153,7 +166,7 @@ test('Ground Owner scenario — recommend, filter, rank, assign via the existing
 
     // Several approved umpires are available; recommendation engine filters conflicts/unavailability.
     const recommended = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires?limit=50`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(recommended.status, 200, JSON.stringify(recommended.data))
     const recommendedIds = recommended.data.candidates.map((c) => c.id)
@@ -177,7 +190,7 @@ test('Ground Owner scenario — recommend, filter, rank, assign via the existing
     // match must no longer offer either as a candidate (already assigned).
     const afterAssign = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires?limit=50`,
-      { token: owner.token },
+      { cookie: owner.cookie },
     )
     assert.equal(afterAssign.status, 200)
     const afterAssignIds = afterAssign.data.candidates.map((c) => c.id)
@@ -188,7 +201,7 @@ test('Ground Owner scenario — recommend, filter, rank, assign via the existing
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -211,7 +224,7 @@ test('Ground Owner scenario — recommend, filter, rank, assign via the existing
     })
     const secondRecommend = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${secondMatch.id}/recommended-umpires?limit=50`,
-      { token: owner.token },
+      { cookie: owner.cookie },
     )
     assert.equal(secondRecommend.status, 200)
     const entryAAgain = secondRecommend.data.candidates.find((c) => c.id === umpireA.id)

@@ -11,6 +11,7 @@ import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import { upsertWeeklyAvailability } from '../../models/umpireAvailability.model.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -30,13 +31,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// umpire recommendations).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -103,6 +115,7 @@ test('only approved umpires appear — a pending umpire is never recommended', a
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -116,7 +129,7 @@ test('only approved umpires appear — a pending umpire is never recommended', a
     // presence/absence by approval status, not about ranking position, so
     // it must see the full eligible pool, not just the default top-5.
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires?limit=50`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     const ids = res.data.candidates.map((c) => c.id)
@@ -139,8 +152,10 @@ test('a candidate with a conflicting match elsewhere is excluded from recommenda
   const candidate = await createUser('conflict-candidate', { playerType: 'umpire', umpireRequestStatus: 'approved' })
   const teams = await makeTeams()
   const otherTeams = await makeTeams()
+  let otherGf
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const matchDate = new Date(Date.now() + 3 * 3600000)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
@@ -150,7 +165,7 @@ test('a candidate with a conflicting match elsewhere is excluded from recommenda
       requiredUmpires: 1,
     })
     // Candidate is already assigned to an overlapping match at the exact same time, on a different ground.
-    const otherGf = await createGround('conflict-other')
+    otherGf = await createGround('conflict-other')
     await createMembership({ groundId: otherGf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
     const otherMatch = await matchService.createMatch({
       teamAId: otherTeams.teamA.id,
@@ -165,16 +180,15 @@ test('a candidate with a conflicting match elsewhere is excluded from recommenda
     ])
 
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     assert.ok(!res.data.candidates.some((c) => c.id === candidate.id), 'a candidate with a conflicting assignment must be excluded')
-
-    await otherGf.cleanup()
   } finally {
     await candidate.cleanup()
     await owner.cleanup()
     await gf.cleanup()
+    if (otherGf) await otherGf.cleanup()
     await teams.cleanup()
     await otherTeams.cleanup()
     await server.close()
@@ -189,6 +203,7 @@ test('an umpire marked unavailable for the match day/time is excluded from recom
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const matchDate = new Date(Date.now() + 5 * 86400000) // 5 days out, so its weekday is stable within this test run
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
@@ -204,7 +219,7 @@ test('an umpire marked unavailable for the match day/time is excluded from recom
     }
 
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     assert.ok(!res.data.candidates.some((c) => c.id === candidate.id), 'an umpire unavailable for this day must be excluded')
@@ -225,6 +240,7 @@ test('recommendations include factual reasons and honestly flag limited data, ne
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -234,7 +250,7 @@ test('recommendations include factual reasons and honestly flag limited data, ne
     })
 
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires?limit=50`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200)
     const entry = res.data.candidates.find((c) => c.id === candidate.id)
@@ -262,6 +278,7 @@ test('recommendations are scoped to the owning Ground Owner\'s own match — a d
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     await createMembership({ groundId: otherGf.ground.id, userId: otherOwner.id, role: 'GROUND_OWNER' })
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
@@ -273,14 +290,15 @@ test('recommendations are scoped to the owning Ground Owner\'s own match — a d
 
     // Correctly-owned request succeeds.
     const ok = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/recommended-umpires`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(ok.status, 200)
 
     // The other owner, hitting THEIR OWN ground's URL but with this match's id, cannot see it.
+    await elevate(otherOwner)
     const crossGround = await json(
       `${server.baseUrl}/ground-owner/grounds/${otherGf.ground.public_ground_id}/matches/${match.id}/recommended-umpires`,
-      { token: otherOwner.token },
+      { cookie: otherOwner.cookie },
     )
     assert.equal(crossGround.status, 404, 'a match must never be visible through a ground that does not own it')
 

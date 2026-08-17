@@ -1,32 +1,51 @@
-import { ArrowRight, Flag, ShieldCheck, User } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
 import Input from '../../components/ui/Input.jsx'
 import { useAuthPage } from '../../hooks/useAuthPage.js'
 
-const ROLE_TABS = [
-  { value: 'player', label: 'Player Login', icon: User },
-  { value: 'staff', label: 'Staff Login', icon: ShieldCheck },
-  { value: 'umpire', label: 'Umpire Login', icon: Flag },
-]
+const MODE_COPY = {
+  login: {
+    eyebrow: 'Member Access',
+    heading: 'Welcome to LOC',
+    subtitle: 'Enter your email or phone number to sign in. New here? We’ll set up your account automatically.',
+    cta: 'Send Code',
+  },
+  'register-player': {
+    eyebrow: 'Player Registration',
+    heading: 'Join as a Player',
+    subtitle: 'Enter your name and an email or phone number to create your player account.',
+    cta: 'Send Code',
+  },
+  'register-umpire': {
+    eyebrow: 'Umpire Registration',
+    heading: 'Join as an Umpire',
+    subtitle: 'Enter your name and an email or phone number to apply as an umpire.',
+    cta: 'Send Code',
+  },
+}
 
 export default function AuthPage() {
   const {
-    loginAs,
-    setLoginAs,
     mode,
-    toggleMode,
+    setMode,
+    isRegisterMode,
+    step,
+    identifier,
+    setIdentifier,
     name,
     setName,
-    email,
-    setEmail,
-    password,
-    setPassword,
+    code,
+    setCode,
     error,
     submitting,
-    handleSubmit,
+    resendCooldown,
+    requestCode,
+    verifyCode,
+    resendCode,
+    changeIdentifier,
   } = useAuthPage()
 
-  const isLogin = mode === 'login'
-  const activeRole = ROLE_TABS.find((tab) => tab.value === loginAs)
+  const isIdentifierStep = step === 'identifier'
+  const copy = MODE_COPY[mode]
 
   return (
     <main
@@ -45,78 +64,65 @@ export default function AuthPage() {
       <section className="mx-auto flex min-h-screen max-w-7xl items-center px-8 lg:px-16">
         <div className="w-full max-w-2xl">
           <span className="font-loc-display text-xs font-bold tracking-[0.3em] text-loc-gold uppercase sm:text-sm">
-            Member Access
+            {copy.eyebrow}
           </span>
 
           <h1 className="mt-4 font-loc-display text-5xl leading-[0.95] font-extrabold tracking-tight text-loc-warmwhite uppercase sm:text-6xl">
-            Welcome to <span className="text-loc-gold">LOC</span>
+            {mode === 'login' ? (
+              <>
+                Welcome to <span className="text-loc-gold">LOC</span>
+              </>
+            ) : (
+              copy.heading
+            )}
           </h1>
 
           <p className="mt-5 max-w-xl text-lg text-loc-text2-dark">
-            {isLogin
-              ? 'Log in to access the canteen, staff tools, or umpire access.'
-              : 'Create an account to get started.'}
+            {isIdentifierStep ? copy.subtitle : `Enter the 6-digit code sent to ${identifier}.`}
           </p>
 
           <form
-            onSubmit={handleSubmit}
+            onSubmit={isIdentifierStep ? requestCode : verifyCode}
             className="mt-10 rounded-[32px] border border-white/10 bg-loc-dark/60 p-10 shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-2xl"
           >
             <div className="space-y-7">
-              <div className="grid grid-cols-3 gap-4">
-                {ROLE_TABS.map(({ value, label, icon: Icon }) => {
-                  const active = loginAs === value
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setLoginAs(value)}
-                      className={`flex flex-col items-center gap-2 rounded-2xl border p-5 text-center transition-all duration-300 ${
-                        active
-                          ? 'border-loc-gold/60 bg-loc-gold/10'
-                          : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
-                      }`}
-                    >
-                      <Icon className={`h-5 w-5 ${active ? 'text-loc-gold' : 'text-loc-muted-dark'}`} />
-                      <h3
-                        className={`font-loc-display text-sm font-semibold tracking-wide uppercase ${
-                          active ? 'text-loc-warmwhite' : 'text-loc-text2-dark'
-                        }`}
-                      >
-                        {label}
-                      </h3>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {!isLogin && (
-                <Input
-                  label="Name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
-                  required
-                />
+              {isIdentifierStep ? (
+                <>
+                  {isRegisterMode && (
+                    <Input label="Full Name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoFocus required />
+                  )}
+                  <Input
+                    label="Email or Phone Number"
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="you@example.com or +91XXXXXXXXXX"
+                    autoFocus={!isRegisterMode}
+                    required
+                  />
+                </>
+              ) : (
+                <>
+                  <Input
+                    label="6-Digit Code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    autoFocus
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={changeIdentifier}
+                    className="text-sm text-loc-text2-dark underline-offset-4 hover:text-loc-warmwhite hover:underline"
+                  >
+                    Use a different email or phone
+                  </button>
+                </>
               )}
-
-              <Input
-                label="Email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-              />
-
-              <Input
-                label="Password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
 
               {error && (
                 <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-300">
@@ -133,19 +139,47 @@ export default function AuthPage() {
                   'Please wait…'
                 ) : (
                   <>
-                    {isLogin ? 'Log In' : 'Sign Up'} as {activeRole.label.replace(' Login', '')}
+                    {isIdentifierStep ? copy.cta : 'Verify & Sign In'}
                     <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                   </>
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={toggleMode}
-                className="w-full text-center text-sm text-loc-text2-dark underline-offset-4 hover:text-loc-warmwhite hover:underline"
-              >
-                {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
-              </button>
+              {!isIdentifierStep && (
+                <button
+                  type="button"
+                  onClick={resendCode}
+                  disabled={resendCooldown > 0 || submitting}
+                  className="w-full text-center text-sm text-loc-text2-dark underline-offset-4 hover:text-loc-warmwhite hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+                >
+                  {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+                </button>
+              )}
+
+              {isIdentifierStep && (
+                <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-loc-text2-dark">
+                  {mode !== 'login' && (
+                    <button type="button" onClick={() => setMode('login')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
+                      Already have an account? Sign in
+                    </button>
+                  )}
+                  {mode !== 'register-player' && (
+                    <button type="button" onClick={() => setMode('register-player')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
+                      Register as a Player
+                    </button>
+                  )}
+                  {mode !== 'register-umpire' && (
+                    <button type="button" onClick={() => setMode('register-umpire')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
+                      Register as an Umpire
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-center gap-2 text-xs text-loc-text2-dark">
+                <ShieldCheck className="h-4 w-4 text-loc-gold" />
+                One secure sign-in for every LOC role.
+              </div>
             </div>
           </form>
         </div>

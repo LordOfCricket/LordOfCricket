@@ -189,7 +189,7 @@ export default function DeliveryEditor({ match, innings, delivery, getPreview, o
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/60">Who Was Dismissed?</p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     {[delivery.strikerId, delivery.nonStrikerId].filter(Boolean).map((id) => {
-                      const p = getPlayer(match, id)
+                      const player = getPlayer(match, id)
                       return (
                         <button
                           key={id}
@@ -199,7 +199,7 @@ export default function DeliveryEditor({ match, innings, delivery, getPreview, o
                             batsmanOutId === id ? 'border-rose-400/50 bg-rose-500/20 text-white' : 'border-white/10 bg-white/5 text-emerald-100/80'
                           }`}
                         >
-                          {p?.name}
+                          {player?.name}
                         </button>
                       )
                     })}

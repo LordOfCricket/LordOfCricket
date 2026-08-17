@@ -6,7 +6,7 @@ function fmt(n) {
   return n == null ? '—' : n
 }
 
-// Role only changes which two numbers are emphasized (Part 46) — batting
+// Role only changes which two numbers are emphasized — batting
 // figures are never hidden for a bowler, and vice versa.
 const BOWLING_PRIMARY_ROLES = new Set(['BOWLER', 'ALL_ROUNDER'])
 

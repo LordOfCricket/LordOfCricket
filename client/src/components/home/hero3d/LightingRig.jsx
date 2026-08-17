@@ -1,14 +1,14 @@
 import { THREE_LIGHT_TOKENS } from '../../../lib/threeLightingTokens.js'
 
 /**
- * Phase 7.1 — foundation lighting only: key/fill/rim/ambient, positioned
+ * Foundation lighting only: key/fill/rim/ambient, positioned
  * and colored to match the existing CSS floodlight system (FloodLightRays'
  * left/right cool-white beams, AmbientLighting's gold halo, GlowLayer's
  * grass orb) so the 3D scene and the DOM background read as one lighting
  * environment rather than two unrelated ones. No HDRI, no shadow maps, no
- * post-processing — explicitly out of scope this phase.
+ * post-processing — explicitly out of scope for now.
  *
- * Phase 7.4 — retuned toward a darker, higher-contrast "night stadium"
+ * Retuned toward a darker, higher-contrast "night stadium"
  * balance: one light (key) is now clearly dominant instead of key/fill
  * sitting close together, and ambient/hemisphere is pulled down so the
  * environment itself reads darker and the ball's shadow side actually goes

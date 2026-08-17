@@ -1,7 +1,7 @@
 import { Globe, Mail, MapPin, Phone } from 'lucide-react'
 import { formatGroundAddress, hasValue } from '../../models/groundDiscovery.model.js'
 
-// Phase 13 Step 20 — every field is optional; a missing one is hidden
+// Every field is optional; a missing one is hidden
 // entirely, never rendered as a placeholder ("+91 00000 00000").
 export default function GroundContact({ ground }) {
   const address = formatGroundAddress(ground)

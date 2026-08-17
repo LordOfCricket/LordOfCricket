@@ -1,6 +1,6 @@
 import MatchCard from '../matches/MatchCard.jsx'
 
-// Phase 10 Part 2 (Part 26/27/48) — reuses Phase 10 Part 1's exact MatchCard/
+// Reuses the exact same MatchCard/
 // DTO, never a forked team-specific match card with different result semantics.
 export default function TeamMatchSection({ title, matches, emptyMessage }) {
   return (

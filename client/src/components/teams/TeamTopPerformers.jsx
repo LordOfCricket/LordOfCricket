@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import Avatar from '../ui/Avatar.jsx'
 
-// Phase 10 Part 2 (Part 37-41/67) — all-time team representation, scoped by
+// All-time team representation, scoped by
 // historical match_players.team_id server-side (survives transfers in both
-// directions — Part 111). Never a fake winner when no finalized matches exist.
+// directions). Never a fake winner when no finalized matches exist.
 function PerformerCard({ title, player, statLine, onClick }) {
   if (!player) {
     return (

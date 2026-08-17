@@ -12,6 +12,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -31,13 +32,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireStaffRole('super_admin') on PATCH /umpire-requests/:id
+// now requires req.mfaVerified. `elevate` mints a REAL, already-MFA-verified
+// session cookie — see helpers/mfaFixtures.js (this file isn't testing MFA,
+// only notification delivery).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 async function makeUser({ label, role = 'player', playerType = null, requestStatuses = [], staffRoleName = null }) {
@@ -245,12 +257,13 @@ test('a failed cancel attempt (no active assignment) never creates a notificatio
 test('approving an umpire request notifies the requesting user (UMPIRE_REQUEST_DECIDED)', async () => {
   const server = await startTestApp()
   const admin = await makeUser({ label: 'decide-approve-admin', role: 'staff', staffRoleName: 'super_admin' })
+  await elevate(admin)
   const applicant = await makeUser({ label: 'decide-approve-applicant', playerType: 'umpire', requestStatuses: ['pending'] })
   try {
     const { rows } = await pool.query(`SELECT id FROM umpire_requests WHERE user_id = $1`, [applicant.id])
     const requestId = rows[0].id
 
-    const decided = await json(`${server.baseUrl}/umpire-requests/${requestId}`, { method: 'PATCH', token: admin.token, body: { status: 'approved' } })
+    const decided = await json(`${server.baseUrl}/umpire-requests/${requestId}`, { method: 'PATCH', cookie: admin.cookie, body: { status: 'approved' } })
     assert.equal(decided.status, 200, JSON.stringify(decided.data))
 
     const notif = await latestNotification(applicant.id, 'UMPIRE_REQUEST_DECIDED')
@@ -266,12 +279,13 @@ test('approving an umpire request notifies the requesting user (UMPIRE_REQUEST_D
 test('rejecting an umpire request notifies the requesting user with the correct outcome', async () => {
   const server = await startTestApp()
   const admin = await makeUser({ label: 'decide-reject-admin', role: 'staff', staffRoleName: 'super_admin' })
+  await elevate(admin)
   const applicant = await makeUser({ label: 'decide-reject-applicant', playerType: 'umpire', requestStatuses: ['pending'] })
   try {
     const { rows } = await pool.query(`SELECT id FROM umpire_requests WHERE user_id = $1`, [applicant.id])
     const requestId = rows[0].id
 
-    const decided = await json(`${server.baseUrl}/umpire-requests/${requestId}`, { method: 'PATCH', token: admin.token, body: { status: 'rejected' } })
+    const decided = await json(`${server.baseUrl}/umpire-requests/${requestId}`, { method: 'PATCH', cookie: admin.cookie, body: { status: 'rejected' } })
     assert.equal(decided.status, 200)
 
     const notif = await latestNotification(applicant.id, 'UMPIRE_REQUEST_DECIDED')

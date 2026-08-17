@@ -17,7 +17,7 @@ export function useMatchUmpireSlots(publicGroundId) {
   const [umpireFeeByMatch, setUmpireFeeByMatch] = useState({})
   const [loadingId, setLoadingId] = useState(null)
   const [error, setError] = useState('')
-  // Phase 23, Workstreams F/G — no-show/replacement actions, keyed by
+  // Workstreams F/G — no-show/replacement actions, keyed by
   // slotId so two different slots' buttons never show the same spinner.
   const [actionBusyId, setActionBusyId] = useState(null)
   const [actionError, setActionError] = useState('')

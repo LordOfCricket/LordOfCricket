@@ -15,6 +15,7 @@ import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import { createTeamsFixture } from './fixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -34,13 +35,24 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// umpire proposals).
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -95,6 +107,7 @@ async function setupContext({ requiredUmpires = 1 } = {}) {
   const owner = await createUser('setup-owner')
   const teams = await createTeamsFixture()
   await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+  await elevate(owner)
   const match = await matchService.createMatch({
     teamAId: teams.teamAId,
     teamBId: teams.teamBId,
@@ -117,7 +130,7 @@ async function setupContext({ requiredUmpires = 1 } = {}) {
 
 async function getOpenSlotId(server, ctx) {
   const slots = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, {
-    token: ctx.owner.token,
+    cookie: ctx.owner.cookie,
   })
   return slots.data.slots[0].id
 }
@@ -138,7 +151,7 @@ test('Propose 1 — Ground Owner can propose an open slot to an approved umpire 
     const slotId = await getOpenSlotId(server, ctx)
     const res = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 100, message: 'Big match, need you there!' },
     })
     assert.equal(res.status, 201, JSON.stringify(res.data))
@@ -173,7 +186,7 @@ test('Propose 2 — a non-owner cannot propose (403); a non-approved-umpire cand
 
     const toNormalPlayer = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: normalPlayer.id, incentiveAmount: 50 },
     })
     assert.equal(toNormalPlayer.status, 403, JSON.stringify(toNormalPlayer.data))
@@ -198,7 +211,7 @@ test('Propose 3 — a slot that is already ASSIGNED cannot receive a new proposa
     // validation itself rather than being shadowed by the slot-status check.
     const badAmount = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: secondUmpire.id, incentiveAmount: -10 },
     })
     assert.equal(badAmount.status, 400)
@@ -208,7 +221,7 @@ test('Propose 3 — a slot that is already ASSIGNED cannot receive a new proposa
 
     const res = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: secondUmpire.id, incentiveAmount: 50 },
     })
     assert.equal(res.status, 409, JSON.stringify(res.data))
@@ -234,12 +247,12 @@ test('Race — two umpires proposed the same slot with different bonuses; one ac
     const slotId = await getOpenSlotId(server, ctx)
     const proposeA = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireA.id, incentiveAmount: 50 },
     })
     const proposeB = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireB.id, incentiveAmount: 100 },
     })
     assert.equal(proposeA.status, 201)
@@ -291,7 +304,7 @@ test('Race — a plain self-apply that fills a slot also expires any pending pro
     const slotId = await getOpenSlotId(server, ctx)
     const propose = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: proposedUmpire.id, incentiveAmount: 75 },
     })
     assert.equal(propose.status, 201)
@@ -323,7 +336,7 @@ test('Decline — an umpire can decline a proposal; the slot stays open and the 
     const slotId = await getOpenSlotId(server, ctx)
     const propose = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 50 },
     })
 
@@ -336,7 +349,7 @@ test('Decline — an umpire can decline a proposal; the slot stays open and the 
     assert.equal(decline.data.proposal.status, 'DECLINED')
 
     const slots = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, {
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(slots.data.slots.find((s) => s.id === slotId).status, 'AVAILABLE')
 
@@ -359,13 +372,13 @@ test('Cancel — the owner can withdraw a still-pending proposal; the umpire is 
     const slotId = await getOpenSlotId(server, ctx)
     const propose = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 50 },
     })
 
     const cancel = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/proposals/${propose.data.proposal.id}/cancel`,
-      { method: 'POST', token: ctx.owner.token },
+      { method: 'POST', cookie: ctx.owner.cookie },
     )
     assert.equal(cancel.status, 200, JSON.stringify(cancel.data))
     assert.equal(cancel.data.proposal.status, 'CANCELLED')
@@ -377,7 +390,7 @@ test('Cancel — the owner can withdraw a still-pending proposal; the umpire is 
 
     const secondCancel = await json(
       `${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/proposals/${propose.data.proposal.id}/cancel`,
-      { method: 'POST', token: ctx.owner.token },
+      { method: 'POST', cookie: ctx.owner.cookie },
     )
     assert.equal(secondCancel.status, 409, JSON.stringify(secondCancel.data))
     assert.equal(secondCancel.data.code, 'PROPOSAL_NOT_PENDING')
@@ -408,23 +421,23 @@ test('Earnings — a completed slot with an accepted proposal earns base fee + b
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 500, currency: 'INR' },
     })
 
     const slotsBefore = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, {
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     const [slotOneId, slotTwoId] = slotsBefore.data.slots.map((s) => s.id)
 
     const proposeOne = await json(proposeUrl(server, ctx, slotOneId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireBonusOnTopOfFee.id, incentiveAmount: 150 },
     })
     const proposeTwo = await json(proposeUrl(server, ctx, slotTwoId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireBonusOnly.id, incentiveAmount: 200 },
     })
     assert.equal(proposeOne.status, 201)
@@ -444,7 +457,7 @@ test('Earnings — a completed slot with an accepted proposal earns base fee + b
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -469,7 +482,7 @@ test('Earnings — a bonus-only offer on a match with NO base fee set still crea
     const slotId = await getOpenSlotId(server, ctx)
     const propose = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 80 },
     })
     await json(`${server.baseUrl}/umpire/proposals/${propose.data.proposal.id}/respond`, {
@@ -481,7 +494,7 @@ test('Earnings — a bonus-only offer on a match with NO base fee set still crea
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -507,7 +520,7 @@ test('Privacy — an umpire\'s proposal inbox never exposes another party\'s ema
     const slotId = await getOpenSlotId(server, ctx)
     await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 60, message: 'Please come' },
     })
 
@@ -532,10 +545,11 @@ test('Authorization — an umpire cannot respond to a proposal that was not sent
   const bystanderUmpire = await createUser('auth-bystander', { playerType: 'umpire', umpireRequestStatus: 'approved' })
   try {
     await createMembership({ groundId: otherGf.ground.id, userId: otherOwner.id, role: 'GROUND_OWNER' })
+    await elevate(otherOwner)
     const slotId = await getOpenSlotId(server, ctx)
     const propose = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpire.id, incentiveAmount: 60 },
     })
 
@@ -549,13 +563,13 @@ test('Authorization — an umpire cannot respond to a proposal that was not sent
 
     const otherOwnerListsMatch = await json(
       `${server.baseUrl}/ground-owner/grounds/${otherGf.ground.public_ground_id}/matches/${ctx.match.id}/proposals`,
-      { token: otherOwner.token },
+      { cookie: otherOwner.cookie },
     )
     assert.equal(otherOwnerListsMatch.status, 404, JSON.stringify(otherOwnerListsMatch.data))
 
     const otherOwnerCancels = await json(
       `${server.baseUrl}/ground-owner/grounds/${otherGf.ground.public_ground_id}/matches/${ctx.match.id}/proposals/${propose.data.proposal.id}/cancel`,
-      { method: 'POST', token: otherOwner.token },
+      { method: 'POST', cookie: otherOwner.cookie },
     )
     assert.equal(otherOwnerCancels.status, 404)
   } finally {
@@ -579,7 +593,7 @@ test('Regression — a plain apply/complete with no proposal ever involved earns
   try {
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 300, currency: 'INR' },
     })
     const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
@@ -589,7 +603,7 @@ test('Regression — a plain apply/complete with no proposal ever involved earns
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200)
 
@@ -617,18 +631,18 @@ test('End-to-end — owner proposes 2 umpires for one slot with different bonuse
     // umpires with different bonuses.
     await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { amount: 400, currency: 'INR' },
     })
     const slotId = await getOpenSlotId(server, ctx)
     const proposeA = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireA.id, incentiveAmount: 50, message: 'Can you cover this one?' },
     })
     const proposeB = await json(proposeUrl(server, ctx, slotId), {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
       body: { umpireUserId: umpireB.id, incentiveAmount: 150 },
     })
     assert.equal(proposeA.status, 201)
@@ -664,7 +678,7 @@ test('End-to-end — owner proposes 2 umpires for one slot with different bonuse
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [ctx.match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/complete`, {
       method: 'POST',
-      token: ctx.owner.token,
+      cookie: ctx.owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 

@@ -21,6 +21,7 @@ import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import { runReminderTick } from '../../services/reminderScheduler.service.js'
 import { groundLocalNaiveTimestamp } from '../../domain/shared/groundTime.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -40,13 +41,26 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js (this file isn't testing MFA, only
+// the umpire communication/commerce journey). /matches/:id/messages and
+// /matches/:id/checkin are requireAuth-only, never ground-owner-gated, so
+// owner.token stays valid for those calls unchanged.
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -116,6 +130,7 @@ test('Scenario 1 — full journey: create -> fee -> assign -> notify -> reminder
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     // Ground Owner creates match, 28 minutes away (inside the 30M reminder window).
     const match = await matchService.createMatch({
@@ -129,7 +144,7 @@ test('Scenario 1 — full journey: create -> fee -> assign -> notify -> reminder
     // Sets umpire fee.
     const feeRes = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { amount: 800 },
     })
     assert.equal(feeRes.status, 200, JSON.stringify(feeRes.data))
@@ -166,7 +181,7 @@ test('Scenario 1 — full journey: create -> fee -> assign -> notify -> reminder
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 
@@ -184,7 +199,7 @@ test('Scenario 1 — full journey: create -> fee -> assign -> notify -> reminder
     assert.equal(earnings[0].status, 'PENDING')
 
     // Ground Owner can see the fee/status.
-    const ownerView = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots`, { token: owner.token })
+    const ownerView = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots`, { cookie: owner.cookie })
     assert.equal(ownerView.status, 200)
     assert.equal(ownerView.data.umpireFee.amount, '800.00')
     const ownerSlot = ownerView.data.slots.find((s) => s.id === slotId)
@@ -214,6 +229,7 @@ test('Scenario 2 — no-show + replacement: A gets no officiating earning, B doe
   const teams = await makeTeams()
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
     const match = await matchService.createMatch({
       teamAId: teams.teamA.id,
       teamBId: teams.teamB.id,
@@ -224,7 +240,7 @@ test('Scenario 2 — no-show + replacement: A gets no officiating earning, B doe
 
     await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-fee`, {
       method: 'PATCH',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { amount: 800 },
     })
     const applied = await json(`${server.baseUrl}/matches/${match.id}/umpire-slots/apply`, { method: 'POST', token: umpireA.token })
@@ -233,14 +249,14 @@ test('Scenario 2 — no-show + replacement: A gets no officiating earning, B doe
     // Umpire A NO_SHOW.
     const noShow = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/no-show`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(noShow.status, 200)
 
     // Umpire B replacement.
     const replace = await json(
       `${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots/${slotId}/replace`,
-      { method: 'POST', token: owner.token, body: { newUmpireUserId: umpireB.id } },
+      { method: 'POST', cookie: owner.cookie, body: { newUmpireUserId: umpireB.id } },
     )
     assert.equal(replace.status, 200, JSON.stringify(replace.data))
 
@@ -248,7 +264,7 @@ test('Scenario 2 — no-show + replacement: A gets no officiating earning, B doe
     await pool.query(`UPDATE matches SET status = 'live' WHERE id = $1`, [match.id])
     const complete = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(complete.status, 200, JSON.stringify(complete.data))
 

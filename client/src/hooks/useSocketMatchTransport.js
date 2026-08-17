@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 import { socketUrl } from '../services/socket.js'
 
-// Phase 11 — the low-level Socket.IO transport for one match room. Mirrors
+// The low-level Socket.IO transport for one match room. Mirrors
 // the existing canteen convention (useCanteenOrderStatus.js): one connection
 // per hook mount, joined/left on mount/unmount — no app-wide singleton,
 // since only one Match Summary page ever needs a cricket socket at a time.
 // Contains ZERO cricket logic: it only reports whatever `match:state` the
-// server published, verbatim (Part 9 — never a locally-reconstructed delta).
+// server published, verbatim (never a locally-reconstructed delta).
 //
 // Both pieces of state are tagged with the matchId they belong to (the same
 // "derived, resetKey-tagged state" pattern used throughout this codebase's

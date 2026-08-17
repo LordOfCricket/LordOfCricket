@@ -1,64 +1,51 @@
-import bcrypt from 'bcryptjs'
-import { createUser, findUserByEmail, updateUser } from '../models/user.model.js'
+import { updateUser } from '../models/user.model.js'
 import { createUmpireRequest, findLatestUmpireRequestForUser } from '../models/umpireRequest.model.js'
-import { signToken } from '../utils/jwt.js'
+import * as otpAuthService from '../services/otpAuth.service.js'
+import { revokeSession } from '../services/session.service.js'
+import { setSessionCookie, clearSessionCookie, SESSION_COOKIE_NAME } from '../middlewares/session.js'
+import { OtpAuthError } from '../domain/otpAuth/errors.js'
+import { hasAnyActiveFactor, isSuperAdmin } from '../services/mfaState.service.js'
+import { logger } from '../utils/logger.js'
 
-function toPublicUser(user) {
-  const { password_hash, ...publicUser } = user
-  return publicUser
-}
+// Phase 8 — the legacy email+password `signup`/`login` handlers (and the
+// `POST /auth/signup`/`POST /auth/login` routes that called them) were
+// removed here: a full dependency audit found zero reachable frontend UI
+// callers (no component destructures `login`/`signup` from `useAuth()`,
+// confirmed by grep) — OTP has been the only reachable login/signup surface
+// since Phase 3, and this initiative never had real production users on the
+// password path to migrate. See docs/AUTH.md's "Legacy JWT" section for the
+// full before/after. `signToken`/`verifyToken` (utils/jwt.js) and
+// `requireAuth`'s JWT-bearer branch are NOT removed — see that same doc
+// section for why (the integration test suite mints JWTs directly as an
+// auth-fixture shortcut, independent of the now-removed login route).
 
-export async function signup(req, res, next) {
+// Phase 6 — `mfa` is a NEW top-level key alongside the unchanged `user` key
+// (never touching req.user's own shape, which 67+ call sites depend on).
+// `enrolled` needs one extra query (hasAnyActiveFactor) — acceptable here:
+// this is a low-frequency, UI-driving endpoint (called once per app mount),
+// not a hot authorization-check path like requireAuth.
+export async function me(req, res, next) {
   try {
-    const { name, email, password } = req.body
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'name, email and password are required' })
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters.' })
-    }
-
-    const existing = await findUserByEmail(email)
-    if (existing) {
-      return res.status(409).json({ message: 'An account with this email already exists.' })
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10)
-    const user = await createUser({ name, email, passwordHash })
-    const token = signToken({ id: user.id })
-
-    res.status(201).json({ token, user })
+    const enrolled = await hasAnyActiveFactor(req.user.id)
+    res.json({
+      user: req.user,
+      mfa: {
+        // Only reflects Super Admin here — resolving "is this user a Ground
+        // Owner" needs a ground_users query this low-frequency-but-always-
+        // called endpoint shouldn't pay on every mount. The frontend
+        // already makes an equivalent live call (fetchMyGrounds, via
+        // RequireGroundOwner) to determine ground ownership for routing;
+        // combining that with `verified` below is sufficient to gate the
+        // UI, and every actual privileged ROUTE independently enforces the
+        // real requirement server-side regardless of what this flag says.
+        enrolled,
+        required: isSuperAdmin(req.user),
+        verified: Boolean(req.mfaVerified),
+      },
+    })
   } catch (err) {
     next(err)
   }
-}
-
-export async function login(req, res, next) {
-  try {
-    const { email, password } = req.body
-    if (!email || !password) {
-      return res.status(400).json({ message: 'email and password are required' })
-    }
-
-    const user = await findUserByEmail(email)
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid email or password.' })
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash)
-    if (!valid) {
-      return res.status(401).json({ message: 'Invalid email or password.' })
-    }
-
-    const token = signToken({ id: user.id })
-    res.json({ token, user: toPublicUser(user) })
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function me(req, res) {
-  res.json({ user: req.user })
 }
 
 export async function selectRole(req, res, next) {
@@ -75,6 +62,97 @@ export async function selectRole(req, res, next) {
   } catch (err) {
     next(err)
   }
+}
+
+// Phase 3 — unified OTP login. `identifier` is whatever the user typed into
+// the single email-or-phone field; requestLoginOtp figures out which it is.
+// Never reveals whether an account exists for it (§7/§17 anti-enumeration)
+// — the response is identical whether this is someone's first time or
+// their hundredth.
+export async function sendOtp(req, res, next) {
+  try {
+    const { identifier } = req.body
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(400).json({ message: 'identifier is required.' })
+    }
+    await otpAuthService.requestLoginOtp(identifier)
+    res.json({ message: 'If that email or phone number is valid, a code has been sent.' })
+  } catch (err) {
+    if (err instanceof OtpAuthError) return next(err)
+    next(err)
+  }
+}
+
+// Phase 4 — public self-registration for Player/Umpire. Unlike sendOtp,
+// this DOES reveal an already-registered identifier (409) — see
+// otpAuthService.requestRegistrationOtp's own comment for why. The account
+// itself isn't created here; it's created on successful verification (the
+// existing POST /auth/verify-otp below, unchanged path), once the code is
+// confirmed — see otpAuthService.verifyLoginOtp's purpose-branching.
+export async function registerPlayer(req, res, next) {
+  try {
+    const { name, identifier } = req.body
+    if (!name || !identifier) {
+      return res.status(400).json({ message: 'name and identifier are required.' })
+    }
+    await otpAuthService.requestRegistrationOtp(name, identifier, 'REGISTER_PLAYER')
+    res.json({ message: 'If that email or phone number is available, a verification code has been sent.' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Umpire registration is otherwise identical to Player registration —
+// player_type is set from the OTP purpose at verification time
+// (otpAuthService.verifyLoginOtp), which also auto-creates the pending
+// umpire_requests row, matching selectPlayerType('umpire')'s existing
+// behavior exactly.
+export async function registerUmpire(req, res, next) {
+  try {
+    const { name, identifier } = req.body
+    if (!name || !identifier) {
+      return res.status(400).json({ message: 'name and identifier are required.' })
+    }
+    await otpAuthService.requestRegistrationOtp(name, identifier, 'REGISTER_UMPIRE')
+    res.json({ message: 'If that email or phone number is available, a verification code has been sent.' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function verifyOtpAndLogin(req, res, next) {
+  try {
+    const { identifier, code } = req.body
+    if (!identifier || !code) {
+      return res.status(400).json({ message: 'identifier and code are required.' })
+    }
+
+    const { user, sessionToken, sessionExpiresAt } = await otpAuthService.verifyLoginOtp({
+      identifier,
+      code,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
+
+    setSessionCookie(res, sessionToken, sessionExpiresAt)
+    res.json({ user })
+  } catch (err) {
+    if (err instanceof OtpAuthError) return next(err)
+    next(err)
+  }
+}
+
+export async function logout(req, res) {
+  const sessionToken = req.signedCookies?.[SESSION_COOKIE_NAME]
+  if (sessionToken) {
+    try {
+      await revokeSession(sessionToken)
+    } catch (err) {
+      logger.error('Failed to revoke session on logout', { error: err.message })
+    }
+  }
+  clearSessionCookie(res)
+  res.json({ message: 'Logged out.' })
 }
 
 export async function selectPlayerType(req, res, next) {

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// Phase 10 Part 3 — the ONE transport primitive every spectator polling
-// surface builds on (Part 52/53): the detailed live match panel (~3s), the
+// The ONE transport primitive every spectator polling
+// surface builds on: the detailed live match panel (~3s), the
 // /matches LIVE tab (~20s), and the homepage featured match (~30s) all use
 // this same hook with a different fetchFn/interval, instead of each owning
-// its own setInterval/fetch. When Phase 11 introduces Socket.IO, only the
+// its own setInterval/fetch. When Socket.IO is introduced for a surface, only the
 // transport layer (this file, or whatever replaces it) needs to change —
 // consuming hooks/components read `{ data, status, lastUpdatedAt, refresh }`
 // either way.
@@ -22,13 +22,13 @@ function failingDelay(backoffIndex, normalIntervalMs) {
  * `resetKey` identifies WHICH subject is being polled (e.g. a matchId) —
  * changing it restarts the loop cleanly instead of silently continuing under
  * a stale closure. `shouldStop(data)` (optional) lets a poller permanently
- * halt itself once a fetched response says so (Part 17/93/96 — a completed
+ * halt itself once a fetched response says so (a completed
  * match never keeps polling every 3 seconds forever) without the CALLER
  * needing its own extra state/effect to express that.
  *
  * Every state slot is tagged with the resetKey it belongs to and only
- * exposed when it still matches the CURRENT resetKey (Part 1's
- * usePublicMatches established this "derived loading" pattern first) — so a
+ * exposed when it still matches the CURRENT resetKey (usePublicMatches
+ * established this "derived loading" pattern first) — so a
  * subject change never needs a synchronous setState-in-effect reset call,
  * and stale-subject data is never accidentally shown mid-transition.
  */
@@ -56,14 +56,14 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
   const poll = useCallback(
     async ({ manual = false } = {}) => {
       // A manual call (explicit user refresh, or a sibling transport's
-      // "please resync over HTTP" request — Phase 11's useLiveMatch relies on
+      // "please resync over HTTP" request — useLiveMatch relies on
       // this) always goes through even while the automatic loop is disabled;
       // it just never reschedules a recurring loop in that case (see the
       // `enabled` check in the `finally` block below).
       if (!enabled && !manual) return
-      if (!manual && typeof document !== 'undefined' && document.visibilityState === 'hidden') return // paused while hidden (Part 8)
-      if (!manual && typeof navigator !== 'undefined' && !navigator.onLine) return // no point hammering while offline (Part 10)
-      if (inFlightRef.current) return // dedup (Part 54)
+      if (!manual && typeof document !== 'undefined' && document.visibilityState === 'hidden') return // paused while hidden
+      if (!manual && typeof navigator !== 'undefined' && !navigator.onLine) return // no point hammering while offline
+      if (inFlightRef.current) return // dedup
 
       inFlightRef.current = true
       const mySeq = ++seqRef.current
@@ -71,7 +71,7 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
 
       try {
         const result = await fetchFnRef.current()
-        if (!mountedRef.current || mySeq !== seqRef.current) return // stale/out-of-order/unmounted (Part 55/56)
+        if (!mountedRef.current || mySeq !== seqRef.current) return // stale/out-of-order/unmounted
         setState({ resetKeyOfState: myResetKey, data: result, error: null, failing: false, lastUpdatedAt: Date.now() })
         backoffIndexRef.current = 0
         if (shouldStopRef.current?.(result)) haltedRef.current = true
@@ -94,8 +94,8 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
     pollRef.current = poll
   })
 
-  // Start/stop/restart the loop whenever `enabled` or `resetKey` changes
-  // (Part 58) — only ever CALLS poll() here, never setState directly, so
+  // Start/stop/restart the loop whenever `enabled` or `resetKey` changes —
+  // only ever CALLS poll() here, never setState directly, so
   // this stays outside react-hooks/set-state-in-effect's concern (poll's own
   // setState calls happen later, inside its async continuation, exactly like
   // the existing useMatchSummary.js#load pattern).
@@ -117,7 +117,7 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately keyed on enabled/resetKey only; poll is read via the ref-updated closure each call
   }, [enabled, resetKey])
 
-  // Tab visibility: immediate refresh the instant the spectator returns (Part 8).
+  // Tab visibility: immediate refresh the instant the spectator returns.
   useEffect(() => {
     if (typeof document === 'undefined') return
     const onVisibilityChange = () => {
@@ -127,7 +127,7 @@ export function useVisibilityAwarePolling(fetchFn, { intervalMs, enabled = true,
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [])
 
-  // Connectivity: reflect offline immediately, and catch up the instant we're back (Part 10/11).
+  // Connectivity: reflect offline immediately, and catch up the instant we're back.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const onOnline = () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-// Phase 17 — same independently-loading shape as useAIInsight.js: the
+// Same independently-loading shape as useAIInsight.js: the
 // caller's primary page content renders immediately, this hook loads its own
 // bounded section without blocking anything else.
 export function useAnalytics(fetchFn, id, params) {

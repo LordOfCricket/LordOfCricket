@@ -4,11 +4,17 @@ metadata:
   name: loc-frontend
   namespace: loc
 spec:
-  replicas: 1
+  replicas: 2
 
   selector:
     matchLabels:
       app: loc-frontend
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
   template:
     metadata:
@@ -16,10 +22,35 @@ spec:
         app: loc-frontend
 
     spec:
+      automountServiceAccountToken: false
+
       containers:
         - name: loc-frontend
+          # Phase 8 — same placeholder-tag caveat as loc-backend-deployment.yaml.
           image: loc-frontend:latest
           imagePullPolicy: IfNotPresent
+
+          # Phase 8 — NOT runAsNonRoot: the nginx:1.27-alpine image binds
+          # port 80, which needs root; moving it off root needs a
+          # non-privileged-port migration (client/nginx.conf +
+          # loc-frontend-service.yaml port changes together) — deferred as
+          # disproportionate for a static-file-only container with no
+          # secrets or write access (see docs/SECURITY.md D-03). Dropping
+          # Linux capabilities is still safe and applied below: low-port
+          # binding for a root-UID process is a legacy UID-0 special case,
+          # unrelated to capabilities.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
 
           ports:
             - containerPort: 80

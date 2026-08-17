@@ -16,6 +16,7 @@ import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
 import * as scoringService from '../../services/scoring.service.js'
 import { createTeamsFixture, bowl, bowlDots } from './fixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -35,13 +36,25 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch now requires
+// req.mfaVerified. `elevate` mints a REAL, already-MFA-verified session
+// cookie — see helpers/mfaFixtures.js. Calls that fail on a missing
+// membership (cross-ground/wrong-owner tests) never reach the MFA check,
+// so those keep the plain JWT.
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -114,8 +127,9 @@ test('umpire-slots: ground owner sees the real assigned umpire name (no phone �
     const applyRes = await json(`${server.baseUrl}/matches/${match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     assert.equal(applyRes.status, 201)
 
+    await elevate(owner)
     const asOwner = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/umpire-slots`, {
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(asOwner.status, 200)
     const assignedSlot = asOwner.data.slots.find((s) => s.status === 'ASSIGNED')
@@ -153,8 +167,9 @@ test('owner CANNOT see umpire-slots for a match on a ground they do not own, eve
       requiredUmpires: 1,
     })
 
+    await elevate(ownerA)
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gfA.ground.public_ground_id}/matches/${matchOnB.id}/umpire-slots`, {
-      token: ownerA.token,
+      cookie: ownerA.cookie,
     })
     assert.equal(res.status, 404, 'a match belonging to a DIFFERENT ground must 404, never confirm it exists elsewhere')
   } finally {
@@ -201,9 +216,10 @@ test('start: full happy path — toss set by assigned umpire, owner starts, matc
     assert.equal(tossSet.status, 200, JSON.stringify(tossSet.data))
 
     // Ground owner starts the match — NOT the umpire, NOT via /matches/:id/start.
+    await elevate(owner)
     const started = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/start`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(started.status, 200, JSON.stringify(started.data))
     assert.equal(started.data.match.status, 'live')
@@ -240,9 +256,10 @@ test('start: a non-owner cannot start a match on someone else\'s ground (404); a
       requiredUmpires: 0,
     })
 
+    await elevate(ownerA)
     const wrongOwner = await json(`${server.baseUrl}/ground-owner/grounds/${gfA.ground.public_ground_id}/matches/${matchOnB.id}/start`, {
       method: 'POST',
-      token: ownerA.token,
+      cookie: ownerA.cookie,
     })
     assert.equal(wrongOwner.status, 404)
 
@@ -251,15 +268,16 @@ test('start: a non-owner cannot start a match on someone else\'s ground (404); a
     for (const p of fx.squadB) await scoringService.addMatchPlayer({ matchId: matchOnB.id, teamId: fx.teamBId, playerId: p.id, isPlayingXi: true })
     await matchService.setToss(matchOnB.id, { tossWinnerId: fx.teamAId, tossDecision: 'bat' })
 
+    await elevate(ownerB)
     const firstStart = await json(`${server.baseUrl}/ground-owner/grounds/${gfB.ground.public_ground_id}/matches/${matchOnB.id}/start`, {
       method: 'POST',
-      token: ownerB.token,
+      cookie: ownerB.cookie,
     })
     assert.equal(firstStart.status, 200, JSON.stringify(firstStart.data))
 
     const secondStart = await json(`${server.baseUrl}/ground-owner/grounds/${gfB.ground.public_ground_id}/matches/${matchOnB.id}/start`, {
       method: 'POST',
-      token: ownerB.token,
+      cookie: ownerB.cookie,
     })
     assert.equal(secondStart.status, 409, 'an already-live match cannot be started again')
   } finally {
@@ -292,11 +310,12 @@ test('complete: manual completion on a still-live match transitions to COMPLETED
     for (const p of fx.squadB) await scoringService.addMatchPlayer({ matchId: match.id, teamId: fx.teamBId, playerId: p.id, isPlayingXi: true })
     await json(`${server.baseUrl}/matches/${match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
     await matchService.setToss(match.id, { tossWinnerId: fx.teamAId, tossDecision: 'bat' })
-    await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/start`, { method: 'POST', token: owner.token })
+    await elevate(owner)
+    await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/start`, { method: 'POST', cookie: owner.cookie })
 
     const completed = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(completed.status, 200, JSON.stringify(completed.data))
     assert.equal(completed.data.match.status, 'completed')
@@ -345,9 +364,10 @@ test('complete: cannot complete a match that is still upcoming (409)', async () 
       requiredUmpires: 0,
     })
 
+    await elevate(owner)
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 409)
   } finally {
@@ -402,9 +422,10 @@ test('complete: idempotent no-op when the scoring engine already auto-completed 
     assert.equal(beforeRow.result_type, 'RUNS')
     assert.equal(beforeRow.winner_team_id, fx.teamAId)
 
+    await elevate(owner)
     const res = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches/${match.id}/complete`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
     })
     assert.equal(res.status, 200, JSON.stringify(res.data))
     assert.equal(res.data.match.result_type, 'RUNS', 'the real scoring-derived result must never be overwritten by the manual NO_RESULT path')

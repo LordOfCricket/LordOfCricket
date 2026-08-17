@@ -10,6 +10,7 @@ import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { createMembership } from '../../models/groundUser.model.js'
 import * as matchService from '../../services/match.service.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -29,13 +30,28 @@ async function startTestApp() {
   }
 }
 
-async function json(url, { method = 'GET', token, body } = {}) {
+async function json(url, { method = 'GET', token, cookie, body } = {}) {
+  const authHeaders = cookie ? { Cookie: cookie } : token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: body ? JSON.stringify(body) : undefined,
   })
   return { status: res.status, data: await res.json() }
+}
+
+// Phase 6 — requireGroundPermission's GROUND_OWNER branch (MATCH_VIEW/
+// MATCH_MANAGE on .../matches) now requires req.mfaVerified, which a bare
+// JWT can never satisfy. `elevate` mints a REAL, already-MFA-verified
+// session cookie for a user already created via createUser — see
+// helpers/mfaFixtures.js for why this skips the TOTP ceremony (this file
+// isn't testing MFA, only ground-owner match management). Routes reached
+// only via a FAILED membership lookup (cross-ground/no-membership/wrong-role
+// tests) never reach the MFA check at all, so those keep the plain JWT.
+async function elevate(user) {
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
+  user.cookie = cookie
+  return user
 }
 
 async function createUser(label, { role = 'player', playerType = null, umpireRequestStatus = null } = {}) {
@@ -132,7 +148,8 @@ test('owner can view own ground\'s matches', async () => {
       requiredUmpires: 1,
     })
 
-    const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, { token: owner.token })
+    await elevate(owner)
+    const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, { cookie: owner.cookie })
     assert.equal(status, 200)
     assert.equal(data.matches.length, 1)
     assert.equal(data.matches[0].id, match.id)
@@ -206,10 +223,11 @@ test('owner CAN create a match for their own ground; it gets the correct ground_
   const teams = await makeTeams('create-own')
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 86400000).toISOString(), requiredUmpires: 3 },
     })
     assert.equal(status, 201, JSON.stringify(data))
@@ -239,10 +257,11 @@ test('owner-created match honors oversPerInnings/ballsPerOver when provided', as
   const teams = await makeTeams('overs-format')
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: {
         teamAId: teams.teamA.id,
         teamBId: teams.teamB.id,
@@ -270,10 +289,11 @@ test('owner-created match omitting oversPerInnings keeps the prior (unlimited) d
   const teams = await makeTeams('overs-format-omitted')
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 86400000).toISOString(), requiredUmpires: 0 },
     })
     assert.equal(status, 201, JSON.stringify(data))
@@ -294,10 +314,11 @@ test('cannot create a match for a DRAFT (not yet ACTIVE) ground', async () => {
   const teams = await makeTeams('draft-ground')
   try {
     await createMembership({ groundId: gf.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds/${gf.ground.public_ground_id}/matches`, {
       method: 'POST',
-      token: owner.token,
+      cookie: owner.cookie,
       body: { teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 86400000).toISOString(), requiredUmpires: 1 },
     })
     assert.equal(status, 400, JSON.stringify(data))
@@ -317,11 +338,12 @@ test('existing POST /matches behavior remains intact (unaffected by U5)', async 
     [`integration-test-go-admin-${Date.now()}@example.test`, staffRoleId],
   )
   const admin = { id: rows[0].id, token: signToken({ id: rows[0].id }) }
+  await elevate(admin)
   const teams = await makeTeams('legacy')
   try {
     const { status, data } = await json(`${server.baseUrl}/matches`, {
       method: 'POST',
-      token: admin.token,
+      cookie: admin.cookie,
       body: { teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 86400000).toISOString() },
     })
     assert.equal(status, 201, JSON.stringify(data))
@@ -342,14 +364,15 @@ test('two grounds owned by the same user are both independently manageable', asy
   try {
     await createMembership({ groundId: gfA.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
     await createMembership({ groundId: gfB.ground.id, userId: owner.id, role: 'GROUND_OWNER' })
+    await elevate(owner)
 
     const { status, data } = await json(`${server.baseUrl}/ground-owner/grounds`, { token: owner.token })
     assert.equal(status, 200)
     const ids = data.grounds.map((g) => g.id)
     assert.ok(ids.includes(gfA.ground.id) && ids.includes(gfB.ground.id), 'both owned grounds must appear')
 
-    const a = await json(`${server.baseUrl}/ground-owner/grounds/${gfA.ground.public_ground_id}/matches`, { token: owner.token })
-    const b = await json(`${server.baseUrl}/ground-owner/grounds/${gfB.ground.public_ground_id}/matches`, { token: owner.token })
+    const a = await json(`${server.baseUrl}/ground-owner/grounds/${gfA.ground.public_ground_id}/matches`, { cookie: owner.cookie })
+    const b = await json(`${server.baseUrl}/ground-owner/grounds/${gfB.ground.public_ground_id}/matches`, { cookie: owner.cookie })
     assert.equal(a.status, 200)
     assert.equal(b.status, 200)
   } finally {

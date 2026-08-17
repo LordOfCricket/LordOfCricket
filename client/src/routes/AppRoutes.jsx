@@ -5,20 +5,23 @@ import RequireAuth from './RequireAuth.jsx'
 import RequireStaffRole from './RequireStaffRole.jsx'
 import RequireApprovedUmpire from './RequireApprovedUmpire.jsx'
 import RequireGroundOwner from './RequireGroundOwner.jsx'
+import RequireMfaVerified from './RequireMfaVerified.jsx'
+import RequirePrivilegedAccount from './RequirePrivilegedAccount.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
 import RouteErrorBoundary from './RouteErrorBoundary.jsx'
 import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
 
-// Phase 19 — route-based code splitting. The production build was shipping
+// Route-based code splitting. The production build was shipping
 // every page (auth, scoring, canteen, tournaments, analytics, admin...) in
 // one ~870KB JS chunk regardless of which single page a visitor actually
 // landed on. Each page is now its own chunk, fetched only when its route is
 // visited — a build-time change only, no page's own logic is touched.
-// Phase 13 — Level 1 (LOC platform homepage, ground discovery) and Level 2
+// Level 1 (LOC platform homepage, ground discovery) and Level 2
 // (the reusable per-ground template) replace the old single-ground HomePage.
 const DiscoveryPage = lazy(() => import('../pages/discovery/DiscoveryPage.jsx'))
 const GroundsPage = lazy(() => import('../pages/grounds/GroundsPage.jsx'))
 const RegisterGroundPage = lazy(() => import('../pages/register-ground/RegisterGroundPage.jsx'))
+const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/GroundRegistrationStatusPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
 const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
@@ -31,6 +34,10 @@ const AdminUmpireRequestsPage = lazy(() => import('../pages/admin-umpire-request
 const AdminGroundRegistrationsPage = lazy(() => import('../pages/admin-ground-registrations/AdminGroundRegistrationsPage.jsx'))
 const AdminPhotosHubPage = lazy(() => import('../pages/admin-photos-hub/AdminPhotosHubPage.jsx'))
 const CreateStaffPage = lazy(() => import('../pages/admin-staff/CreateStaffPage.jsx'))
+
+// Phase 6 — Privileged Account MFA & Step-Up Security
+const SecuritySettingsPage = lazy(() => import('../pages/security/SecuritySettingsPage.jsx'))
+const MfaVerifyPage = lazy(() => import('../pages/security/MfaVerifyPage.jsx'))
 
 // Site-wide auth
 const AuthPage = lazy(() => import('../pages/auth/AuthPage.jsx'))
@@ -50,32 +57,33 @@ const UmpireEarningsPage = lazy(() => import('../pages/umpire/UmpireEarningsPage
 const MatchBriefingPage = lazy(() => import('../pages/umpire/MatchBriefingPage.jsx'))
 const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
 const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
+const GroundStaffPage = lazy(() => import('../pages/ground-owner/GroundStaffPage.jsx'))
 const BrowseUmpiresPage = lazy(() => import('../pages/ground-owner/BrowseUmpiresPage.jsx'))
 const UmpireProposalsPage = lazy(() => import('../pages/umpire/UmpireProposalsPage.jsx'))
 
-// Phase 5 — real, backend-authoritative match scoring
+// Real, backend-authoritative match scoring
 const MatchSetupPage = lazy(() => import('../pages/match-setup/MatchSetupPage.jsx'))
 const MatchRosterPage = lazy(() => import('../pages/match-setup/MatchRosterPage.jsx'))
 const RealScorerPage = lazy(() => import('../pages/scorer/RealScorerPage.jsx'))
 
-// Phase 8 — player discovery, public profiles, leaderboards (all public reads)
+// Player discovery, public profiles, leaderboards (all public reads)
 const PlayersDiscoveryPage = lazy(() => import('../pages/players/PlayersDiscoveryPage.jsx'))
 const PublicPlayerProfilePage = lazy(() => import('../pages/players/PublicPlayerProfilePage.jsx'))
 const LeaderboardsPage = lazy(() => import('../pages/leaderboards/LeaderboardsPage.jsx'))
 const TopUmpiresPage = lazy(() => import('../pages/leaderboards/TopUmpiresPage.jsx'))
 
-// Phase 17 — Advanced Cricket Analytics: player/team comparison (public reads)
+// Advanced Cricket Analytics: player/team comparison (public reads)
 const PlayerComparePage = lazy(() => import('../pages/players/PlayerComparePage.jsx'))
 const TeamComparePage = lazy(() => import('../pages/teams/TeamComparePage.jsx'))
 
-// Phase 9 — public match summary/scorecard (public read, no auth wall)
+// Public match summary/scorecard (public read, no auth wall)
 const MatchSummaryPage = lazy(() => import('../pages/match-summary/MatchSummaryPage.jsx'))
 const MatchFeedbackPage = lazy(() => import('../pages/match-feedback/MatchFeedbackPage.jsx'))
 
-// Phase 10 Part 1 — public match discovery (public read, no auth wall)
+// Public match discovery (public read, no auth wall)
 const MatchesPage = lazy(() => import('../pages/matches/MatchesPage.jsx'))
 
-// Phase 10 Part 2 — public team ecosystem (public read, no auth wall)
+// Public team ecosystem (public read, no auth wall)
 const TeamsPage = lazy(() => import('../pages/teams/TeamsPage.jsx'))
 const TeamProfilePage = lazy(() => import('../pages/teams/TeamProfilePage.jsx'))
 
@@ -87,11 +95,11 @@ const CanteenMenuPage = lazy(() => import('../pages/canteen/menu/menu.jsx'))
 const CanteenOrderStatusPage = lazy(() => import('../pages/canteen/order-status/orderStatus.jsx'))
 const CanteenStaffDashboardPage = lazy(() => import('../pages/canteen/staff/dashboard.jsx'))
 
-// Phase 14 Part 3 — ground booking
+// Ground booking
 const MyBookingsPage = lazy(() => import('../pages/booking/MyBookingsPage.jsx'))
 const StaffBookingPage = lazy(() => import('../pages/booking/StaffBookingPage.jsx'))
 
-// Phase 15 — tournament management (public reads, staff-only mutations)
+// Tournament management (public reads, staff-only mutations)
 const TournamentsPage = lazy(() => import('../pages/tournaments/TournamentsPage.jsx'))
 const TournamentPage = lazy(() => import('../pages/tournaments/TournamentPage.jsx'))
 const CreateTournamentPage = lazy(() => import('../pages/tournaments/CreateTournamentPage.jsx'))
@@ -116,18 +124,26 @@ const router = createBrowserRouter([
       { path: '/', element: withSuspense(<DiscoveryPage />) },
       { path: '/grounds', element: withSuspense(<GroundsPage />) },
       { path: '/register-ground', element: <RequireAuth>{withSuspense(<RegisterGroundPage />)}</RequireAuth> },
+      { path: '/register-ground/status/:publicRequestId', element: withSuspense(<GroundRegistrationStatusPage />) },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
-      { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosPage />)}</RequireStaffRole> },
-      { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGalleryPage />)}</RequireStaffRole> },
-      { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminAmenitiesPage />)}</RequireStaffRole> },
-      { path: '/admin/partners', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPartnersPage />)}</RequireStaffRole> },
+      { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminGalleryPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminAmenitiesPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/partners', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPartnersPage />)}</RequireMfaVerified></RequireStaffRole> },
 
-      // Super Admin Staff Dashboard
-      { path: '/admin/dashboard', element: <RequireStaffRole allow={['super_admin', 'admin']}>{withSuspense(<AdminDashboardPage />)}</RequireStaffRole> },
-      { path: '/admin/umpire-requests', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminUmpireRequestsPage />)}</RequireStaffRole> },
-      { path: '/admin/ground-registrations', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminGroundRegistrationsPage />)}</RequireStaffRole> },
-      { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<AdminPhotosHubPage />)}</RequireStaffRole> },
-      { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<CreateStaffPage />)}</RequireStaffRole> },
+      // Super Admin Staff Dashboard — RequireMfaVerified is a no-op for a
+      // plain 'admin' staff member (mfa.required only ever reflects
+      // super_admin, see docs/MFA.md), so wrapping this shared-access route
+      // is safe without splitting it.
+      { path: '/admin/dashboard', element: <RequireStaffRole allow={['super_admin', 'admin']}><RequireMfaVerified>{withSuspense(<AdminDashboardPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/umpire-requests', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminUmpireRequestsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/ground-registrations', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminGroundRegistrationsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosHubPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<CreateStaffPage />)}</RequireMfaVerified></RequireStaffRole> },
+
+      // Phase 6 — Security Settings + privileged-session verification.
+      { path: '/security', element: <RequirePrivilegedAccount>{withSuspense(<SecuritySettingsPage />)}</RequirePrivilegedAccount> },
+      { path: '/security/mfa-verify', element: <RequireAuth>{withSuspense(<MfaVerifyPage />)}</RequireAuth> },
 
       // Auth
       { path: '/login', element: withSuspense(<AuthPage />) },
@@ -146,34 +162,40 @@ const router = createBrowserRouter([
       { path: '/umpire/earnings', element: <RequireApprovedUmpire>{withSuspense(<UmpireEarningsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/matches/:matchId/briefing', element: <RequireApprovedUmpire>{withSuspense(<MatchBriefingPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/proposals', element: <RequireApprovedUmpire>{withSuspense(<UmpireProposalsPage />)}</RequireApprovedUmpire> },
-      { path: '/ground-owner/dashboard', element: <RequireGroundOwner>{withSuspense(<GroundOwnerDashboardPage />)}</RequireGroundOwner> },
-      { path: '/ground-owner/browse-umpires', element: <RequireGroundOwner>{withSuspense(<BrowseUmpiresPage />)}</RequireGroundOwner> },
-      { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner>{withSuspense(<GroundMatchesPage />)}</RequireGroundOwner> },
+      // `force` — RequireGroundOwner already made its own live fetchMyGrounds()
+      // call and confirmed real ownership before rendering children at all,
+      // so RequireMfaVerified treats MFA as required here without
+      // re-deriving ownership a second time (mfa.required from /auth/me only
+      // ever reflects Super Admin — see docs/MFA.md).
+      { path: '/ground-owner/dashboard', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundOwnerDashboardPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/browse-umpires', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<BrowseUmpiresPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundMatchesPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/staff', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundStaffPage />)}</RequireMfaVerified></RequireGroundOwner> },
 
-      // Phase 8 — player discovery, public profiles, leaderboards (public reads, no auth wall)
+      // Player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: withSuspense(<PlayersDiscoveryPage />) },
       { path: '/players/compare', element: withSuspense(<PlayerComparePage />) },
       { path: '/players/:publicPlayerId', element: withSuspense(<PublicPlayerProfilePage />) },
       { path: '/leaderboards', element: withSuspense(<LeaderboardsPage />) },
       { path: '/leaderboards/umpires', element: withSuspense(<TopUmpiresPage />) },
 
-      // Phase 10 Part 1 — public match discovery
+      // Public match discovery
       { path: '/matches', element: withSuspense(<MatchesPage />) },
 
-      // Phase 10 Part 2 — public team ecosystem
+      // Public team ecosystem
       { path: '/teams', element: withSuspense(<TeamsPage />) },
       { path: '/teams/compare', element: withSuspense(<TeamComparePage />) },
       { path: '/teams/:teamId', element: withSuspense(<TeamProfilePage />) },
 
-      // Phase 9 — public match summary/scorecard
+      // Public match summary/scorecard
       { path: '/matches/:matchId/summary', element: withSuspense(<MatchSummaryPage />) },
       { path: '/matches/:matchId/feedback', element: <RequireAuth>{withSuspense(<MatchFeedbackPage />)}</RequireAuth> },
 
-      // Phase 5 — real match scoring
+      // Real match scoring
       // U5.1 — match creation is now super_admin-only (Ground Owners create
       // through /ground-owner instead); was RequireAuth-only, which let an
       // approved umpire reach a form the backend now 403s.
-      { path: '/matches/new', element: <RequireStaffRole allow={['super_admin']}>{withSuspense(<MatchSetupPage />)}</RequireStaffRole> },
+      { path: '/matches/new', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<MatchSetupPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/matches/:matchId/setup', element: <RequireAuth>{withSuspense(<MatchRosterPage />)}</RequireAuth> },
       { path: '/matches/:matchId/score', element: <RequireAuth>{withSuspense(<RealScorerPage />)}</RequireAuth> },
 
@@ -186,11 +208,11 @@ const router = createBrowserRouter([
       { path: '/canteen/order-status', element: <RequireAuth>{withSuspense(<CanteenOrderStatusPage />)}</RequireAuth> },
       { path: '/canteen/staff', element: <RequireAuth>{withSuspense(<CanteenStaffDashboardPage />)}</RequireAuth> },
 
-      // Phase 14 Part 3 — ground booking
+      // Ground booking
       { path: '/bookings', element: <RequireAuth>{withSuspense(<MyBookingsPage />)}</RequireAuth> },
       { path: '/bookings/staff', element: <RequireAuth>{withSuspense(<StaffBookingPage />)}</RequireAuth> },
 
-      // Phase 15 — tournament management (public reads, no auth wall)
+      // Tournament management (public reads, no auth wall)
       { path: '/tournaments', element: withSuspense(<TournamentsPage />) },
       { path: '/tournaments/new', element: <RequireAuth>{withSuspense(<CreateTournamentPage />)}</RequireAuth> },
       { path: '/tournaments/:publicTournamentId', element: withSuspense(<TournamentPage />) },
