@@ -38,6 +38,10 @@ export const ACCOUNT_AUDIT_EVENTS = Object.freeze({
   STEP_UP_SUCCEEDED: 'STEP_UP_SUCCEEDED',
   STEP_UP_FAILED: 'STEP_UP_FAILED',
   SESSION_REVOKED_FOR_SECURITY_REASON: 'SESSION_REVOKED_FOR_SECURITY_REASON',
+  // Auth Enhancement — password login/reset. SESSION_REVOKED_FOR_SECURITY_
+  // REASON above (pre-existing) is reused for the session-invalidation side
+  // effect, not duplicated here.
+  PASSWORD_RESET: 'PASSWORD_RESET',
 })
 
 export async function recordEvent(eventType, { actorUserId, targetUserId, targetRequestId, metadata } = {}, client) {

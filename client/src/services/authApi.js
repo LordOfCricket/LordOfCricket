@@ -36,6 +36,24 @@ export async function registerUmpire(name, identifier) {
 // removed here along with the backend routes that backed them (see
 // docs/AUTH.md's "Legacy JWT" section) — zero reachable UI callers existed.
 
+// Auth Enhancement — the second credential type for the SAME unified login
+// entry point above, not a second auth flow. Same no-token-to-manage shape
+// as verifyOtp: the backend sets the identical HttpOnly session cookie.
+export async function loginWithPassword(identifier, password) {
+  const response = await api.post('/auth/login-password', { identifier, password })
+  return response.data.user
+}
+
+export async function forgotPassword(identifier) {
+  const response = await api.post('/auth/forgot-password', { identifier })
+  return response.data
+}
+
+export async function resetPassword(identifier, code, newPassword, confirmPassword) {
+  const response = await api.post('/auth/reset-password', { identifier, code, newPassword, confirmPassword })
+  return response.data
+}
+
 // Phase 6 — now also returns `mfa: {enrolled, required, verified}` alongside
 // the unchanged `user` shape every existing caller already relies on.
 export async function fetchMe() {

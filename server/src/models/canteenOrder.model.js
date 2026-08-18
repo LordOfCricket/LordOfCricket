@@ -155,6 +155,23 @@ export async function findOrderById(publicOrderId, canteenId) {
   return attachItems(order, itemsByOrder.get(order.id) || [])
 }
 
+// Socket.IO's join-order-room handler (server.js) has no route/canteen
+// context to resolve a canteenId from — it only ever receives the orderId
+// payload the client already holds. Safe without the canteen_id filter
+// above: public_order_id is a table-wide UNIQUE column (schema.prisma), not
+// composite-unique with canteen_id, so it already identifies exactly one
+// order regardless of which canteen issued it. The real authorization
+// boundary for this lookup is the caller checking the returned order's
+// userId against the requesting socket's authenticated user — same as
+// getActiveOrder/getOrderHistory, not canteen isolation.
+export async function findOrderByPublicId(publicOrderId) {
+  const { rows } = await pool.query('SELECT * FROM orders WHERE public_order_id = $1', [publicOrderId])
+  const order = rows[0]
+  if (!order) return null
+  const itemsByOrder = await fetchItemsForOrders(pool, [order.id])
+  return attachItems(order, itemsByOrder.get(order.id) || [])
+}
+
 export async function findLatestOrderByUserId(userId, canteenId) {
   const { rows } = await pool.query(
     'SELECT * FROM orders WHERE user_id = $1 AND canteen_id = $2 ORDER BY created_at DESC LIMIT 1',

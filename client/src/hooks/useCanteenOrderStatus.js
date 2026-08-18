@@ -51,7 +51,13 @@ export function useOrderStatus() {
 
   useEffect(() => {
     if (!orderId) return
-    const socket = io(socketUrl)
+    // withCredentials — the server's join-order-room/join-user-room handlers
+    // now authenticate via the same HttpOnly session cookie every REST call
+    // already sends (see server.js/realtime/socketAuth.js); without this,
+    // Socket.IO won't attach the cookie to a cross-origin handshake and both
+    // joins would be silently rejected. Same option useMatchChat.js already
+    // uses for the identical reason.
+    const socket = io(socketUrl, { withCredentials: true })
     let hasConnectedBefore = false
 
     const updateOrder = (updated) => {

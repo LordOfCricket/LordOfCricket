@@ -1,4 +1,4 @@
-# Authentication (Phase 3 — Unified OTP)
+# Authentication (Phase 3 — Unified OTP; Auth Enhancement — Password + Forgot Password)
 
 > **Phase 6** added mandatory MFA + step-up re-authentication for SUPER_ADMIN and GROUND_OWNER on top of the
 > login flow described here — see `docs/MFA.md`. Login itself (this document) is completely unchanged: MFA
@@ -14,13 +14,20 @@
 > **Phase 8** executed the "Legacy JWT" deprecation checklist below as far as it could safely go — see
 > that section for exactly what was removed, what was deliberately kept, and why. This also fully
 > resolved Phase 7's deferred D-01 finding (legacy JWT in `localStorage`): nothing writes to it anymore.
+>
+> **Auth Enhancement** added a second credential type — email/phone + password — to this SAME login entry
+> point, plus a forgot-password flow, without touching anything above. This is unrelated to, and does not
+> revive, the "Legacy JWT" path described further down: the new password login creates the identical
+> HttpOnly-cookie session type OTP login does (`services/session.service.js#createSessionForUser`), never a
+> JWT, never anything stored in `localStorage`. See "Password login" and "Forgot password" below.
 
 ## Overview
 
 LOC has one common login entry point for every role (SUPER_ADMIN, GROUND_OWNER, STAFF, UMPIRE, PLAYER):
-enter an email or phone number, receive a 6-digit OTP, enter it, get a secure server-side session. There is
-no separate signup form — verifying an OTP for an identifier with no existing account creates one
-automatically (see "Find-or-create" below).
+enter an email or phone number, then authenticate with either a 6-digit OTP or a password, and get a secure
+server-side session either way. There is no separate signup form — verifying an OTP for an identifier with
+no existing account creates one automatically (see "Find-or-create" below); a password can only ever
+authenticate an account that already has one (no find-or-create for passwords — see "Password login" below).
 
 This is genuinely new infrastructure (no OTP existed before Phase 3) layered *alongside* the pre-existing
 email+password+JWT flow, not a replacement of it yet — see "Legacy JWT" below for the coexistence and
@@ -47,23 +54,148 @@ GET /api/auth/me               -> trusted user context for the frontend
 Frontend redirects per role (models/roleRedirect.model.js, unchanged)
 ```
 
+## Password login
+
+```
+Email or Phone + Password
+      ↓
+POST /api/auth/login-password  { identifier, password }
+      ↓
+Server: normalize identifier -> find user -> bcrypt.compare -> check account status -> create session
+      ↓
+HttpOnly session cookie set (loc_session) — SAME cookie, SAME session table row shape as OTP login
+      ↓
+GET /api/auth/me               -> identical trusted user context, either credential
+      ↓
+Frontend redirects per role (unchanged — same getPostLoginPath call either way)
+```
+
+`services/otpAuth.service.js#loginWithPassword` deliberately does **not** find-or-create — only 6 accounts
+in this database have ever had a `password_hash` set (all pre-existing seed/dev accounts from before Phase
+3 existed; see git history around the Auth Enhancement task for how this was confirmed), and a password can
+only ever authenticate an account that already has one. `bcrypt.compare` always runs — even when no user or
+no `password_hash` exists, against a fixed dummy hash generated once at module load — so "no such account",
+"account has no password set", and "wrong password" all take the same code path, the same approximate time,
+and return the byte-identical generic `INVALID_CREDENTIALS` error (§ anti-enumeration, verified by an
+integration test asserting the two failure responses are `deepEqual`).
+
+**Rate limiting**: `middlewares/rateLimit.js`'s `passwordLoginLimiter` (IP-based) chained with
+`passwordLoginIdentifierLimiter` (keyed on the normalized identifier being attempted, not the caller — who
+isn't authenticated yet) — the same two-independent-dimensions design OTP already uses, for the same
+"§9: IP rotation defeats IP-only limiting" reason.
+
+## Forgot password
+
+```
+Login (password step) -> "Forgot password?"
+      ↓
+POST /api/auth/forgot-password  { identifier }
+      ↓
+otpService.requestOtp(..., purpose: 'PASSWORD_RESET')  — SAME OTP infrastructure LOGIN/REGISTER_* already use
+      ↓
+Code delivered (Twilio Verify / SendGrid / console — same provider resolution as any other OTP)
+      ↓
+POST /api/auth/reset-password  { identifier, code, newPassword, confirmPassword }
+      ↓
+Server: validate confirmation match + password policy (BEFORE touching the OTP —
+        a doomed request from a bad password shouldn't burn a valid code)
+      ↓
+otpService.verifyOtp(...) — SAME verification, same expiry/attempt-limit/single-use guarantees as any OTP
+      ↓
+Check the verified row's purpose === 'PASSWORD_RESET' (a still-valid LOGIN/REGISTER_* code for the
+        same identifier must NOT satisfy a reset — otp.service.js#verifyOtp checks the most recent code
+        for an identifier regardless of purpose; the purpose check is the caller's responsibility, same
+        as verifyLoginOtp's own LOGIN/REGISTER_* branching)
+      ↓
+Find the account for this identifier (does NOT create one if missing — unlike LOGIN's find-or-create,
+        an OTP can be verified for an identifier with no LOC account at all, since requestOtp never checks
+        existence; this returns the same generic invalid-code error rather than ever revealing that)
+      ↓
+bcrypt.hash the new password, UPDATE users.password_hash
+      ↓
+revokeAllSessionsForUser(userId) — every existing session for this account ends immediately
+      ↓
+Account-audit events: PASSWORD_RESET, SESSION_REVOKED_FOR_SECURITY_REASON
+      ↓
+Generic success response — does NOT auto-login. The user authenticates fresh via /auth/login-password.
+```
+
+No new token system was introduced for this — `code + newPassword + confirmPassword` arrive together in
+one call rather than a separate "verify, get a token, then set password" round trip, so `otp_codes` (already
+random, short-lived, single-use, server-validated, never logged) is the entire reset-authorization
+mechanism. `otp_codes.purpose` gained a fourth value, `'PASSWORD_RESET'` (additive CHECK constraint
+widening, `server/src/config/schema.sql`/`prisma/migrations/3_password_auth/`) — its own original Phase 3
+comment already anticipated this exact extension.
+
+**Session invalidation**: `services/session.service.js#revokeAllSessionsForUser` (new caller of a
+repository function that already existed, added for a future feature and never called until now) revokes
+*every* session for the account — unlike Phase 6's `revokeAllSessionsForUserExceptCurrent` (used when an
+already-logged-in user changes a security-sensitive factor), forgot-password happens from a logged-out
+state, so there is no "current session" to exempt.
+
+## Password policy
+
+No policy existed anywhere in this codebase before this feature — `staffAccount.service.js#createPlatformStaff`
+(a Super Admin manually creating a staff account) hashes whatever password is typed with zero validation.
+Established here, applied to new/reset passwords only (`domain/otpAuth/password.js`):
+
+- **Minimum 8 characters.** Length over character-class complexity, matching current guidance (NIST
+  800-63B) rather than forcing uppercase/digit/symbol rules that mostly encourage predictable substitutions.
+- **Maximum 128 characters.** Not arbitrary — bcrypt silently truncates/ignores input past 72 **bytes**;
+  this cap is enforced explicitly (a clear `PASSWORD_POLICY_VIOLATION` error) rather than letting bcrypt
+  silently drop the tail of an unusually long input.
+- Hashed with `bcryptjs`, cost factor 10 — the same library and cost factor `staffAccount.service.js`
+  already uses, not a second hashing scheme.
+
+## Password security
+
+- **Storage**: `users.password_hash` (bcrypt, cost 10). Never plaintext, never returned in any API response
+  (verified by an integration test asserting the login response body contains no `password_hash` field and
+  never echoes the submitted password back).
+- **Never logged**: every log call around password login/reset logs only `userId`/masked identifier/status
+  — never `password`, `newPassword`, or `code` (verified by an integration test asserting none of the raw
+  password values used in that test file ever appear in captured log output across the whole suite run).
+- **Anti-enumeration**: `forgot-password` returns the identical generic message whether or not the
+  identifier is registered (`requestPasswordReset` never checks existence, same as `requestLoginOtp`).
+  `login-password` returns the identical generic `INVALID_CREDENTIALS` for every failure reason (no
+  account, no password set, wrong password).
+- **Account status**: `loginWithPassword` checks `user.status !== 'ACTIVE'` after credential verification,
+  before session creation — identical placement and identical `ACCOUNT_NOT_ACTIVE` error to
+  `verifyLoginOtp`. A password reset does **not** additionally gate on account status (proving control of
+  the identifier via OTP is independent of whether the account is currently suspended, and a fresh
+  password is harmless to set for a suspended account — login itself still rejects it either way).
+- **MFA**: not a login-time gate for either credential (see the Phase 6 note at the top of this document) —
+  a password-authenticated session has `mfa_verified_at = NULL`, exactly like a fresh OTP session, so every
+  existing `requireStaffRole`/`requireGroundRole` MFA/step-up gate applies identically regardless of which
+  credential authenticated the session. No new MFA logic was needed or added.
+
 ## Architecture
 
 ```
 routes/auth.routes.js
-  -> controllers/auth.controller.js       (sendOtp, verifyOtpAndLogin, logout — thin)
-     -> services/otpAuth.service.js       (orchestration: identify, verify, find-or-create, session)
-        -> services/otp.service.js        (OTP lifecycle: generate/hash/verify/attempts/cooldown)
+  -> controllers/auth.controller.js       (sendOtp, verifyOtpAndLogin, logout,
+                                            loginWithPassword, forgotPassword, resetPassword — all thin)
+     -> services/otpAuth.service.js       (orchestration: identify, verify, find-or-create, session —
+                                            now also loginWithPassword/requestPasswordReset/resetPassword)
+        -> services/otp.service.js        (OTP lifecycle: generate/hash/verify/attempts/cooldown —
+                                            unmodified; PASSWORD_RESET is just another `purpose`)
            -> services/otpProviders/      (console | twilioProvider | sendgridProvider, behind
                                             resolveProvider() — the only place that decides which
                                             one handles a given identifier type)
+        -> services/session.service.js    (createSessionForUser, revokeSession, and now
+                                            revokeAllSessionsForUser — used by password reset)
         -> repositories/prisma/otpCode.prisma-repository.js   (Prisma — brand-new table)
         -> repositories/prisma/session.prisma-repository.js   (Prisma — brand-new table)
         -> models/user.model.js           (existing raw-SQL model, extended with
                                             findUserByPhone/findUserByIdentifier/createUserFromOtp —
                                             NOT replaced, since 67 call sites across the app read
-                                            req.user's shape from this exact file)
+                                            req.user's shape from this exact file; password_hash writes
+                                            reuse the existing generic updateUser(id, fields), no new
+                                            model function needed)
   -> middlewares/session.js               (cookie name/options)
+  -> middlewares/rateLimit.js             (otpRequestLimiter/otpVerifyLimiter reused directly for
+                                            forgot/reset-password; passwordLoginLimiter +
+                                            passwordLoginIdentifierLimiter are the only new limiters)
   -> middlewares/auth.js#requireAuth      (dual-path: session cookie first, legacy JWT bearer
                                             fallback — both converge on the same
                                             models/user.model.js#findUserById, so req.user is
@@ -72,8 +204,8 @@ routes/auth.routes.js
 ```
 
 Pure, dependency-free logic (OTP generation/hashing, identifier detection/normalization, session
-token generation/hashing) lives in `domain/otpAuth/` with colocated unit tests, matching every other
-`domain/*` module's convention.
+token generation/hashing, and now password policy validation in `domain/otpAuth/password.js`) lives in
+`domain/otpAuth/` with colocated unit tests, matching every other `domain/*` module's convention.
 
 ## Find-or-create (transitional compatibility adapter) — LOGIN purpose only
 

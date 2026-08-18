@@ -2014,27 +2014,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_permissions_active_unique
 CREATE INDEX IF NOT EXISTS idx_staff_permissions_ground_user_active
   ON staff_permissions(ground_user_id) WHERE revoked_at IS NULL;
 
--- Widen account_audit_log for the 3 new Phase 5 events. A bare
--- CREATE TABLE IF NOT EXISTS above is a no-op once the table already exists
--- (it does, as of Phase 4) — this file's own established idempotent-ALTER
--- pattern (see e.g. ground_notifications_type_check/users_status_check
--- above) is required to actually widen the CHECK on every re-run.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
-  ) THEN
-    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
-  END IF;
-END $$;
-ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
-  CHECK (event_type IN (
-    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
-    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
-    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
-    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED'
-  ));
+-- Widen account_audit_log for the 3 new Phase 5 events.
+--
+-- Bug found and fixed here (Auth Enhancement task) — this block used to
+-- DROP+ADD account_audit_log_event_type_check down to just the 11
+-- Phase-5-era values, exactly like every other idempotent-ALTER widening in
+-- this file. That was silently broken the moment Phase 6 data started
+-- accumulating: schema.sql runs top-to-bottom as ONE implicit transaction
+-- (`npm run db:migrate` sends the whole file as one multi-statement query —
+-- see config/migrate.js), so on any re-run against an already-populated
+-- database, THIS block's narrower ADD CONSTRAINT would immediately fail
+-- validation against real Phase-6-era rows (MFA_ENROLLMENT_COMPLETED,
+-- STEP_UP_*, TOTP_*, SESSION_REVOKED_FOR_SECURITY_REASON, etc.) that
+-- already exist by the time this statement runs — aborting the entire
+-- migration before it ever reached the Phase 6 block below, which
+-- re-widens to the correct full list anyway. Never noticed before because
+-- nothing had reason to re-run `db:migrate` against a live, Phase-6-
+-- populated database until this task needed to add PASSWORD_RESET further
+-- down. Fixed by dropping this now-redundant intermediate DROP+ADD
+-- entirely — the Phase 6 block below already derives the correct
+-- constraint from scratch (its own DROP-IF-EXISTS + ADD), so removing this
+-- one changes nothing about the FINAL state on any database, fresh or
+-- live, only removes the harmful intermediate step. The index below is
+-- unrelated to the constraint and stays.
 CREATE INDEX IF NOT EXISTS idx_account_audit_log_event_type ON account_audit_log(event_type, created_at DESC);
 
 -- ============================================================================
@@ -2180,4 +2182,44 @@ ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
     'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
     'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
     'SESSION_REVOKED_FOR_SECURITY_REASON'
+  ));
+
+-- Auth Enhancement — password login + forgot-password. Widens the two
+-- existing CHECK constraints this feature needs a new value on, same
+-- idempotent DROP-then-ADD pattern as every widening above (safe to re-run,
+-- migration-safe, zero data loss — existing rows already satisfy a subset
+-- of the widened list). otp_codes.purpose's own comment (see its CREATE
+-- TABLE above) literally anticipated 'PASSWORD_RESET' as a future value.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_purpose_check'
+  ) THEN
+    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
+  END IF;
+END $$;
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET'));
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
+  ) THEN
+    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
+  END IF;
+END $$;
+ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
+  CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
+    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
+    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
+    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
+    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
+    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
+    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET'
   ));

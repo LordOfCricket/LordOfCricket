@@ -95,6 +95,34 @@ export function AuthProvider({ children }) {
     return verifiedUser
   }
 
+  // Auth Enhancement — the second credential type for the same unified
+  // login. Deliberately mirrors verifyOtp above line for line: same state
+  // transitions, same refreshMfaStatus call (a password-authenticated
+  // session is a brand-new session too — mfa.verified starts false here for
+  // the identical reason). Every downstream consumer of AuthContext (the
+  // dashboard redirect, MFA gates, RequireAuth) behaves identically
+  // regardless of which credential the user signed in with.
+  const loginWithPassword = async (identifier, password) => {
+    const loggedInUser = await authApi.loginWithPassword(identifier, password)
+    setUser(loggedInUser)
+    setStatus('authenticated')
+    if (loggedInUser?.role === 'player') refreshPlayer()
+    await refreshMfaStatus()
+    return loggedInUser
+  }
+
+  // Forgot-password — neither call authenticates; AuthPage's own step
+  // machine handles the identifier → OTP → new-password UI flow, this just
+  // proxies the two requests (mirrors requestOtp's "nothing to store
+  // client-side" shape).
+  const forgotPassword = async (identifier) => {
+    return authApi.forgotPassword(identifier)
+  }
+
+  const resetPassword = async (identifier, code, newPassword, confirmPassword) => {
+    return authApi.resetPassword(identifier, code, newPassword, confirmPassword)
+  }
+
   // Revokes the server-side session. Clears local state unconditionally
   // even if the revoke call fails (e.g. offline) — the user's intent to
   // log out on this device should never get stuck behind a network error.
@@ -171,6 +199,9 @@ export function AuthProvider({ children }) {
     verifyOtp,
     registerPlayerOtp,
     registerUmpireOtp,
+    loginWithPassword,
+    forgotPassword,
+    resetPassword,
     refreshMfaStatus,
     verifyMfa,
     startStepUp,

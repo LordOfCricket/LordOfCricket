@@ -1,6 +1,12 @@
 import { generateSessionToken, hashSessionToken } from '../domain/otpAuth/sessionToken.js'
 import { getSessionTtlDays } from '../domain/otpAuth/otp.js'
-import { createSession, findActiveSessionByTokenHash, touchLastUsed, revokeSessionByTokenHash } from '../repositories/prisma/session.prisma-repository.js'
+import {
+  createSession,
+  findActiveSessionByTokenHash,
+  touchLastUsed,
+  revokeSessionByTokenHash,
+  revokeAllSessionsForUser as revokeAllSessionsForUserRepo,
+} from '../repositories/prisma/session.prisma-repository.js'
 import { logger } from '../utils/logger.js'
 
 export async function createSessionForUser(userId, { ipAddress = null, userAgent = null } = {}) {
@@ -31,4 +37,18 @@ export async function revokeSession(rawToken) {
   const tokenHash = hashSessionToken(rawToken)
   await revokeSessionByTokenHash(tokenHash)
   logger.info('Session revoked (logout)')
+}
+
+// Auth Enhancement — password reset's "old sessions should not remain
+// indefinitely valid" requirement. The repository function already existed
+// (added for a future "log out everywhere"/suspension feature, never
+// called) — this is its first real caller. Unlike
+// revokeAllSessionsForUserExceptCurrent (Phase 6, used when an already-
+// logged-in user changes a security-sensitive factor), a password reset
+// happens via the logged-OUT forgot-password flow — there is no "current
+// session" to exempt, every session for this user is compromised-by-
+// association and should end.
+export async function revokeAllSessionsForUser(userId) {
+  await revokeAllSessionsForUserRepo(userId)
+  logger.info('All sessions revoked for user (password reset)', { userId })
 }

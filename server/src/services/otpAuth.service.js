@@ -1,11 +1,13 @@
-import { detectIdentifierType, normalizeIdentifier } from '../domain/otpAuth/otp.js'
+import bcrypt from 'bcryptjs'
+import { detectIdentifierType, normalizeIdentifier, maskIdentifier } from '../domain/otpAuth/otp.js'
+import { validatePasswordPolicy } from '../domain/otpAuth/password.js'
 import { OtpAuthError, OTP_AUTH_ERROR_CODES as CODES } from '../domain/otpAuth/errors.js'
 import { AccountCreationError, ACCOUNT_CREATION_ERROR_CODES as ACCOUNT_CODES } from '../domain/accountCreation/errors.js'
 import { requiredText } from '../domain/accountCreation/validation.js'
 import * as otpService from './otp.service.js'
-import { createSessionForUser } from './session.service.js'
+import { createSessionForUser, revokeAllSessionsForUser } from './session.service.js'
 import { recordEvent, ACCOUNT_AUDIT_EVENTS } from './accountAudit.service.js'
-import { findUserByIdentifier, createUserFromOtp } from '../models/user.model.js'
+import { findUserByIdentifier, createUserFromOtp, updateUser } from '../models/user.model.js'
 import { createUmpireRequest, findLatestUmpireRequestForUser } from '../models/umpireRequest.model.js'
 import { logger } from '../utils/logger.js'
 
@@ -131,4 +133,133 @@ export async function verifyLoginOtp({ identifier: rawIdentifier, code, ipAddres
 
   const { password_hash, ...publicUser } = user
   return { user: publicUser, sessionToken: rawToken, sessionExpiresAt: expiresAt }
+}
+
+// Auth Enhancement — the second credential type for the same unified login.
+// Deliberately mirrors verifyLoginOtp's shape as closely as the different
+// credential allows: same identifier resolution, same ACCOUNT_NOT_ACTIVE
+// check, same createSessionForUser call, same { user, sessionToken,
+// sessionExpiresAt } return shape — so auth.controller.js's caller treats
+// both paths identically (set the same cookie, return the same user shape).
+//
+// Unlike OTP, this does NOT find-or-create — a password can only
+// authenticate an account that already has one (see password.js's header:
+// only 6 accounts in this database have ever had one, all pre-existing
+// seed/dev accounts). No account is ever created by this function.
+//
+// Timing/enumeration: bcrypt.compare always runs, even when no user or no
+// password_hash exists, against a fixed dummy hash — so "no such account",
+// "account has no password set", and "wrong password" all take the same
+// code path, the same approximate time, and produce the byte-identical
+// generic INVALID_CREDENTIALS error. Never distinguished, by design (brief's
+// explicit anti-enumeration requirement).
+const DUMMY_HASH_FOR_TIMING_SAFETY = bcrypt.hashSync('not-a-real-password-used-only-for-constant-time-comparison', 10)
+
+export async function loginWithPassword({ identifier: rawIdentifier, password, ipAddress, userAgent }) {
+  const { identifier, identifierType } = resolveIdentifier(rawIdentifier)
+
+  const user = await findUserByIdentifier(identifier, identifierType)
+  const hashToCompare = user?.password_hash || DUMMY_HASH_FOR_TIMING_SAFETY
+  const passwordMatches = await bcrypt.compare(typeof password === 'string' ? password : '', hashToCompare)
+
+  if (!user || !user.password_hash || !passwordMatches) {
+    logger.warn('Password login failed', { identifier: maskIdentifier(identifier, identifierType), identifierType })
+    throw new OtpAuthError(CODES.INVALID_CREDENTIALS, 'Incorrect email/phone or password.')
+  }
+
+  if (user.status !== 'ACTIVE') {
+    logger.warn('Password login blocked: account not active', { userId: user.id, status: user.status })
+    throw new OtpAuthError(CODES.ACCOUNT_NOT_ACTIVE, 'This account is not able to sign in right now. Contact support.')
+  }
+
+  const { rawToken, expiresAt } = await createSessionForUser(user.id, { ipAddress, userAgent })
+  logger.info('Authentication succeeded (password)', { userId: user.id })
+
+  const { password_hash, ...publicUser } = user
+  return { user: publicUser, sessionToken: rawToken, sessionExpiresAt: expiresAt }
+}
+
+// Auth Enhancement — forgot-password step 1. Deliberately identical shape to
+// requestLoginOtp: no existence check, no branching on whether the
+// identifier has an account or a password already — otp.service.js#
+// requestOtp itself doesn't check account existence either (see its own
+// header), so the HTTP response is byte-identical whether or not this
+// identifier is registered (§ anti-enumeration). purpose:'PASSWORD_RESET'
+// keeps this OTP request/cooldown/invalidation fully independent of any
+// pending LOGIN or REGISTER_* code for the same identifier (otp.service.js's
+// existing purpose-scoping, unmodified).
+export async function requestPasswordReset(rawIdentifier) {
+  const { identifier, identifierType } = resolveIdentifier(rawIdentifier)
+  await otpService.requestOtp({ identifier, identifierType, purpose: 'PASSWORD_RESET' })
+  return { identifier, identifierType }
+}
+
+// Auth Enhancement — forgot-password step 2. Single call (code + new
+// password together) rather than a separate "verify, then get a token, then
+// set password" round trip — deliberately avoids inventing a second,
+// parallel token system: otp.service.js#verifyOtp is already random
+// (server-generated), short-lived (OTP_TTL_MINUTES), single-use (marks the
+// row VERIFIED, replay-checked), server-validated, and never logged. See
+// docs/AUTH.md for why this satisfies the brief's "reuse existing
+// infrastructure unless a separate system is genuinely required" rule.
+export async function resetPassword({ identifier: rawIdentifier, code, newPassword, confirmPassword }) {
+  const { identifier, identifierType } = resolveIdentifier(rawIdentifier)
+
+  if (newPassword !== confirmPassword) {
+    throw new OtpAuthError(CODES.PASSWORD_MISMATCH, 'Passwords do not match.')
+  }
+  const policy = validatePasswordPolicy(newPassword)
+  if (!policy.valid) {
+    throw new OtpAuthError(CODES.PASSWORD_POLICY_VIOLATION, policy.reason)
+  }
+
+  // Validated BEFORE touching the OTP row on purpose — verifyOtp has real
+  // side effects (increments attempts, marks VERIFIED/LOCKED), so a request
+  // doomed by a bad password shouldn't burn the user's one valid code.
+  const otpRow = await otpService.verifyOtp({ identifier, identifierType, code })
+
+  // otp.service.js#verifyOtp checks the MOST RECENT code for this identifier
+  // regardless of purpose (see its own comment) — the purpose-scoping lives
+  // in requestOtp's invalidation, not here, so a still-valid LOGIN/REGISTER_*
+  // code for the same identifier could otherwise satisfy this call. Reusing
+  // CODES.INVALID_OTP's identical generic message for the mismatch, not a
+  // new one — from the client's perspective this must be indistinguishable
+  // from "wrong code".
+  if (otpRow.purpose !== 'PASSWORD_RESET') {
+    logger.warn('Password reset rejected: verified code was not requested for password reset', {
+      identifier: maskIdentifier(identifier, identifierType),
+      purpose: otpRow.purpose,
+    })
+    throw new OtpAuthError(CODES.INVALID_OTP, 'Invalid or expired code.')
+  }
+
+  // otp.service.js#requestOtp never checks account existence (any validly-
+  // shaped identifier can have a code sent to it and verified) — so a
+  // correctly-verified code for an identifier with NO LOC account is a real,
+  // reachable case here. Unlike verifyLoginOtp's find-or-create, this never
+  // creates one — same generic message as an invalid code, never revealing
+  // "no account exists for this identifier".
+  const user = await findUserByIdentifier(identifier, identifierType)
+  if (!user) {
+    logger.warn('Password reset rejected: no account exists for this (OTP-verified) identifier', {
+      identifier: maskIdentifier(identifier, identifierType),
+    })
+    throw new OtpAuthError(CODES.INVALID_OTP, 'Invalid or expired code.')
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10)
+  await updateUser(user.id, { password_hash: passwordHash })
+  await revokeAllSessionsForUser(user.id)
+
+  await recordEvent(ACCOUNT_AUDIT_EVENTS.PASSWORD_RESET, { targetUserId: user.id, metadata: { identifierType } })
+  await recordEvent(ACCOUNT_AUDIT_EVENTS.SESSION_REVOKED_FOR_SECURITY_REASON, {
+    targetUserId: user.id,
+    metadata: { reason: 'password_reset' },
+  })
+
+  logger.info('Password reset succeeded', { userId: user.id })
+  // Deliberately does NOT create a session — the brief's own flow diagram
+  // ends reset at "Password reset successful" then a separate "Login" step,
+  // not an auto-login. The user authenticates fresh via loginWithPassword.
+  return { identifier, identifierType }
 }

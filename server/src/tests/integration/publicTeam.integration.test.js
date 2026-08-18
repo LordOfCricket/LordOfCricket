@@ -325,3 +325,105 @@ test('T14/P116 — team listing pagination is stable, no duplicate teams across 
   assert.equal(new Set([...ids1, ...ids2]).size, ids1.length + ids2.length)
   assert.equal(page1.pagination.total, page2.pagination.total)
 })
+
+// ---------------------------------------------------------------------------
+// Pagination `total` correctness — team.repository.js#listPublicTeams bug fix.
+//
+// Deliberately scoped by a unique `search` term for every test below (never
+// the global unscoped list the test above already covers) — the bug this
+// fixes only became visible because a test's assumptions had an unstated
+// dependency on how many teams happen to exist globally. Scoping every case
+// here to its own uniquely-tagged team set makes the total this suite
+// asserts against a value the test itself controls, not incidental
+// database state, so these can never rot the same way again.
+// ---------------------------------------------------------------------------
+
+const uniqueTag = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+async function createPaginationTestTeams(tag, count) {
+  const ids = []
+  for (let i = 1; i <= count; i++) {
+    const n = String(i).padStart(2, '0')
+    const row = (
+      await pool.query(`INSERT INTO teams (name, short_name) VALUES ($1, $2) RETURNING id`, [`Pagination Test ${tag} ${n}`, `PGT${n}`])
+    ).rows[0]
+    ids.push(row.id)
+  }
+  return ids
+}
+
+async function cleanupPaginationTestTeams(ids) {
+  if (ids.length === 0) return
+  await pool.query('DELETE FROM teams WHERE id = ANY($1)', [ids])
+}
+
+test('pagination: first page returns the correct rows and the correct total', async () => {
+  const tag = uniqueTag()
+  const ids = await createPaginationTestTeams(tag, 5)
+  try {
+    const page = await publicTeamService.listPublicTeams({ search: `Pagination Test ${tag}`, limit: 2, offset: 0 })
+    assert.equal(page.items.length, 2)
+    assert.equal(page.pagination.total, 5)
+    assert.deepEqual(page.items.map((t) => t.id), ids.slice(0, 2)) // ORDER BY name ASC, id ASC — deterministic
+  } finally {
+    await cleanupPaginationTestTeams(ids)
+  }
+})
+
+test('pagination: a middle page returns the correct rows and the SAME total as the first page', async () => {
+  const tag = uniqueTag()
+  const ids = await createPaginationTestTeams(tag, 5)
+  try {
+    const page1 = await publicTeamService.listPublicTeams({ search: `Pagination Test ${tag}`, limit: 2, offset: 0 })
+    const middle = await publicTeamService.listPublicTeams({ search: `Pagination Test ${tag}`, limit: 2, offset: 2 })
+    assert.equal(middle.items.length, 2)
+    assert.deepEqual(middle.items.map((t) => t.id), ids.slice(2, 4))
+    assert.equal(middle.pagination.total, 5)
+    assert.equal(middle.pagination.total, page1.pagination.total)
+  } finally {
+    await cleanupPaginationTestTeams(ids)
+  }
+})
+
+// The critical regression test (this task's brief): OFFSET past the last
+// matching row must still report the real total, not 0.
+test('pagination: a page beyond the last page returns ZERO rows but the CORRECT total (regression test for the fixed bug)', async () => {
+  const tag = uniqueTag()
+  const ids = await createPaginationTestTeams(tag, 2)
+  try {
+    const beyond = await publicTeamService.listPublicTeams({ search: `Pagination Test ${tag}`, limit: 3, offset: 3 })
+    assert.equal(beyond.items.length, 0)
+    assert.equal(beyond.pagination.total, 2, 'total must reflect the 2 real matching teams, not the 0 rows this page happened to return')
+  } finally {
+    await cleanupPaginationTestTeams(ids)
+  }
+})
+
+test('pagination: a search matching zero teams returns zero rows and total 0 (never a leftover/stale total)', async () => {
+  const page = await publicTeamService.listPublicTeams({ search: `Pagination Test nonexistent-${uniqueTag()}`, limit: 10, offset: 0 })
+  assert.equal(page.items.length, 0)
+  assert.equal(page.pagination.total, 0)
+})
+
+test('pagination: limit/offset paging through every page collects each team exactly once, no duplicates or gaps', async () => {
+  const tag = uniqueTag()
+  const ids = await createPaginationTestTeams(tag, 7)
+  try {
+    const seen = []
+    let offset = 0
+    const limit = 3
+    let total = null
+    for (;;) {
+      const page = await publicTeamService.listPublicTeams({ search: `Pagination Test ${tag}`, limit, offset })
+      if (total === null) total = page.pagination.total
+      assert.equal(page.pagination.total, total, 'total must stay constant across every page of the same query')
+      if (page.items.length === 0) break
+      seen.push(...page.items.map((t) => t.id))
+      offset += limit
+    }
+    assert.equal(total, 7)
+    assert.deepEqual(seen, ids) // every id, in order, exactly once
+  } finally {
+    await cleanupPaginationTestTeams(ids)
+  }
+})

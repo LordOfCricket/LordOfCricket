@@ -52,6 +52,35 @@ export const otpVerifyLimiter = makeLimiter({
   message: 'Too many attempts. Please try again later.',
 })
 
+// Auth Enhancement — password login is a new brute-force surface nothing
+// above already covers (forgot-password/reset-password reuse
+// otpRequestLimiter/otpVerifyLimiter directly since they're the same shape
+// of action — request a code / submit a code — as the OTP endpoints those
+// already protect). Same "not just IP" two-dimension design §9 already
+// established for OTP: IP-based here (byIp, the default keyGenerator) is
+// the outer layer; byAttemptedIdentifier below is the inner one, keyed on
+// the normalized identifier being GUESSED AGAINST rather than the caller's
+// own id (which isn't known pre-auth) — this is what actually blunts a
+// distributed/rotating-IP attacker hammering one specific account's
+// password, the exact gap IP-only limiting can't close.
+export const passwordLoginLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many login attempts. Please try again later.',
+})
+
+function byAttemptedIdentifier(req) {
+  const raw = typeof req.body?.identifier === 'string' ? req.body.identifier.trim().toLowerCase() : ''
+  return raw ? `identifier:${raw}` : ipKeyGenerator(req.ip)
+}
+
+export const passwordLoginIdentifierLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many login attempts for this account. Please try again later.',
+  keyGenerator: byAttemptedIdentifier,
+})
+
 // AI calls cost real money and latency per request.
 export const aiLimiter = makeLimiter({
   windowMs: 15 * 60 * 1000,

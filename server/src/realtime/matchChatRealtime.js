@@ -7,11 +7,7 @@
 // spectator room is left untouched — this uses its own `match-chat:${id}`
 // room so a private chat message can never leak into the public spectator
 // broadcast.
-import { unsign } from 'cookie-signature'
-import { verifyToken } from '../utils/jwt.js'
-import { findUserById } from '../models/user.model.js'
-import { validateSessionToken } from '../services/session.service.js'
-import { SESSION_COOKIE_NAME } from '../middlewares/session.js'
+import { authenticateSocketUser } from './socketAuth.js'
 import { resolveSenderRole } from '../services/matchAccess.service.js'
 import { isSuperAdminUser } from '../middlewares/auth.js'
 import { logger } from '../utils/logger.js'
@@ -40,40 +36,9 @@ export function matchChatRoom(matchId) {
 // reasoning as requireAuth's own dual-path design) — harmless since no real
 // client can present one, and matches the rest of the codebase's posture
 // rather than deleting a working fallback path.
-// Same fallback constant as app.js/jwt.js — a production deploy without
-// SESSION_COOKIE_SECRET already refuses to boot (app.js), so this fallback
-// only ever applies in dev/test, exactly like every other consumer of this
-// secret.
-const SESSION_COOKIE_SECRET = process.env.SESSION_COOKIE_SECRET || 'dev-only-insecure-cookie-secret-change-me'
-
-function readSessionCookie(cookieHeader) {
-  if (!cookieHeader) return null
-  const entry = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
-  if (!entry) return null
-  const raw = decodeURIComponent(entry.slice(SESSION_COOKIE_NAME.length + 1))
-  if (!raw.startsWith('s:')) return null
-  const unsigned = unsign(raw.slice(2), SESSION_COOKIE_SECRET)
-  return unsigned || null
-}
-
-async function authenticateSocketUser(socket, legacyToken) {
-  const sessionToken = readSessionCookie(socket.handshake.headers.cookie)
-  if (sessionToken) {
-    const session = await validateSessionToken(sessionToken)
-    if (session) return findUserById(session.user_id)
-  }
-  if (!legacyToken) return null
-  try {
-    const payload = verifyToken(legacyToken)
-    return await findUserById(payload.id)
-  } catch {
-    return null
-  }
-}
-
+// This task (canteen realtime auth) needed the exact same cookie/JWT-
+// fallback resolution a second time — extracted to realtime/socketAuth.js
+// rather than growing a second copy here. Behavior is unchanged.
 export function registerMatchChatRealtime(io) {
   io.on('connection', (socket) => {
     socket.on('join-match-chat', async (payload) => {

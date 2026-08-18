@@ -8,6 +8,7 @@ import { allowedOrigins } from './config/corsOrigins.js'
 import { registerCricketRealtime } from './realtime/cricketRealtime.js'
 import { registerBookingRealtime } from './realtime/bookingRealtime.js'
 import { registerMatchChatRealtime } from './realtime/matchChatRealtime.js'
+import { registerCanteenRealtime } from './realtime/canteenRealtime.js'
 import { validateEnv } from './config/validateEnv.js'
 import { startReminderScheduler, stopReminderScheduler } from './services/reminderScheduler.service.js'
 import { logger } from './utils/logger.js'
@@ -54,18 +55,12 @@ const io = new Server(server, {
 // Make io available to every request as req.io (see app.js middleware)
 app.locals.io = io
 
-io.on('connection', (socket) => {
-  logger.info('Socket connected', { socketId: socket.id })
-
-  socket.on('join-staff-room', () => socket.join('staff'))
-  socket.on('join-user-room', (userId) => {
-    if (userId) socket.join(`user:${userId}`)
-  })
-  socket.on('join-order-room', (orderId) => {
-    if (orderId) socket.join(`order:${orderId}`)
-  })
-  socket.on('disconnect', () => logger.info('Socket disconnected', { socketId: socket.id }))
-})
+// Canteen realtime (staff/user/order rooms) — see
+// realtime/canteenRealtime.js for the security-fix rationale (previously
+// zero auth on these three handlers) and the extraction rationale (moved
+// out of this file so it's testable the same way as the three registrations
+// below it).
+registerCanteenRealtime(io)
 
 // Phase 11 — cricket realtime (spectator match rooms). A second, additive
 // connection listener on the SAME io/http server — canteen's handlers above

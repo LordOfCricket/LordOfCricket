@@ -1,7 +1,24 @@
 import { Router } from 'express'
-import { me, selectRole, selectPlayerType, sendOtp, verifyOtpAndLogin, logout, registerPlayer, registerUmpire } from '../controllers/auth.controller.js'
+import {
+  me,
+  selectRole,
+  selectPlayerType,
+  sendOtp,
+  verifyOtpAndLogin,
+  logout,
+  registerPlayer,
+  registerUmpire,
+  loginWithPassword,
+  forgotPassword,
+  resetPassword,
+} from '../controllers/auth.controller.js'
 import { requireAuth } from '../middlewares/auth.js'
-import { otpRequestLimiter, otpVerifyLimiter } from '../middlewares/rateLimit.js'
+import {
+  otpRequestLimiter,
+  otpVerifyLimiter,
+  passwordLoginLimiter,
+  passwordLoginIdentifierLimiter,
+} from '../middlewares/rateLimit.js'
 
 const router = Router()
 
@@ -20,6 +37,21 @@ router.post('/register/umpire', otpRequestLimiter, registerUmpire)
 
 // Phase 8 — the legacy email+password `/signup`/`/login` routes were
 // removed here (zero reachable frontend callers — see docs/AUTH.md).
+
+// Auth Enhancement — the second credential type for the SAME unified login
+// entry point above (not a second auth system): email/phone + password,
+// creating the identical session-cookie-based session /verify-otp does.
+// Two limiters chained (IP, then identifier) — see rateLimit.js's own
+// comment for why password guessing needs both dimensions, unlike a route
+// that only needed one.
+router.post('/login-password', passwordLoginLimiter, passwordLoginIdentifierLimiter, loginWithPassword)
+
+// Auth Enhancement — forgot-password. Reuses otpRequestLimiter/
+// otpVerifyLimiter directly (not new limiters) since requesting/submitting
+// a reset code is the same shape of action those already protect for
+// login/registration.
+router.post('/forgot-password', otpRequestLimiter, forgotPassword)
+router.post('/reset-password', otpVerifyLimiter, resetPassword)
 
 router.get('/me', requireAuth, me)
 router.patch('/role', requireAuth, selectRole)

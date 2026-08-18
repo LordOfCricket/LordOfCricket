@@ -12,6 +12,14 @@ export const OTP_AUTH_ERROR_CODES = Object.freeze({
   OTP_LOCKED: 'OTP_LOCKED',
   ACCOUNT_NOT_ACTIVE: 'ACCOUNT_NOT_ACTIVE',
   SESSION_INVALID: 'SESSION_INVALID',
+  // Password login/reset (Auth Enhancement) — same domain, same error
+  // taxonomy as OTP auth rather than a second competing error framework.
+  // INVALID_CREDENTIALS is deliberately the ONE code for both "no such
+  // account" and "wrong password" (§ anti-enumeration) — see
+  // otpAuth.service.js#loginWithPassword.
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  PASSWORD_POLICY_VIOLATION: 'PASSWORD_POLICY_VIOLATION',
+  PASSWORD_MISMATCH: 'PASSWORD_MISMATCH',
 })
 
 export class OtpAuthError extends Error {
@@ -32,4 +40,7 @@ export const OTP_AUTH_ERROR_HTTP_STATUS = Object.freeze({
   [OTP_AUTH_ERROR_CODES.OTP_LOCKED]: 401,
   [OTP_AUTH_ERROR_CODES.ACCOUNT_NOT_ACTIVE]: 403,
   [OTP_AUTH_ERROR_CODES.SESSION_INVALID]: 401,
+  [OTP_AUTH_ERROR_CODES.INVALID_CREDENTIALS]: 401,
+  [OTP_AUTH_ERROR_CODES.PASSWORD_POLICY_VIOLATION]: 400,
+  [OTP_AUTH_ERROR_CODES.PASSWORD_MISMATCH]: 400,
 })

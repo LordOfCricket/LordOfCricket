@@ -114,7 +114,12 @@ export function useStaffDashboard() {
   }, [tab, historyPage, loadHistory])
 
   useEffect(() => {
-    const socket = io(socketUrl)
+    // withCredentials — join-staff-room now authenticates via the same
+    // HttpOnly session cookie every REST call already sends (see server.js/
+    // realtime/socketAuth.js); without this, the handshake carries no
+    // credential and the join is silently rejected. Same option
+    // useMatchChat.js already uses for the identical reason.
+    const socket = io(socketUrl, { withCredentials: true })
     let hasConnectedBefore = false
 
     // Socket.IO drops room membership on disconnect and never

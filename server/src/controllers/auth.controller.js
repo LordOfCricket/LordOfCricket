@@ -142,6 +142,72 @@ export async function verifyOtpAndLogin(req, res, next) {
   }
 }
 
+// Auth Enhancement — the second credential type for the same unified login
+// (email/phone + OTP, OR email/phone + password). Deliberately mirrors
+// verifyOtpAndLogin above line for line: same body-shape validation, same
+// setSessionCookie call, same { user } response — the frontend/AuthContext
+// treats a password login exactly like an OTP one once this responds.
+// otpAuthService.loginWithPassword never reveals whether the identifier or
+// the password was wrong (single generic error either way).
+export async function loginWithPassword(req, res, next) {
+  try {
+    const { identifier, password } = req.body
+    if (!identifier || typeof password !== 'string') {
+      return res.status(400).json({ message: 'identifier and password are required.' })
+    }
+
+    const { user, sessionToken, sessionExpiresAt } = await otpAuthService.loginWithPassword({
+      identifier,
+      password,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
+
+    setSessionCookie(res, sessionToken, sessionExpiresAt)
+    res.json({ user })
+  } catch (err) {
+    if (err instanceof OtpAuthError) return next(err)
+    next(err)
+  }
+}
+
+// Auth Enhancement — forgot-password step 1. Same anti-enumeration shape as
+// sendOtp above (identical generic response regardless of whether the
+// identifier is registered) — requestPasswordReset itself never checks
+// account existence either, for the same reason.
+export async function forgotPassword(req, res, next) {
+  try {
+    const { identifier } = req.body
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(400).json({ message: 'identifier is required.' })
+    }
+    await otpAuthService.requestPasswordReset(identifier)
+    res.json({ message: 'If that email or phone number is valid, a reset code has been sent.' })
+  } catch (err) {
+    if (err instanceof OtpAuthError) return next(err)
+    next(err)
+  }
+}
+
+// Auth Enhancement — forgot-password step 2. code + newPassword +
+// confirmPassword all arrive together (see otpAuthService.resetPassword's
+// own comment on why this is one call, not a separate token exchange).
+// Never auto-logs in — the frontend routes back to the login screen on
+// success, matching the brief's own flow diagram.
+export async function resetPassword(req, res, next) {
+  try {
+    const { identifier, code, newPassword, confirmPassword } = req.body
+    if (!identifier || !code || typeof newPassword !== 'string' || typeof confirmPassword !== 'string') {
+      return res.status(400).json({ message: 'identifier, code, newPassword, and confirmPassword are required.' })
+    }
+    await otpAuthService.resetPassword({ identifier, code, newPassword, confirmPassword })
+    res.json({ message: 'Password reset successful. You can now log in with your new password.' })
+  } catch (err) {
+    if (err instanceof OtpAuthError) return next(err)
+    next(err)
+  }
+}
+
 export async function logout(req, res) {
   const sessionToken = req.signedCookies?.[SESSION_COOKIE_NAME]
   if (sessionToken) {
