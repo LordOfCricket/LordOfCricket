@@ -1,31 +1,17 @@
+import { Link } from 'react-router-dom'
 import { ArrowRight, ShieldCheck } from 'lucide-react'
 import Input from '../../components/ui/Input.jsx'
 import { useAuthPage } from '../../hooks/useAuthPage.js'
 
-const MODE_COPY = {
-  login: {
-    eyebrow: 'Member Access',
-    heading: 'Welcome to LOC',
-    subtitle: 'Sign in with your email or phone number.',
-    cta: 'Send Code',
-  },
-  'register-player': {
-    eyebrow: 'Player Registration',
-    heading: 'Join as a Player',
-    subtitle: 'Enter your name and an email or phone number to create your player account.',
-    cta: 'Send Code',
-  },
-  'register-umpire': {
-    eyebrow: 'Umpire Registration',
-    heading: 'Join as an Umpire',
-    subtitle: 'Enter your name and an email or phone number to apply as an umpire.',
-    cta: 'Send Code',
-  },
+const COPY = {
+  eyebrow: 'Member Access',
+  heading: 'Welcome to LOC',
+  subtitle: 'Sign in with your email or phone number.',
 }
 
-// UI Correction — subtitles for login's sub-views. 'password' (the default
-// login view) uses MODE_COPY.login.subtitle above; these three only ever
-// render once the user has clicked into a sub-view of the SAME page.
+// New Signup Flow — subtitles for login's sub-views. 'password' (the
+// default view) uses COPY.subtitle above; these only ever render once the
+// user has clicked into a sub-view of this SAME page.
 const STEP_SUBTITLE = {
   'otp-request': 'Enter your email or phone number and we’ll send you a code.',
   'forgot-request': 'Enter your email or phone number and we’ll send you a reset code.',
@@ -34,14 +20,9 @@ const STEP_SUBTITLE = {
 
 export default function AuthPage() {
   const {
-    mode,
-    setMode,
-    isRegisterMode,
     step,
     identifier,
     setIdentifier,
-    name,
-    setName,
     code,
     setCode,
     password,
@@ -54,7 +35,6 @@ export default function AuthPage() {
     info,
     submitting,
     resendCooldown,
-    requestCode,
     verifyCode,
     resendCode,
     submitPassword,
@@ -68,30 +48,23 @@ export default function AuthPage() {
     backToLogin,
   } = useAuthPage()
 
-  const copy = MODE_COPY[mode]
-  const isDefaultLoginView = step === 'password' && !isRegisterMode
+  const isDefaultLoginView = step === 'password'
 
-  const subtitle = isRegisterMode
-    ? step === 'otp'
-      ? `Enter the 6-digit code sent to ${identifier}.`
-      : copy.subtitle
-    : step === 'password'
-      ? copy.subtitle
+  const subtitle =
+    step === 'password'
+      ? COPY.subtitle
       : step === 'otp-verify'
         ? `Enter the 6-digit code sent to ${identifier}.`
-        : STEP_SUBTITLE[step] || copy.subtitle
+        : STEP_SUBTITLE[step] || COPY.subtitle
 
-  const onSubmit = isRegisterMode
-    ? step === 'identifier'
-      ? requestCode
-      : verifyCode
-    : {
-        password: submitPassword,
-        'otp-request': requestOtpCode,
-        'otp-verify': verifyCode,
-        'forgot-request': requestPasswordReset,
-        'forgot-reset': submitPasswordReset,
-      }[step] || ((e) => e.preventDefault())
+  const onSubmit =
+    {
+      password: submitPassword,
+      'otp-request': requestOtpCode,
+      'otp-verify': verifyCode,
+      'forgot-request': requestPasswordReset,
+      'forgot-reset': submitPasswordReset,
+    }[step] || ((e) => e.preventDefault())
 
   return (
     <main
@@ -110,17 +83,11 @@ export default function AuthPage() {
       <section className="mx-auto flex min-h-screen max-w-7xl items-center px-8 lg:px-16">
         <div className="w-full max-w-2xl">
           <span className="font-loc-display text-xs font-bold tracking-[0.3em] text-loc-gold uppercase sm:text-sm">
-            {copy.eyebrow}
+            {COPY.eyebrow}
           </span>
 
           <h1 className="mt-4 font-loc-display text-5xl leading-[0.95] font-extrabold tracking-tight text-loc-warmwhite uppercase sm:text-6xl">
-            {mode === 'login' ? (
-              <>
-                Welcome <span className="text-loc-gold">Back</span>
-              </>
-            ) : (
-              copy.heading
-            )}
+            Welcome <span className="text-loc-gold">Back</span>
           </h1>
 
           <p className="mt-5 max-w-xl text-lg text-loc-text2-dark">{subtitle}</p>
@@ -130,37 +97,7 @@ export default function AuthPage() {
             className="mt-10 rounded-[32px] border border-white/10 bg-loc-dark/60 p-10 shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-2xl"
           >
             <div className="space-y-7">
-              {/* --- Registration: name + identifier (unchanged, own flow) --- */}
-              {isRegisterMode && step === 'identifier' && (
-                <>
-                  <Input label="Full Name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoFocus required />
-                  <Input
-                    label="Email or Phone Number"
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="you@example.com or +91XXXXXXXXXX"
-                    required
-                  />
-                </>
-              )}
-
-              {/* --- Registration: OTP verification (unchanged, own flow) --- */}
-              {isRegisterMode && step === 'otp' && (
-                <Input
-                  label="6-Digit Code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  autoFocus
-                  required
-                />
-              )}
-
-              {/* --- Login default view: identifier + password together --- */}
+              {/* --- Default view: identifier + password together --- */}
               {isDefaultLoginView && (
                 <>
                   <Input
@@ -192,8 +129,8 @@ export default function AuthPage() {
                 </>
               )}
 
-              {/* --- Login: OTP request sub-view --- */}
-              {!isRegisterMode && step === 'otp-request' && (
+              {/* --- OTP request sub-view --- */}
+              {step === 'otp-request' && (
                 <Input
                   label="Email or Phone Number"
                   type="text"
@@ -205,8 +142,8 @@ export default function AuthPage() {
                 />
               )}
 
-              {/* --- Login: OTP verify sub-view --- */}
-              {!isRegisterMode && step === 'otp-verify' && (
+              {/* --- OTP verify sub-view --- */}
+              {step === 'otp-verify' && (
                 <Input
                   label="6-Digit Code"
                   type="text"
@@ -220,7 +157,7 @@ export default function AuthPage() {
                 />
               )}
 
-              {/* --- Login: forgot-password request sub-view --- */}
+              {/* --- Forgot-password request sub-view --- */}
               {step === 'forgot-request' && (
                 <Input
                   label="Email or Phone Number"
@@ -233,7 +170,7 @@ export default function AuthPage() {
                 />
               )}
 
-              {/* --- Login: forgot-password reset sub-view --- */}
+              {/* --- Forgot-password reset sub-view --- */}
               {step === 'forgot-reset' && (
                 <>
                   <Input
@@ -288,17 +225,15 @@ export default function AuthPage() {
                   'Please wait…'
                 ) : (
                   <>
-                    {isRegisterMode
-                      ? step === 'identifier'
-                        ? copy.cta
-                        : 'Verify & Sign In'
-                      : {
-                          password: 'Login',
-                          'otp-request': 'Send OTP',
-                          'otp-verify': 'Verify OTP',
-                          'forgot-request': 'Send OTP',
-                          'forgot-reset': 'Reset Password',
-                        }[step]}
+                    {
+                      {
+                        password: 'Login',
+                        'otp-request': 'Send OTP',
+                        'otp-verify': 'Verify OTP',
+                        'forgot-request': 'Send OTP',
+                        'forgot-reset': 'Reset Password',
+                      }[step]
+                    }
                     <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                   </>
                 )}
@@ -316,7 +251,7 @@ export default function AuthPage() {
                 </button>
               )}
 
-              {/* --- The unified login page's "OR / Login with OTP" divider — default view only --- */}
+              {/* --- "OR / Login with OTP" divider — default view only --- */}
               {isDefaultLoginView && (
                 <>
                   <div className="flex items-center gap-4">
@@ -335,7 +270,7 @@ export default function AuthPage() {
                 </>
               )}
 
-              {/* --- Back links for every sub-view of the login page --- */}
+              {/* --- Back links for every sub-view --- */}
               {(step === 'otp-request' || step === 'otp-verify') && (
                 <button
                   type="button"
@@ -355,24 +290,12 @@ export default function AuthPage() {
                 </button>
               )}
 
-              {/* --- Registration entry points — visible on the default login view and the registration identifier step --- */}
-              {(isDefaultLoginView || (isRegisterMode && step === 'identifier')) && (
+              {/* --- Registration entry point — default view only --- */}
+              {isDefaultLoginView && (
                 <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-loc-text2-dark">
-                  {mode !== 'login' && (
-                    <button type="button" onClick={() => setMode('login')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
-                      Already have an account? Sign in
-                    </button>
-                  )}
-                  {mode !== 'register-player' && (
-                    <button type="button" onClick={() => setMode('register-player')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
-                      {mode === 'login' ? "Don't have an account? Register as a Player" : 'Register as a Player'}
-                    </button>
-                  )}
-                  {mode !== 'register-umpire' && (
-                    <button type="button" onClick={() => setMode('register-umpire')} className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
-                      Register as an Umpire
-                    </button>
-                  )}
+                  <Link to="/signup" className="underline-offset-4 hover:text-loc-warmwhite hover:underline">
+                    Don't have an account? Register
+                  </Link>
                 </div>
               )}
 

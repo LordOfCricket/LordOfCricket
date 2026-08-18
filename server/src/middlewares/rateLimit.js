@@ -148,3 +148,14 @@ export const stepUpLimiter = makeLimiter({
   message: 'Too many step-up attempts. Please try again later.',
   keyGenerator: byUserId,
 })
+
+// New Signup Flow — POST /auth/signup/create-account. send-code/verify-code
+// reuse otpRequestLimiter/otpVerifyLimiter directly (same shape of action
+// those already protect); this is the one genuinely new endpoint shape —
+// a rare, heavy, one-per-real-signup action, same tightness as
+// groundWriteLimiter above for the identical reason.
+export const accountCreationLimiter = makeLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  message: 'Too many account creation attempts. Please try again shortly.',
+})

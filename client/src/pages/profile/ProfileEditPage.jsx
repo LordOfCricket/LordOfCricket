@@ -1,72 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import Input from '../../components/ui/Input.jsx'
 import Button from '../../components/ui/Button.jsx'
-import Avatar from '../../components/ui/Avatar.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
-import { PLAYING_ROLE_LABELS, BATTING_STYLE_LABELS, BOWLING_STYLE_LABELS } from '../../models/player.model.js'
+import RadioCardGroup from '../../components/ui/RadioCardGroup.jsx'
+import PlayerPhotoField from '../../components/player/PlayerPhotoField.jsx'
+import BowlingStyleField from '../../components/player/BowlingStyleField.jsx'
+import { PLAYING_ROLE_LABELS, BATTING_STYLE_LABELS } from '../../models/player.model.js'
 
-const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024
+const BIO_MAX_LENGTH = 280
+const BATTING_OPTIONS = Object.entries(BATTING_STYLE_LABELS).map(([value, label]) => ({ value, label }))
+const WICKETKEEPER_OPTIONS = [
+  { value: 'YES', label: 'Yes' },
+  { value: 'NO', label: 'No' },
+]
 
-function PhotoPicker({ name, photoUrl, onUpload }) {
-  const inputRef = useRef(null)
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleFile = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = '' // lets picking the same file twice re-fire onChange
-    if (!file) return
-
-    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
-      setError('Only JPEG, PNG, or WEBP images are allowed.')
-      return
-    }
-    if (file.size > MAX_PHOTO_BYTES) {
-      setError('Image must be 10MB or smaller.')
-      return
-    }
-
-    setError('')
-    setUploading(true)
-    try {
-      await onUpload(file)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Upload failed. Try a different photo.')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-4">
-      <Avatar name={name} photoUrl={photoUrl} size="lg" />
-      <div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ALLOWED_PHOTO_TYPES.join(',')}
-          onChange={handleFile}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:opacity-50"
-        >
-          <Camera className="h-4 w-4" />
-          {uploading ? 'Uploading…' : 'Choose Photo'}
-        </button>
-        <p className="mt-1.5 text-xs text-slate-400">JPEG, PNG, or WEBP. Up to 10MB.</p>
-        {error && <p className="mt-1.5 text-xs text-rose-300">{error}</p>}
-      </div>
-    </div>
-  )
-}
+// First-Login Player Profile Onboarding — the progressive bowling picker
+// (BowlingStyleField) and photo field with Remove (PlayerPhotoField) now
+// live in components/player/ and are shared with the onboarding page; this
+// file no longer keeps its own PhotoPicker/flat bowling-style Select, so
+// there is exactly one implementation of each, not two that could drift.
 
 function Select({ label, value, onChange, options }) {
   return (
@@ -116,6 +70,12 @@ export default function ProfileEditPage() {
       city: player?.city ?? '',
       bio: player?.bio ?? '',
       photo_url: player?.photo_url ?? '',
+      nickname: player?.nickname ?? '',
+      date_of_birth: player?.date_of_birth ?? '',
+      is_wicket_keeper: player?.is_wicket_keeper ?? false,
+      address_line: player?.address_line ?? '',
+      state: player?.state ?? '',
+      postal_code: player?.postal_code ?? '',
     })
   }
 
@@ -132,6 +92,11 @@ export default function ProfileEditPage() {
     set('photo_url')(updated.photo_url)
   }
 
+  const handlePhotoRemove = async () => {
+    const updated = await savePlayer({ photo_url: null })
+    set('photo_url')(updated.photo_url)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -145,6 +110,12 @@ export default function ProfileEditPage() {
         jersey_number: form.jersey_number === '' ? null : Number(form.jersey_number),
         city: form.city.trim() || null,
         bio: form.bio.trim() || null,
+        nickname: form.nickname.trim() || null,
+        date_of_birth: form.date_of_birth || null,
+        is_wicket_keeper: form.is_wicket_keeper,
+        address_line: form.address_line.trim() || null,
+        state: form.state.trim() || null,
+        postal_code: form.postal_code.trim() || null,
       })
       navigate('/profile')
     } catch (err) {
@@ -171,10 +142,10 @@ export default function ProfileEditPage() {
           {error && <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-5 py-4 text-sm text-rose-300">{error}</div>}
 
           <Input label="Display Name" value={form.name} onChange={(e) => set('name')(e.target.value)} maxLength={100} required />
+          <Input label="Alias / Nickname" value={form.nickname} onChange={(e) => set('nickname')(e.target.value)} maxLength={50} placeholder="e.g. The Finisher" />
 
-          <div>
-            <span className="mb-3 block text-sm font-semibold tracking-wide text-slate-200">Profile Photo</span>
-            <PhotoPicker name={form.name} photoUrl={form.photo_url} onUpload={handlePhotoUpload} />
+          <div className="flex justify-center">
+            <PlayerPhotoField name={form.name} photoUrl={form.photo_url} onUpload={handlePhotoUpload} onRemove={handlePhotoRemove} />
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
@@ -190,22 +161,43 @@ export default function ProfileEditPage() {
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <Select label="Batting Style" value={form.batting_style} onChange={set('batting_style')} options={BATTING_STYLE_LABELS} />
-            <Select label="Bowling Style" value={form.bowling_style} onChange={set('bowling_style')} options={BOWLING_STYLE_LABELS} />
+            <Input label="City" value={form.city} onChange={(e) => set('city')(e.target.value)} maxLength={100} />
+            <Input label="Date of Birth" type="date" value={form.date_of_birth} onChange={(e) => set('date_of_birth')(e.target.value)} />
           </div>
-
-          <Input label="City" value={form.city} onChange={(e) => set('city')(e.target.value)} maxLength={100} />
 
           <label className="block">
             <span className="mb-3 block text-sm font-semibold tracking-wide text-slate-200">Short Bio</span>
             <textarea
               value={form.bio}
-              onChange={(e) => set('bio')(e.target.value)}
-              maxLength={280}
+              onChange={(e) => set('bio')(e.target.value.slice(0, BIO_MAX_LENGTH))}
+              maxLength={BIO_MAX_LENGTH}
               rows={3}
               className="w-full rounded-2xl border border-white/15 bg-white/5 px-5 py-4 text-base text-white outline-none backdrop-blur-md transition-all duration-300 focus:border-green-400 focus:bg-white/10 focus:ring-4 focus:ring-green-500/20"
             />
+            <p className="mt-1.5 text-right text-xs text-slate-400">
+              {form.bio.length}/{BIO_MAX_LENGTH}
+            </p>
           </label>
+
+          <div className="space-y-6 border-t border-white/10 pt-6">
+            <RadioCardGroup label="Batting Style" name="battingStyle" options={BATTING_OPTIONS} value={form.batting_style} onChange={set('batting_style')} />
+            <BowlingStyleField value={form.bowling_style} onChange={set('bowling_style')} />
+            <RadioCardGroup
+              label="Are you a Wicketkeeper?"
+              name="isWicketKeeper"
+              options={WICKETKEEPER_OPTIONS}
+              value={form.is_wicket_keeper ? 'YES' : 'NO'}
+              onChange={(v) => set('is_wicket_keeper')(v === 'YES')}
+            />
+          </div>
+
+          <div className="space-y-6 border-t border-white/10 pt-6">
+            <Input label="Address Line" value={form.address_line} onChange={(e) => set('address_line')(e.target.value)} maxLength={255} />
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Input label="State" value={form.state} onChange={(e) => set('state')(e.target.value)} maxLength={100} />
+              <Input label="Pincode" value={form.postal_code} onChange={(e) => set('postal_code')(e.target.value)} maxLength={20} />
+            </div>
+          </div>
 
           <div className="flex gap-3">
             <Button type="submit" disabled={saving} className="h-12 px-6">

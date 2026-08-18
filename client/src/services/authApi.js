@@ -19,22 +19,29 @@ export async function logout() {
   return response.data
 }
 
-// Phase 4 — Player/Umpire self-registration. Both complete via the SAME
-// verifyOtp above (the verified code's purpose tells the backend which kind
-// of account to create) — these only request the code.
-export async function registerPlayer(name, identifier) {
-  const response = await api.post('/auth/register/player', { name, identifier })
-  return response.data
-}
-
-export async function registerUmpire(name, identifier) {
-  const response = await api.post('/auth/register/umpire', { name, identifier })
-  return response.data
-}
-
 // Phase 8 — the legacy email+password `signup`/`login` wrappers were
 // removed here along with the backend routes that backed them (see
 // docs/AUTH.md's "Legacy JWT" section) — zero reachable UI callers existed.
+
+// New Signup Flow — replaces the old registerPlayer/registerUmpire wrappers
+// (removed here; the backend routes they called are kept but no longer
+// have a frontend caller — see docs/AUTH.md). One send/verify pair reused
+// for both email and phone: the backend auto-detects identifier type, same
+// as every other identifier-driven auth call in this file.
+export async function sendSignupCode(identifier) {
+  const response = await api.post('/auth/signup/send-code', { identifier })
+  return response.data
+}
+
+export async function verifySignupCode(identifier, code) {
+  const response = await api.post('/auth/signup/verify-code', { identifier, code })
+  return response.data
+}
+
+export async function createAccount(fields) {
+  const response = await api.post('/auth/signup/create-account', fields)
+  return response.data.user
+}
 
 // Auth Enhancement — the second credential type for the SAME unified login
 // entry point above, not a second auth flow. Same no-token-to-manage shape

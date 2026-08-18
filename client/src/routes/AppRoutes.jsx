@@ -41,9 +41,11 @@ const MfaVerifyPage = lazy(() => import('../pages/security/MfaVerifyPage.jsx'))
 
 // Site-wide auth
 const AuthPage = lazy(() => import('../pages/auth/AuthPage.jsx'))
+const SignupPage = lazy(() => import('../pages/auth/SignupPage.jsx'))
 const RoleSelectPage = lazy(() => import('../pages/role-select/RoleSelectPage.jsx'))
 const PlayerTypeSelectPage = lazy(() => import('../pages/player-type/PlayerTypeSelectPage.jsx'))
 const PlayerDashboardPage = lazy(() => import('../pages/player-dashboard/PlayerDashboardPage.jsx'))
+const PlayerOnboardingPage = lazy(() => import('../pages/player-onboarding/PlayerOnboardingPage.jsx'))
 const ProfilePage = lazy(() => import('../pages/profile/ProfilePage.jsx'))
 const ProfileEditPage = lazy(() => import('../pages/profile/ProfileEditPage.jsx'))
 const UmpireStatusPage = lazy(() => import('../pages/umpire/UmpireStatusPage.jsx'))
@@ -147,9 +149,20 @@ const router = createBrowserRouter([
 
       // Auth
       { path: '/login', element: withSuspense(<AuthPage />) },
+      // New Signup Flow — its own dedicated route/page (not a `?mode=` of
+      // /login like the old, much smaller register form was): this form is
+      // genuinely bigger (name×3, account-type radio, dual email+phone
+      // verification, password+confirm), and account type is now chosen
+      // via radio button ON this page, not by which link the user clicked
+      // on /login — one destination serves both Player and Umpire signup.
+      { path: '/signup', element: withSuspense(<SignupPage />) },
       { path: '/role-select', element: <RequireAuth>{withSuspense(<RoleSelectPage />)}</RequireAuth> },
       { path: '/player-type', element: <RequireAuth>{withSuspense(<PlayerTypeSelectPage />)}</RequireAuth> },
       { path: '/player/dashboard', element: <RequireAuth>{withSuspense(<PlayerDashboardPage />)}</RequireAuth> },
+      // First-Login Player Profile Onboarding — Player-only (the page itself
+      // redirects an Umpire/other role to '/'); reached via
+      // getPostLoginPath, not a role-select-style mandatory step guard.
+      { path: '/player/onboarding', element: <RequireAuth>{withSuspense(<PlayerOnboardingPage />)}</RequireAuth> },
       { path: '/profile', element: <RequireAuth>{withSuspense(<ProfilePage />)}</RequireAuth> },
       { path: '/profile/edit', element: <RequireAuth>{withSuspense(<ProfileEditPage />)}</RequireAuth> },
       { path: '/umpire', element: <RequireAuth>{withSuspense(<UmpireStatusPage />)}</RequireAuth> },

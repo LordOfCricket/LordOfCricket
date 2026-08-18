@@ -20,12 +20,27 @@ test('getPostLoginPath: a player without player_type (mandatory step not yet don
 // homepage regardless of role — not a role-specific dashboard, and no
 // longer a delegate to getPostAuthPath (that function is untouched, still
 // used directly by route guards — see the test below).
-test('getPostLoginPath: a fully set-up team player lands on the homepage', () => {
-  assert.equal(getPostLoginPath({ role: 'player', player_type: 'team_player' }), '/')
+test('getPostLoginPath: a fully set-up team player with onboarding completed lands on the homepage', () => {
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'team_player', player_onboarding_completed: true }), '/')
 })
 
 test('getPostLoginPath: a fully set-up approved umpire lands on the homepage, never /umpire directly', () => {
   assert.equal(getPostLoginPath({ role: 'player', player_type: 'umpire' }), '/')
+})
+
+// First-Login Player Profile Onboarding
+test('getPostLoginPath: a Player whose onboarding is not completed goes to /player/onboarding', () => {
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'team_player', player_onboarding_completed: false }), '/player/onboarding')
+})
+
+test('getPostLoginPath: a Player with no players row yet (player_onboarding_completed is null/undefined) also goes to /player/onboarding — never inferred as complete by default', () => {
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'team_player', player_onboarding_completed: null }), '/player/onboarding')
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'team_player' }), '/player/onboarding')
+})
+
+test('getPostLoginPath: an Umpire never gets Player onboarding, even with player_onboarding_completed false/missing', () => {
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'umpire', player_onboarding_completed: false }), '/')
+  assert.equal(getPostLoginPath({ role: 'player', player_type: 'umpire', player_onboarding_completed: null }), '/')
 })
 
 test('getPostLoginPath: staff, any sub-role including super_admin, lands on the homepage (MFA is not a login-time gate)', () => {

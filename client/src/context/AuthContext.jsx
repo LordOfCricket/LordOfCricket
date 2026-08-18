@@ -70,18 +70,6 @@ export function AuthProvider({ children }) {
     return authApi.sendOtp(identifier)
   }
 
-  // Phase 4 — Player/Umpire self-registration. Only requests the code;
-  // verifyOtp below (unchanged) completes it, since the backend's single
-  // /auth/verify-otp endpoint creates the right kind of account based on
-  // the verified code's purpose, not on anything the client tracks.
-  const registerPlayerOtp = async (name, identifier) => {
-    return authApi.registerPlayer(name, identifier)
-  }
-
-  const registerUmpireOtp = async (name, identifier) => {
-    return authApi.registerUmpire(name, identifier)
-  }
-
   const verifyOtp = async (identifier, code) => {
     const verifiedUser = await authApi.verifyOtp(identifier, code)
     setUser(verifiedUser)
@@ -121,6 +109,22 @@ export function AuthProvider({ children }) {
 
   const resetPassword = async (identifier, code, newPassword, confirmPassword) => {
     return authApi.resetPassword(identifier, code, newPassword, confirmPassword)
+  }
+
+  // New Signup Flow — none of these three authenticate on their own (no
+  // session is created until the user logs in fresh afterward, matching
+  // resetPassword's identical no-auto-login shape above) — nothing here
+  // touches `user`/`status`.
+  const sendSignupCode = async (identifier) => {
+    return authApi.sendSignupCode(identifier)
+  }
+
+  const verifySignupCode = async (identifier, code) => {
+    return authApi.verifySignupCode(identifier, code)
+  }
+
+  const createAccount = async (fields) => {
+    return authApi.createAccount(fields)
   }
 
   // Revokes the server-side session. Clears local state unconditionally
@@ -197,11 +201,12 @@ export function AuthProvider({ children }) {
     uploadPlayerPhoto,
     requestOtp,
     verifyOtp,
-    registerPlayerOtp,
-    registerUmpireOtp,
     loginWithPassword,
     forgotPassword,
     resetPassword,
+    sendSignupCode,
+    verifySignupCode,
+    createAccount,
     refreshMfaStatus,
     verifyMfa,
     startStepUp,

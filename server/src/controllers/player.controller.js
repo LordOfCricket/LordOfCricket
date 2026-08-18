@@ -4,7 +4,39 @@ import { uploadImageFileDetailed } from '../utils/cloudinaryUpload.js'
 
 const PLAYER_PHOTO_CLOUDINARY_FOLDER = 'LOC/player-photos'
 
-const EDITABLE_FIELDS = ['name', 'jersey_number', 'role', 'batting_style', 'bowling_style', 'city', 'bio', 'photo_url']
+// First-Login Player Profile Onboarding — this same allowlist/validator
+// backs both the onboarding form's Save/Skip and the existing Edit Profile
+// page's Save (one API, no duplicate profile-write path). nickname/
+// date_of_birth/is_wicket_keeper/address_line/state/postal_code are the
+// only genuinely new fields; jersey_number/city/bio keep their existing
+// validation exactly (0-999, 100 chars, 280 chars) rather than narrowing to
+// this feature's own suggested defaults, since this codebase already has an
+// established rule for each. profile_onboarding_completed is the explicit
+// "onboarding has been handled" signal — settable here (by Save AND Skip)
+// like any other field, never inferred from what else is filled in.
+const EDITABLE_FIELDS = [
+  'name',
+  'jersey_number',
+  'role',
+  'batting_style',
+  'bowling_style',
+  'city',
+  'bio',
+  'photo_url',
+  'nickname',
+  'date_of_birth',
+  'is_wicket_keeper',
+  'address_line',
+  'state',
+  'postal_code',
+  'profile_onboarding_completed',
+]
+
+const MIN_BIRTH_YEAR = 1900
+
+function isValidDateOnlyString(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(value).getTime())
+}
 
 function validateFields(body) {
   const fields = {}
@@ -40,6 +72,35 @@ function validateFields(body) {
   }
   if (body.photo_url !== undefined) {
     fields.photo_url = body.photo_url === null ? null : String(body.photo_url).trim()
+  }
+  if (body.nickname !== undefined) {
+    fields.nickname = body.nickname === null ? null : String(body.nickname).trim().slice(0, 50)
+  }
+  if (body.date_of_birth !== undefined) {
+    if (body.date_of_birth !== null) {
+      if (!isValidDateOnlyString(body.date_of_birth)) return { error: 'date_of_birth must be a valid date (YYYY-MM-DD).' }
+      const dob = new Date(body.date_of_birth)
+      if (dob.getTime() > Date.now()) return { error: 'date_of_birth cannot be in the future.' }
+      if (dob.getUTCFullYear() < MIN_BIRTH_YEAR) return { error: `date_of_birth must be after ${MIN_BIRTH_YEAR}.` }
+    }
+    fields.date_of_birth = body.date_of_birth
+  }
+  if (body.is_wicket_keeper !== undefined) {
+    if (typeof body.is_wicket_keeper !== 'boolean') return { error: 'is_wicket_keeper must be true or false.' }
+    fields.is_wicket_keeper = body.is_wicket_keeper
+  }
+  if (body.address_line !== undefined) {
+    fields.address_line = body.address_line === null ? null : String(body.address_line).trim().slice(0, 255)
+  }
+  if (body.state !== undefined) {
+    fields.state = body.state === null ? null : String(body.state).trim().slice(0, 100)
+  }
+  if (body.postal_code !== undefined) {
+    fields.postal_code = body.postal_code === null ? null : String(body.postal_code).trim().slice(0, 20)
+  }
+  if (body.profile_onboarding_completed !== undefined) {
+    if (typeof body.profile_onboarding_completed !== 'boolean') return { error: 'profile_onboarding_completed must be true or false.' }
+    fields.profile_onboarding_completed = body.profile_onboarding_completed
   }
 
   return { fields }

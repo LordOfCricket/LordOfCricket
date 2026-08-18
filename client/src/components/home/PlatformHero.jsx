@@ -105,7 +105,11 @@ export default function PlatformHero() {
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
               </Link>
             ) : (
-              <Link to="/login" className={CTA_CLASSNAME}>
+              // New Signup Flow — was /login before that route existed;
+              // "Join LOC" now goes straight to the dedicated signup page
+              // rather than making a new visitor click through a login form
+              // first (Sign In is still one click away from there).
+              <Link to="/signup" className={CTA_CLASSNAME}>
                 Join LOC
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
               </Link>

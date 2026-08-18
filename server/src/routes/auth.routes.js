@@ -12,12 +12,14 @@ import {
   forgotPassword,
   resetPassword,
 } from '../controllers/auth.controller.js'
+import { sendCode as signupSendCode, verifyCode as signupVerifyCode, createAccount } from '../controllers/signup.controller.js'
 import { requireAuth } from '../middlewares/auth.js'
 import {
   otpRequestLimiter,
   otpVerifyLimiter,
   passwordLoginLimiter,
   passwordLoginIdentifierLimiter,
+  accountCreationLimiter,
 } from '../middlewares/rateLimit.js'
 
 const router = Router()
@@ -52,6 +54,16 @@ router.post('/login-password', passwordLoginLimiter, passwordLoginIdentifierLimi
 // login/registration.
 router.post('/forgot-password', otpRequestLimiter, forgotPassword)
 router.post('/reset-password', otpVerifyLimiter, resetPassword)
+
+// New Signup Flow — collects + verifies BOTH email and phone before a
+// single account-creation call (unlike /register/player|umpire above,
+// which verify exactly one identifier and create the account as part of
+// that same verification). send-code/verify-code reuse otpRequestLimiter/
+// otpVerifyLimiter directly since requesting/submitting a code is the same
+// shape of action those already protect.
+router.post('/signup/send-code', otpRequestLimiter, signupSendCode)
+router.post('/signup/verify-code', otpVerifyLimiter, signupVerifyCode)
+router.post('/signup/create-account', accountCreationLimiter, createAccount)
 
 router.get('/me', requireAuth, me)
 router.patch('/role', requireAuth, selectRole)

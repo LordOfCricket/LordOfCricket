@@ -10,8 +10,15 @@ import { pool } from '../config/db.js'
 // session-cookie path) converging on this same function is what guarantees
 // req.user has an identical shape regardless of which one authenticated
 // the request.
-const PUBLIC_COLUMNS = 'u.id, u.name, u.email, u.phone, u.role, u.player_type, u.staff_id, u.status, u.created_at, sr.name AS staff_role'
-const FROM_USERS = 'users u LEFT JOIN staff_roles sr ON sr.id = u.staff_role_id'
+// First-Login Player Profile Onboarding — `player_onboarding_completed` is
+// resolved via the same LEFT JOIN pattern as staff_role above (NULL when no
+// players row exists yet, e.g. an Umpire or a Player who hasn't touched
+// their profile). getPostLoginPath (client) treats NULL the same as
+// false — "not completed" — never inferred from which fields are filled,
+// just this one column on the players row.
+const PUBLIC_COLUMNS =
+  'u.id, u.name, u.email, u.phone, u.role, u.player_type, u.staff_id, u.status, u.created_at, sr.name AS staff_role, p.profile_onboarding_completed AS player_onboarding_completed'
+const FROM_USERS = 'users u LEFT JOIN staff_roles sr ON sr.id = u.staff_role_id LEFT JOIN players p ON p.user_id = u.id'
 
 export async function createUser({ name, email, passwordHash, role = 'user' }) {
   const { rows } = await pool.query(
@@ -53,7 +60,7 @@ export async function findUserById(id, client = pool) {
 
 export async function findUserByEmail(email, client = pool) {
   const { rows } = await client.query(
-    `SELECT u.*, sr.name AS staff_role FROM ${FROM_USERS} WHERE u.email = $1`,
+    `SELECT u.*, sr.name AS staff_role, p.profile_onboarding_completed AS player_onboarding_completed FROM ${FROM_USERS} WHERE u.email = $1`,
     [email]
   )
   return rows[0] || null
@@ -61,7 +68,7 @@ export async function findUserByEmail(email, client = pool) {
 
 export async function findUserByPhone(phone, client = pool) {
   const { rows } = await client.query(
-    `SELECT u.*, sr.name AS staff_role FROM ${FROM_USERS} WHERE u.phone = $1`,
+    `SELECT u.*, sr.name AS staff_role, p.profile_onboarding_completed AS player_onboarding_completed FROM ${FROM_USERS} WHERE u.phone = $1`,
     [phone]
   )
   return rows[0] || null
@@ -89,6 +96,25 @@ export async function createUserFromOtp({ identifier, identifierType, name, role
      VALUES ($1, $2, $3, NULL, $4, $5, $6)
      RETURNING id`,
     [name, emailValue, phoneValue, role, playerType, staffRoleId]
+  )
+  return findUserById(rows[0].id, client)
+}
+
+// New Signup Flow — the one case createUserFromOtp doesn't cover: an
+// account created with BOTH email and phone already verified, plus a real
+// password, in one shot (createUserFromOtp only ever takes ONE identifier,
+// by design, for the find-or-create OTP-login path this table already
+// serves — this is additive, not a replacement). role/playerType are
+// already resolved by the caller (services/signup.service.js maps the
+// form's Player/Umpire radio button to these exact existing values, same
+// mapping requestRegistrationOtp's REGISTER_PLAYER/REGISTER_UMPIRE purposes
+// already use) — never invented here.
+export async function createUserFromSignup({ name, email, phone, passwordHash, role, playerType = null }, client = pool) {
+  const { rows } = await client.query(
+    `INSERT INTO users (name, email, phone, password_hash, role, player_type)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [name, email, phone, passwordHash, role, playerType]
   )
   return findUserById(rows[0].id, client)
 }

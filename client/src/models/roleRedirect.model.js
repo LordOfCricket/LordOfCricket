@@ -42,9 +42,17 @@ export function getPostAuthPath(user) {
 // previous "delegate to getPostAuthPath" version had incidentally moved
 // away from as a side effect of using getPostAuthPath's own
 // dashboard-specific destinations.
+// First-Login Player Profile Onboarding — only inserted for the actual
+// Player account type (player_type === 'team_player'); an Umpire
+// (player_type === 'umpire') falls straight through to '/' exactly as
+// before, this form is Player-only. `player_onboarding_completed` comes
+// from user.model.js's players LEFT JOIN (see PUBLIC_COLUMNS) — NULL (no
+// players row yet) and false are treated identically as "not completed",
+// never inferred from anything else about the account.
 export function getPostLoginPath(user) {
   if (!user) return '/login'
   if (user.role === 'user') return '/role-select'
   if (user.role === 'player' && !user.player_type) return '/player-type'
+  if (user.role === 'player' && user.player_type === 'team_player' && !user.player_onboarding_completed) return '/player/onboarding'
   return '/'
 }

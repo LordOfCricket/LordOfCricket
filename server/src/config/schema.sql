@@ -112,6 +112,24 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS city VARCHAR(100);
 ALTER TABLE players ADD COLUMN IF NOT EXISTS bio VARCHAR(280);
 
+-- First-Login Player Profile Onboarding — same self-service players row,
+-- not a new table. `nickname` and `date_of_birth` are new personal-info
+-- fields; `is_wicket_keeper` is a real boolean (not folded into the
+-- existing `role` playing-role enum, which stays untouched and unrelated
+-- to this form). `address_line`/`state`/`postal_code` follow the exact
+-- naming already used for grounds/ground_owner_requests addresses in this
+-- file — `city` is NOT duplicated here, the existing column above is
+-- reused. `profile_onboarding_completed` is the explicit, single source of
+-- truth for "has this player already been shown (and handled) onboarding"
+-- — deliberately NOT inferred from whether optional fields are filled.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS nickname VARCHAR(50);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS is_wicket_keeper BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS address_line VARCHAR(255);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS postal_code VARCHAR(20);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- ============================================================================
 -- PHASE 3 — Authoritative scoring domain (innings / deliveries / events)
 -- ============================================================================
@@ -1895,16 +1913,19 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 -- collects `name` before the identifier is verified) — additive only, the 2
 -- existing rows from Phase 3 are untouched (metadata defaults NULL, purpose
 -- stays 'LOGIN').
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_purpose_check'
-  ) THEN
-    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
-  END IF;
-END $$;
-ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE'));
+--
+-- Bug found and fixed here (New Signup Flow task) — same class of bug as
+-- account_audit_log_event_type_check's own fix further down this file (see
+-- that comment for the full mechanism): this block's DROP+ADD used to
+-- re-narrow otp_codes_purpose_check to just these 3 values on every re-run
+-- of schema.sql, which silently broke the moment real 'PASSWORD_RESET' rows
+-- existed (Auth Enhancement task) — the ADD CONSTRAINT here would fail
+-- immediately against that live data, aborting migrate.js before it ever
+-- reached the later block(s) that re-widen correctly. Fixed by dropping the
+-- redundant intermediate DROP+ADD entirely; the widening further down this
+-- file already derives the fully correct, current constraint from scratch,
+-- so removing this one changes nothing about the final state on any
+-- database. metadata's own ADD COLUMN IF NOT EXISTS is unrelated and stays.
 ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS metadata JSONB;
 
 -- Ground Owner registration request — decoupled from `grounds`/`ground_users`
@@ -2184,12 +2205,27 @@ ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
     'SESSION_REVOKED_FOR_SECURITY_REASON'
   ));
 
--- Auth Enhancement — password login + forgot-password. Widens the two
--- existing CHECK constraints this feature needs a new value on, same
--- idempotent DROP-then-ADD pattern as every widening above (safe to re-run,
--- migration-safe, zero data loss — existing rows already satisfy a subset
--- of the widened list). otp_codes.purpose's own comment (see its CREATE
--- TABLE above) literally anticipated 'PASSWORD_RESET' as a future value.
+-- Auth Enhancement — password login + forgot-password. otp_codes.purpose's
+-- own comment (see its CREATE TABLE above) literally anticipated
+-- 'PASSWORD_RESET' as a future value.
+--
+-- The intermediate DROP+ADD that used to live here (widening only as far as
+-- 'PASSWORD_RESET') was removed for the same reason as the Phase-4 block
+-- above: re-running schema.sql after real 'SIGNUP_VERIFY' rows exist would
+-- fail here before ever reaching the block below that adds it. Only the
+-- final, complete widening (right below) is kept — same final state either
+-- way, one fewer place this can silently rot again the next time a purpose
+-- is added.
+--
+-- New Signup Flow — one new purpose, 'SIGNUP_VERIFY', used for BOTH the
+-- email-verification code and the phone-verification code the new signup
+-- form requests (disambiguated from each other by the row's own
+-- identifier+identifier_type, exactly like every other purpose already is —
+-- not by having two separate purpose strings). Deliberately role-agnostic
+-- (unlike REGISTER_PLAYER/REGISTER_UMPIRE above): this purpose only proves
+-- "this identifier belongs to whoever is filling out the form," account
+-- creation and role assignment happen later, together, in one
+-- POST /auth/signup/create-account call — see services/signup.service.js.
 DO $$
 BEGIN
   IF EXISTS (
@@ -2199,7 +2235,7 @@ BEGIN
     ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
   END IF;
 END $$;
-ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET'));
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET', 'SIGNUP_VERIFY'));
 
 DO $$
 BEGIN

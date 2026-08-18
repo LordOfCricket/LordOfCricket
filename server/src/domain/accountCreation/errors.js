@@ -13,6 +13,14 @@ export const ACCOUNT_CREATION_ERROR_CODES = Object.freeze({
   PERMISSION_KEY_INVALID: 'PERMISSION_KEY_INVALID',
   PERMISSION_ALREADY_GRANTED: 'PERMISSION_ALREADY_GRANTED',
   PERMISSION_NOT_GRANTED: 'PERMISSION_NOT_GRANTED',
+  // New Signup Flow — final account-creation guard. The frontend can only
+  // ever reach these by calling create-account directly without completing
+  // (or after losing) a verification the UI itself required first — the
+  // backend is the actual source of truth per the brief's explicit "a
+  // malicious user must not be able to bypass verification by directly
+  // calling the signup API" rule.
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  PHONE_NOT_VERIFIED: 'PHONE_NOT_VERIFIED',
 })
 
 export class AccountCreationError extends Error {
@@ -35,4 +43,6 @@ export const ACCOUNT_CREATION_ERROR_HTTP_STATUS = Object.freeze({
   [ACCOUNT_CREATION_ERROR_CODES.PERMISSION_KEY_INVALID]: 400,
   [ACCOUNT_CREATION_ERROR_CODES.PERMISSION_ALREADY_GRANTED]: 409,
   [ACCOUNT_CREATION_ERROR_CODES.PERMISSION_NOT_GRANTED]: 404,
+  [ACCOUNT_CREATION_ERROR_CODES.EMAIL_NOT_VERIFIED]: 400,
+  [ACCOUNT_CREATION_ERROR_CODES.PHONE_NOT_VERIFIED]: 400,
 })
