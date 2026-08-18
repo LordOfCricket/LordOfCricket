@@ -29,7 +29,11 @@ export function useGround(publicGroundId) {
     fetchGroundProfile(publicGroundId)
       .then((data) => {
         if (cancelled) return
-        setGround(data.ground ? { ...data.ground, photos: data.photos, amenities: data.amenities, canteens: data.canteens, gallery: data.gallery } : null)
+        setGround(
+          data.ground
+            ? { ...data.ground, photos: data.photos, amenities: data.amenities, amenityCatalog: data.amenityCatalog, canteens: data.canteens, gallery: data.gallery }
+            : null,
+        )
         setNotFound(false)
         setError(null)
       })

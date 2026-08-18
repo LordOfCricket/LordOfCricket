@@ -1,11 +1,16 @@
 import { pool } from '../config/db.js'
 import * as requestModel from '../models/groundOwnerRequest.model.js'
+import * as photoModel from '../models/groundRegistrationPhoto.model.js'
+import * as amenitySelectionModel from '../models/groundRegistrationAmenity.model.js'
+import * as amenityCatalogModel from '../models/amenityCatalog.model.js'
 import { createGround, findGroundBySlug } from '../models/ground.model.js'
 import { createMembership } from '../models/groundUser.model.js'
 import { findUserByIdentifier, createUserFromOtp } from '../models/user.model.js'
+import { insertMany as insertGroundPhotos } from '../models/groundPhoto.model.js'
+import { insertMany as insertGroundAmenities } from '../models/groundAmenity.model.js'
 import { recordEvent, ACCOUNT_AUDIT_EVENTS } from './accountAudit.service.js'
 import { consumeStepUpGrant } from './stepUp.service.js'
-import { requiredText, optionalText, validateEmail, validatePhone } from '../domain/accountCreation/validation.js'
+import { requiredText, optionalText, validateEmail, validatePhone, isValidHttpUrl } from '../domain/accountCreation/validation.js'
 import { AccountCreationError, ACCOUNT_CREATION_ERROR_CODES as CODES } from '../domain/accountCreation/errors.js'
 import { MfaError, MFA_ERROR_CODES } from '../domain/mfa/errors.js'
 import { generatePublicId } from '../utils/publicId.js'
@@ -14,6 +19,13 @@ import { logger } from '../utils/logger.js'
 
 const FIELD_LIMITS = { applicantName: 100, groundName: 150, groundDescription: 500, addressLine: 255, city: 100, state: 100, country: 100, postalCode: 20, groundPhone: 30, groundWebsite: 300, rejectionReason: 500, moreInfoNotes: 500 }
 
+// Ground Registration feature — exactly 6, matching the brief's slideshow
+// requirement. Gallery has a generous but real cap (mass-assignment/DoS
+// defense-in-depth — nothing about "optional extra photos" should mean
+// "unbounded").
+const REQUIRED_FEATURED_PHOTO_COUNT = 6
+const MAX_GALLERY_PHOTOS = 20
+
 function parseCoordinate(raw, min, max) {
   if (raw === undefined || raw === '' || raw === null) return { value: null }
   const value = Number(raw)
@@ -21,9 +33,46 @@ function parseCoordinate(raw, min, max) {
   return { value }
 }
 
-// Public, no-login submission — the applicant is identified by the fields
-// they type in, not a session (brief §3/§20: no login required to submit).
-export async function submitRequest(body = {}) {
+// Ground Registration feature — a "staged" photo is whatever
+// POST /ground-owner-requests/photos just returned (a real Cloudinary
+// upload, no DB row yet — see groundOwnerRequest.controller.js#uploadPhoto).
+// Never trust the client's url/publicId pairing beyond shape: they're
+// opaque strings copied verbatim into ground_registration_photos, not
+// re-derived from anything server-side, so a shape check (real http(s) URL,
+// non-empty id) is the only validation possible here — same trust boundary
+// isValidHttpUrl already draws for the legacy addGroundPhoto endpoint.
+function validatePhotoList(list, { exactCount, maxCount, label }) {
+  if (!Array.isArray(list)) return { error: `${label} must be a list of uploaded photos.` }
+  if (exactCount !== undefined && list.length !== exactCount) {
+    return { error: `Exactly ${exactCount} ${label} are required (received ${list.length}).` }
+  }
+  if (maxCount !== undefined && list.length > maxCount) {
+    return { error: `No more than ${maxCount} ${label} are allowed.` }
+  }
+  for (const photo of list) {
+    if (!photo || typeof photo !== 'object') return { error: `Each ${label} entry must be an uploaded photo.` }
+    if (!isValidHttpUrl(photo.url)) return { error: `One of the ${label} has an invalid image URL.` }
+    if (typeof photo.publicId !== 'string' || !photo.publicId.trim()) return { error: `One of the ${label} is missing its upload reference.` }
+  }
+  return { value: list }
+}
+
+async function validateAmenityKeys(rawKeys) {
+  if (rawKeys === undefined || rawKeys === null) return { value: [] }
+  if (!Array.isArray(rawKeys)) return { error: 'Amenities must be a list.' }
+  const keys = [...new Set(rawKeys.filter((k) => typeof k === 'string' && k.trim()).map((k) => k.trim()))]
+  if (keys.length === 0) return { value: [] }
+  const validKeys = await amenityCatalogModel.findActiveKeys(keys)
+  const invalid = keys.filter((k) => !validKeys.includes(k))
+  if (invalid.length > 0) return { error: `Unknown amenity selection: ${invalid.join(', ')}.` }
+  return { value: keys }
+}
+
+// Shared by submitRequest (new) and resubmitRequest (edit-in-place after
+// REJECTED/MORE_INFORMATION_REQUIRED) — the exact same rules apply to both;
+// a resubmission is not allowed to be validated any more leniently than an
+// original submission.
+async function validateSubmissionFields(body) {
   const applicantName = requiredText(body.applicantName, FIELD_LIMITS.applicantName)
   if (applicantName.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'Your name is required.')
 
@@ -46,8 +95,8 @@ export async function submitRequest(body = {}) {
   const groundPhone = requiredText(body.groundPhone, FIELD_LIMITS.groundPhone)
   if (groundPhone.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'A contact phone number for the ground is required.')
 
-  const groundDescription = optionalText(body.groundDescription, FIELD_LIMITS.groundDescription)
-  if (groundDescription.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'Description is too long.')
+  const groundDescription = requiredText(body.groundDescription, FIELD_LIMITS.groundDescription)
+  if (groundDescription.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'About the Ground is required.')
   const postalCode = optionalText(body.postalCode, FIELD_LIMITS.postalCode)
   if (postalCode.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'Postal code is too long.')
   const country = optionalText(body.country, FIELD_LIMITS.country)
@@ -62,9 +111,22 @@ export async function submitRequest(body = {}) {
   const longitude = parseCoordinate(body.longitude, -180, 180)
   if (longitude.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, 'Longitude must be a number between -180 and 180.')
 
-  const publicRequestId = generatePublicId('GOR', 8)
-  const request = await requestModel.createRequest({
-    publicRequestId,
+  // §16 — never trust a frontend `agreed = true` boolean without this
+  // exact server-side check. `=== true` (not truthy) so 'true'/1/'yes'
+  // from a malformed client never slips through.
+  if (body.agreedToTerms !== true) {
+    throw new AccountCreationError(CODES.VALIDATION_ERROR, 'You must agree to the LordOfCricket Terms & Conditions and Privacy Policy to submit.')
+  }
+
+  const featured = validatePhotoList(body.featuredPhotos, { exactCount: REQUIRED_FEATURED_PHOTO_COUNT, label: 'featured photos' })
+  if (featured.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, featured.error)
+  const gallery = validatePhotoList(body.galleryPhotos ?? [], { maxCount: MAX_GALLERY_PHOTOS, label: 'gallery photos' })
+  if (gallery.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, gallery.error)
+
+  const amenityKeysResult = await validateAmenityKeys(body.amenityKeys)
+  if (amenityKeysResult.error) throw new AccountCreationError(CODES.VALIDATION_ERROR, amenityKeysResult.error)
+
+  return {
     applicantName: applicantName.value,
     applicantEmail: applicantEmail.value,
     applicantPhone: applicantPhone.value,
@@ -80,14 +142,69 @@ export async function submitRequest(body = {}) {
     groundPhone: groundPhone.value,
     groundEmail: groundEmail.value,
     groundWebsite: groundWebsite.value,
-  })
+    featuredPhotos: featured.value,
+    galleryPhotos: gallery.value,
+    amenityKeys: amenityKeysResult.value,
+  }
+}
 
-  await recordEvent(ACCOUNT_AUDIT_EVENTS.GROUND_OWNER_REQUEST_SUBMITTED, {
-    targetRequestId: request.id,
-    metadata: { groundName: request.ground_name, publicRequestId },
-  })
+// `submittedByUserId` is passed explicitly by the caller (ground.controller.js
+// #registerGround, from req.user.id) — never derived from anything in
+// `body`, so a client can't claim someone else's account by supplying an
+// arbitrary id in the request payload (§29/§36).
+export async function submitRequest(body = {}, submittedByUserId = null) {
+  const fields = await validateSubmissionFields(body)
 
-  return request
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const publicRequestId = generatePublicId('GOR', 8)
+    const request = await requestModel.createRequest(
+      {
+        publicRequestId,
+        applicantName: fields.applicantName,
+        applicantEmail: fields.applicantEmail,
+        applicantPhone: fields.applicantPhone,
+        groundName: fields.groundName,
+        groundDescription: fields.groundDescription,
+        addressLine: fields.addressLine,
+        city: fields.city,
+        state: fields.state,
+        country: fields.country,
+        postalCode: fields.postalCode,
+        latitude: fields.latitude,
+        longitude: fields.longitude,
+        groundPhone: fields.groundPhone,
+        groundEmail: fields.groundEmail,
+        groundWebsite: fields.groundWebsite,
+        submittedByUserId,
+        termsAgreedAt: new Date(),
+      },
+      client,
+    )
+
+    const orderedPhotos = [
+      ...fields.featuredPhotos.map((p) => ({ ...p, isFeatured: true })),
+      ...fields.galleryPhotos.map((p) => ({ ...p, isFeatured: false })),
+    ]
+    await photoModel.insertMany(request.id, orderedPhotos, client)
+    await amenitySelectionModel.insertMany(request.id, fields.amenityKeys, client)
+
+    await recordEvent(
+      ACCOUNT_AUDIT_EVENTS.GROUND_OWNER_REQUEST_SUBMITTED,
+      { actorUserId: submittedByUserId, targetRequestId: request.id, metadata: { groundName: request.ground_name, publicRequestId } },
+      client,
+    )
+
+    await client.query('COMMIT')
+    return request
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 // Public status check — deliberately returns only the fields the brief's
@@ -105,8 +222,20 @@ export async function getPublicStatus(publicRequestId) {
   }
 }
 
+// Ground Registration feature — a super_admin needs to actually see the 6
+// featured photos/amenities before approving, not just the text fields
+// (§17/§26 both assume a real review, not a rubber stamp). N+1 per row is
+// acceptable at admin-review-queue scale (a handful to a few dozen pending
+// requests at a time), same cost tradeoff already accepted elsewhere in
+// this codebase's per-row correlated subqueries (ground.model.js).
 export async function listRequests(status) {
-  return requestModel.listByStatus(status || null)
+  const requests = await requestModel.listByStatus(status || null)
+  return Promise.all(
+    requests.map(async (request) => {
+      const [photos, amenityKeys] = await Promise.all([photoModel.findByRequestId(request.id), amenitySelectionModel.findKeysByRequestId(request.id)])
+      return { ...request, photos, amenityKeys }
+    }),
+  )
 }
 
 // Viewing the detail as super_admin is what "review started" means here —
@@ -203,6 +332,21 @@ export async function approveRequest(publicRequestId, actorUserId, sessionId) {
 
     await createMembership({ groundId: ground.id, userId: user.id, role: 'GROUND_OWNER', isActive: true }, client)
 
+    // Ground Registration feature — copy the request's staged photos/
+    // amenities into their real, ground-scoped counterparts now that a real
+    // ground_id exists. Mirrors exactly how the request's own name/address
+    // fields above just got copied into `ground` — the request-scoped rows
+    // stay in place afterward (CASCADE-deleted only if the request itself
+    // is ever deleted), they just stop being the live source once approved.
+    const registeredPhotos = await photoModel.findByRequestId(request.id, client)
+    await insertGroundPhotos(
+      ground.id,
+      registeredPhotos.map((p) => ({ imageUrl: p.image_url, cloudinaryPublicId: p.cloudinary_public_id, isFeatured: p.is_featured, sortOrder: p.sort_order })),
+      client,
+    )
+    const registeredAmenityKeys = await amenitySelectionModel.findKeysByRequestId(request.id, client)
+    await insertGroundAmenities(ground.id, registeredAmenityKeys, client)
+
     // Re-run the UPDATE now that we know the real ground id (the guard UPDATE
     // above intentionally didn't have it yet, so the eligibility check could
     // run before any other write happened).
@@ -253,4 +397,100 @@ export async function requestMoreInformation(publicRequestId, actorUserId, notes
 
   await recordEvent(ACCOUNT_AUDIT_EVENTS.GROUND_OWNER_MORE_INFO_REQUESTED, { actorUserId, targetRequestId: request.id, metadata: { notes: notesResult.value } })
   return request
+}
+
+// "My Ground Registrations" (§20/§21) — every request THIS user themselves
+// submitted, keyed by submitted_by_user_id, never applicant_email/phone
+// string matching (see schema.sql's comment on that column).
+export async function listMyRequests(userId) {
+  return requestModel.findByUserId(userId)
+}
+
+async function loadOwnedRequest(publicRequestId, userId) {
+  const request = await requestModel.findByPublicRequestId(publicRequestId)
+  if (!request) throw new AccountCreationError(CODES.REQUEST_NOT_FOUND, 'Request not found.')
+  // §29 — a Ground Owner must never read or act on another owner's
+  // registration, even by guessing/enumerating a valid-looking reference id.
+  if (request.submitted_by_user_id !== userId) {
+    throw new AccountCreationError(CODES.REQUEST_NOT_OWNED, 'This registration does not belong to your account.')
+  }
+  return request
+}
+
+// Owner-facing full detail (resubmit pre-fill, the authenticated status
+// page) — unlike getPublicStatus/getRequestDetail (super_admin), this is
+// scoped to the caller's OWN request and includes the photos/amenities the
+// public/admin views don't need.
+export async function getMyRequestDetail(publicRequestId, userId) {
+  const request = await loadOwnedRequest(publicRequestId, userId)
+  const [photos, amenityKeys] = await Promise.all([photoModel.findByRequestId(request.id), amenitySelectionModel.findKeysByRequestId(request.id)])
+  return { request, photos, amenityKeys }
+}
+
+// Edit & Resubmit (§25) — only reachable from REJECTED/MORE_INFORMATION_
+// REQUIRED (enforced by markResubmitted's own guarded WHERE clause, same
+// concurrency-safe shape as approve/reject/request-information), and only
+// by the request's own submitter. Re-validated with the exact same rules a
+// fresh submission uses — never a lighter-touch "just patch the one broken
+// field" path, since the brief only requires the owner not have to
+// re-*enter* everything from scratch (the wizard pre-fills from
+// getMyRequestDetail), not that the server trust it un-revalidated.
+export async function resubmitRequest(publicRequestId, userId, body) {
+  await loadOwnedRequest(publicRequestId, userId)
+  const fields = await validateSubmissionFields(body)
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const request = await requestModel.markResubmitted(
+      publicRequestId,
+      {
+        groundName: fields.groundName,
+        groundDescription: fields.groundDescription,
+        addressLine: fields.addressLine,
+        city: fields.city,
+        state: fields.state,
+        country: fields.country,
+        postalCode: fields.postalCode,
+        latitude: fields.latitude,
+        longitude: fields.longitude,
+        groundPhone: fields.groundPhone,
+        groundEmail: fields.groundEmail,
+        groundWebsite: fields.groundWebsite,
+        termsAgreedAt: new Date(),
+      },
+      client,
+    )
+    if (!request) {
+      await client.query('ROLLBACK')
+      const existing = await requestModel.findByPublicRequestId(publicRequestId)
+      if (!existing) throw new AccountCreationError(CODES.REQUEST_NOT_FOUND, 'Request not found.')
+      throw new AccountCreationError(CODES.REQUEST_NOT_ELIGIBLE, `This request can no longer be resubmitted (status: ${existing.status}).`)
+    }
+
+    await photoModel.deleteByRequestId(request.id, client)
+    const orderedPhotos = [
+      ...fields.featuredPhotos.map((p) => ({ ...p, isFeatured: true })),
+      ...fields.galleryPhotos.map((p) => ({ ...p, isFeatured: false })),
+    ]
+    await photoModel.insertMany(request.id, orderedPhotos, client)
+
+    await amenitySelectionModel.deleteByRequestId(request.id, client)
+    await amenitySelectionModel.insertMany(request.id, fields.amenityKeys, client)
+
+    await recordEvent(
+      ACCOUNT_AUDIT_EVENTS.GROUND_OWNER_REQUEST_RESUBMITTED,
+      { actorUserId: userId, targetRequestId: request.id, metadata: { groundName: request.ground_name, publicRequestId } },
+      client,
+    )
+
+    await client.query('COMMIT')
+    return request
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }

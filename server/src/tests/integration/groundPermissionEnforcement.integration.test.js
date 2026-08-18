@@ -71,7 +71,16 @@ async function createOwnedGround(owner, superAdmin, server, tag) {
   const submitRes = await fetch(`${server.baseUrl}/grounds`, {
     method: 'POST',
     headers: auth(owner.token),
-    body: JSON.stringify({ name: `Perm Matrix Ground ${tag}`, addressLine: '1 Rd', city: 'City', state: 'State', phone: '9999999999' }),
+    body: JSON.stringify({
+      name: `Perm Matrix Ground ${tag}`,
+      description: 'A test ground for permission enforcement fixtures.',
+      addressLine: '1 Rd',
+      city: 'City',
+      state: 'State',
+      phone: '9999999999',
+      agreedToTerms: true,
+      featuredPhotos: Array.from({ length: 6 }, (_, i) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/perm-${tag}-${i}.jpg`, publicId: `perm-${tag}-${i}` })),
+    }),
   })
   const publicRequestId = (await submitRes.json()).request.publicRequestId
   if (!superAdmin.cookie) await elevate(superAdmin)
@@ -120,6 +129,12 @@ async function cleanupGround(ground) {
   const requestRow = (await pool.query('SELECT id FROM ground_owner_requests WHERE created_ground_id = $1', [row.id])).rows[0]
   await pool.query('DELETE FROM staff_permissions WHERE ground_user_id IN (SELECT id FROM ground_users WHERE ground_id = $1)', [row.id])
   await pool.query('DELETE FROM ground_users WHERE ground_id = $1', [row.id])
+  // Ground Registration feature — approval now copies the request's 6
+  // featured photos and any selected amenities into ground_photos/
+  // ground_amenities, which didn't happen before and so this cleanup never
+  // needed to account for it.
+  await pool.query('DELETE FROM ground_photos WHERE ground_id = $1', [row.id])
+  await pool.query('DELETE FROM ground_amenities WHERE ground_id = $1', [row.id])
   if (requestRow) {
     await pool.query('DELETE FROM account_audit_log WHERE target_request_id = $1', [requestRow.id])
     await pool.query('DELETE FROM ground_owner_requests WHERE id = $1', [requestRow.id])

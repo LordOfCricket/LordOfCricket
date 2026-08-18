@@ -76,7 +76,16 @@ async function createOwnedGround(owner, superAdmin, server, tag) {
   const submitRes = await fetch(`${server.baseUrl}/grounds`, {
     method: 'POST',
     headers: auth(owner.token),
-    body: JSON.stringify({ name: `Staff Test Ground ${tag}`, addressLine: '1 Rd', city: 'City', state: 'State', phone: '9999999999' }),
+    body: JSON.stringify({
+      name: `Staff Test Ground ${tag}`,
+      description: 'A test ground for ground-staff fixtures.',
+      addressLine: '1 Rd',
+      city: 'City',
+      state: 'State',
+      phone: '9999999999',
+      agreedToTerms: true,
+      featuredPhotos: Array.from({ length: 6 }, (_, i) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/staff-${tag}-${i}.jpg`, publicId: `staff-${tag}-${i}` })),
+    }),
   })
   const publicRequestId = (await submitRes.json()).request.publicRequestId
   if (!superAdmin.cookie) await elevate(superAdmin)
@@ -92,6 +101,11 @@ async function cleanupGround(ground) {
   if (!row) return
   const requestRow = (await pool.query('SELECT id FROM ground_owner_requests WHERE created_ground_id = $1', [row.id])).rows[0]
   await pool.query('DELETE FROM ground_users WHERE ground_id = $1', [row.id])
+  // Ground Registration feature — approval now copies the request's 6
+  // featured photos and any selected amenities into ground_photos/
+  // ground_amenities, which didn't happen before this cleanup was written.
+  await pool.query('DELETE FROM ground_photos WHERE ground_id = $1', [row.id])
+  await pool.query('DELETE FROM ground_amenities WHERE ground_id = $1', [row.id])
   if (requestRow) {
     await pool.query('DELETE FROM account_audit_log WHERE target_request_id = $1', [requestRow.id])
     await pool.query('DELETE FROM ground_owner_requests WHERE id = $1', [requestRow.id])

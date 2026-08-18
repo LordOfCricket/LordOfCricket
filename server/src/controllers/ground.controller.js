@@ -7,8 +7,10 @@ import {
 } from '../models/ground.model.js'
 import { findGroundPhotosByGroundId } from '../models/groundPhoto.model.js'
 import { findAmenitiesByGroundId } from '../models/amenity.model.js'
+import { findByGroundId as findAmenityCatalogByGroundId } from '../models/groundAmenity.model.js'
 import { findCanteensByGroundId } from '../models/canteen.model.js'
 import * as groundOwnerRequestService from '../services/groundOwnerRequest.service.js'
+import { mapRegistrationBody } from './groundOwnerRequest.controller.js'
 
 // Phase 12 Step 9/11 — documented defaults/limits. DEFAULT_RADIUS_KM is the
 // "within 10 km" example the brief itself uses for the expected UX.
@@ -178,26 +180,18 @@ export async function listGroundCities(req, res, next) {
 // and no ground_users membership are created here anymore — see
 // groundOwnerRequest.service.js#approveRequest for where that now happens,
 // only after a super_admin decision.
+// Ground Registration feature — applicant email/phone still come from the
+// session (never req.body — the whole point of this being the
+// authenticated entry point), but now fall back to whatever the wizard's
+// own contact-verification step just added to the account if either was
+// missing (groundContactVerification.service.js persists onto req.user's
+// own row, so a fresh /auth/me-shaped req.user already reflects it by the
+// time this runs, same as any other requireAuth request). agreedToTerms/
+// featuredPhotos/galleryPhotos/amenityKeys are new fields the old form
+// never sent — validated inside submitRequest, not here.
 export async function registerGround(req, res, next) {
   try {
-    const body = req.body || {}
-    const request = await groundOwnerRequestService.submitRequest({
-      applicantName: req.user.name,
-      applicantEmail: req.user.email,
-      applicantPhone: req.user.phone,
-      groundName: body.name,
-      groundDescription: body.description,
-      addressLine: body.addressLine,
-      city: body.city,
-      state: body.state,
-      country: body.country,
-      postalCode: body.postalCode,
-      latitude: body.latitude,
-      longitude: body.longitude,
-      groundPhone: body.phone,
-      groundEmail: body.email,
-      groundWebsite: body.website,
-    })
+    const request = await groundOwnerRequestService.submitRequest(mapRegistrationBody(req.body || {}, req.user), req.user.id)
 
     res.status(201).json({
       request: { publicRequestId: request.public_request_id, groundName: request.ground_name, status: request.status },
@@ -217,9 +211,10 @@ export async function getGroundProfile(req, res, next) {
       return res.status(404).json({ error: 'Ground not found.' })
     }
 
-    const [photos, amenities, canteens] = await Promise.all([
+    const [photos, amenities, amenityCatalog, canteens] = await Promise.all([
       findGroundPhotosByGroundId(ground.id),
       findAmenitiesByGroundId(ground.id),
+      findAmenityCatalogByGroundId(ground.id),
       findCanteensByGroundId(ground.id),
     ])
 
@@ -240,8 +235,16 @@ export async function getGroundProfile(req, res, next) {
         email: ground.email,
         website: ground.website,
       },
-      photos: photos.map((p) => ({ title: p.title, imageUrl: p.image_url, sortOrder: p.sort_order })),
+      photos: photos.map((p) => ({ title: p.title, imageUrl: p.image_url, sortOrder: p.sort_order, isFeatured: p.is_featured })),
+      // Legacy, super_admin-uploaded-photo amenities (unchanged) — kept
+      // alongside, never replaced by, the new catalog-based list below.
       amenities: amenities.map((a) => ({ name: a.name, imageUrl: a.image_url, sortOrder: a.sort_order })),
+      // Ground Registration feature — LOC-predefined icon+name pairs the
+      // owner selected at registration (or later edited), never an
+      // owner-controlled image. `amenities` above is untouched/still
+      // populated independently for older grounds set up before this
+      // catalog existed; a ground can have either, both, or neither.
+      amenityCatalog: amenityCatalog.map((a) => ({ key: a.key, name: a.name, icon: a.icon })),
       // Step 17 — gallery_images has no ground relationship yet (Step 1's
       // discovery) and the brief explicitly forbids redesigning it this
       // phase. Returning null (not the global gallery) is the only choice

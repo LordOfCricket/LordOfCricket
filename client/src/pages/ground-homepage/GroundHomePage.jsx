@@ -5,6 +5,7 @@ import Navbar from '../../components/home/Navbar.jsx'
 import Hero from '../../components/home/Hero.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
+import AmenityCatalogGrid from '../../components/common/AmenityCatalogGrid.jsx'
 import PartnersGrid from '../../components/common/PartnersGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
@@ -89,7 +90,12 @@ export default function GroundHomePage() {
   // Canteen nav visibility is driven by the ground's amenities list, not
   // the canteens table directly — a ground only gets a "Canteen" nav link
   // once staff have actually listed "Canteen" as one of its amenities.
-  const hasCanteenAmenity = ground.amenities?.some((a) => a.name.trim().toLowerCase() === 'canteen')
+  // Ground Registration feature — also checks the new catalog-based
+  // amenityCatalog (key === 'canteen'), so a ground registered through the
+  // new flow gets the same nav behavior as one set up via the legacy
+  // owner-uploaded-photo amenities panel.
+  const hasCanteenAmenity =
+    ground.amenities?.some((a) => a.name.trim().toLowerCase() === 'canteen') || ground.amenityCatalog?.some((a) => a.key === 'canteen')
 
   return (
     <div id="home" className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
@@ -118,7 +124,12 @@ export default function GroundHomePage() {
             title="Amenities"
             subtitle="Everything you need for a comfortable, hassle-free day at the ground."
           />
-          <AmenitiesGrid amenities={ground.amenities} />
+          <AmenityCatalogGrid amenities={ground.amenityCatalog} />
+          {/* Legacy owner-uploaded-photo amenities — skips its own "no
+              amenities" message when the new catalog above already has
+              entries, so a ground set up entirely through the new flow
+              doesn't show a redundant empty-state right below real content. */}
+          {(ground.amenities?.length > 0 || !ground.amenityCatalog?.length) && <AmenitiesGrid amenities={ground.amenities} />}
         </div>
 
         {/* About */}

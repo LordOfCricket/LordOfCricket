@@ -42,6 +42,9 @@ export const ACCOUNT_AUDIT_EVENTS = Object.freeze({
   // REASON above (pre-existing) is reused for the session-invalidation side
   // effect, not duplicated here.
   PASSWORD_RESET: 'PASSWORD_RESET',
+  // Ground Registration feature — Edit & Resubmit after REJECTED/
+  // MORE_INFORMATION_REQUIRED.
+  GROUND_OWNER_REQUEST_RESUBMITTED: 'GROUND_OWNER_REQUEST_RESUBMITTED',
 })
 
 export async function recordEvent(eventType, { actorUserId, targetUserId, targetRequestId, metadata } = {}, client) {

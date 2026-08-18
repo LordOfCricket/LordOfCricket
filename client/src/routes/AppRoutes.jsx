@@ -20,7 +20,15 @@ import NotFoundPage from '../pages/not-found/NotFoundPage.jsx'
 // (the reusable per-ground template) replace the old single-ground HomePage.
 const DiscoveryPage = lazy(() => import('../pages/discovery/DiscoveryPage.jsx'))
 const GroundsPage = lazy(() => import('../pages/grounds/GroundsPage.jsx'))
-const RegisterGroundPage = lazy(() => import('../pages/register-ground/RegisterGroundPage.jsx'))
+// Ground Registration feature — entry choice (New Registration vs Check
+// Status) replaces the old direct-to-form landing; the wizard itself
+// (Contact -> Ground Info -> Featured Photos -> Gallery -> Amenities ->
+// Location -> Review & Submit) is one component/route serving both a fresh
+// registration and Edit & Resubmit (mode prop), so wizard state/pre-fill
+// logic exists exactly once.
+const RegisterGroundEntryPage = lazy(() => import('../pages/register-ground/RegisterGroundEntryPage.jsx'))
+const GroundRegistrationWizardPage = lazy(() => import('../pages/register-ground/GroundRegistrationWizardPage.jsx'))
+const CheckGroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/CheckGroundRegistrationStatusPage.jsx'))
 const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/GroundRegistrationStatusPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
@@ -125,7 +133,14 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: withSuspense(<DiscoveryPage />) },
       { path: '/grounds', element: withSuspense(<GroundsPage />) },
-      { path: '/register-ground', element: <RequireAuth>{withSuspense(<RegisterGroundPage />)}</RequireAuth> },
+      // Ground Registration feature — only the entry choice itself is
+      // public (both options are visible to a logged-out visitor); starting
+      // or editing an actual registration requires login, matching the
+      // existing POST /grounds route's own requireAuth.
+      { path: '/register-ground', element: withSuspense(<RegisterGroundEntryPage />) },
+      { path: '/register-ground/new', element: <RequireAuth>{withSuspense(<GroundRegistrationWizardPage mode="create" />)}</RequireAuth> },
+      { path: '/register-ground/edit/:publicRequestId', element: <RequireAuth>{withSuspense(<GroundRegistrationWizardPage mode="edit" />)}</RequireAuth> },
+      { path: '/register-ground/check', element: withSuspense(<CheckGroundRegistrationStatusPage />) },
       { path: '/register-ground/status/:publicRequestId', element: withSuspense(<GroundRegistrationStatusPage />) },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
       { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosPage />)}</RequireMfaVerified></RequireStaffRole> },

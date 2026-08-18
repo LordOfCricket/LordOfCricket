@@ -3,9 +3,10 @@ import { ArrowRight } from 'lucide-react'
 import ScrollReveal from '../common/ScrollReveal.jsx'
 import { spotlightReveal } from '../../lib/revealVariants.js'
 
-// Cinematic close — a single highlighted CTA to the real ground-registration
-// form (RegisterGroundPage, wrapped in RequireAuth so a logged-out visitor
-// lands on /login first).
+// Cinematic close — a single highlighted CTA to the Ground Registration
+// entry page (RegisterGroundEntryPage: New Registration vs Check Status —
+// no auth wall here; only actually starting a new registration requires
+// login).
 export default function FinalCtaSection() {
   return (
     <div className="relative w-full overflow-hidden px-6 py-24">

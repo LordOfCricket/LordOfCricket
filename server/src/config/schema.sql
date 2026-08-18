@@ -1966,6 +1966,95 @@ CREATE TABLE IF NOT EXISTS ground_owner_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_ground_owner_requests_status ON ground_owner_requests(status, created_at DESC);
 
+-- Ground Registration feature — additive columns on the existing request
+-- table (no new "registration" table; ground_owner_requests already *is*
+-- the registration entity — see groundOwnerRequest.service.js).
+-- submitted_by_user_id is set only for the authenticated submission path
+-- (POST /grounds) and is what "My Ground Registrations" / resubmit
+-- ownership checks key off — deliberately NOT matched by applicant_email/
+-- applicant_phone string equality, which would be both fragile (a typo'd
+-- contact value) and occasionally wrong (two different accounts sharing a
+-- contact string). NULL for the older, fully-anonymous POST
+-- /ground-owner-requests path, which has no session to attribute to.
+-- terms_agreed_at is the audit trail proving agreement was captured at
+-- submission time — the boolean itself is never persisted (an
+-- always-true column would be meaningless); a NULL is impossible on any
+-- row reaching PENDING status, since submitRequest rejects a missing
+-- agreement before the INSERT ever runs.
+ALTER TABLE ground_owner_requests ADD COLUMN IF NOT EXISTS submitted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ground_owner_requests ADD COLUMN IF NOT EXISTS terms_agreed_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_ground_owner_requests_submitted_by ON ground_owner_requests(submitted_by_user_id) WHERE submitted_by_user_id IS NOT NULL;
+
+-- LOC-controlled amenity catalog — the Ground Owner selects from this list
+-- at registration time, never uploads their own amenity photo/label (see
+-- amenities table below, which stays exactly as it was: a legacy,
+-- super_admin-only, free-text-name + owner-uploaded-photo mechanism for
+-- ALREADY-approved grounds, kept for backward compatibility, not touched
+-- or repurposed by this feature). `key` is the stable identifier every
+-- other table below references — `icon` is a lucide-react icon name
+-- string, resolved to a real icon client-side (never a URL/image an owner
+-- could swap), which is what keeps the public icon consistent across every
+-- ground regardless of what the owner selected.
+CREATE TABLE IF NOT EXISTS amenity_catalog (
+  key VARCHAR(40) PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  icon VARCHAR(40) NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+INSERT INTO amenity_catalog (key, name, icon, display_order) VALUES
+  ('washroom', 'Washroom', 'Bath', 1),
+  ('wifi', 'Wi-Fi', 'Wifi', 2),
+  ('parking', 'Parking', 'ParkingSquare', 3),
+  ('canteen', 'Canteen', 'UtensilsCrossed', 4),
+  ('floodlights', 'Floodlights', 'Lightbulb', 5),
+  ('cctv', 'CCTV', 'Camera', 6),
+  ('practice_nets', 'Practice Nets', 'Target', 7),
+  ('changing_room', 'Changing Room', 'DoorOpen', 8),
+  ('drinking_water', 'Drinking Water', 'GlassWater', 9),
+  ('pavilion', 'Pavilion', 'Building2', 10)
+ON CONFLICT (key) DO NOTHING;
+
+-- Registration-time selections/uploads — scoped to the REQUEST, not a
+-- ground (no ground exists yet). Copied into the ground-scoped tables
+-- below only on approval (groundOwnerRequest.service.js#approveRequest),
+-- exactly mirroring how the request's address/name fields themselves get
+-- copied into a real `grounds` row only then. CASCADE delete: these rows
+-- have no independent meaning once their request is gone.
+CREATE TABLE IF NOT EXISTS ground_registration_amenities (
+  request_id INTEGER NOT NULL REFERENCES ground_owner_requests(id) ON DELETE CASCADE,
+  amenity_key VARCHAR(40) NOT NULL REFERENCES amenity_catalog(key),
+  PRIMARY KEY (request_id, amenity_key)
+);
+
+CREATE TABLE IF NOT EXISTS ground_registration_photos (
+  id SERIAL PRIMARY KEY,
+  request_id INTEGER NOT NULL REFERENCES ground_owner_requests(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT NOT NULL,
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ground_registration_photos_request ON ground_registration_photos(request_id);
+
+-- Ground-scoped catalog selections — the approved-ground counterpart of
+-- ground_registration_amenities above, populated once at approval and from
+-- then on independently editable by the owner (future profile-edit surface,
+-- out of this feature's scope) without touching the original request.
+CREATE TABLE IF NOT EXISTS ground_amenities (
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  amenity_key VARCHAR(40) NOT NULL REFERENCES amenity_catalog(key),
+  PRIMARY KEY (ground_id, amenity_key)
+);
+
+-- Ground Registration feature — is_featured distinguishes the mandatory 6
+-- slideshow photos from the optional gallery, on the SAME ground_photos
+-- table the legacy admin photo panel already writes to (that panel's own
+-- uploads simply default to is_featured = false, i.e. "gallery", which is
+-- exactly correct for photos that were never part of a slideshow concept).
+ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Account/onboarding audit trail — deliberately separate from
 -- ground_audit_log (that table's entity_type is hard-scoped to
 -- 'BOOKING'/'BLOCK', a different bounded context). Same proven shape
@@ -2181,30 +2270,21 @@ CREATE TABLE IF NOT EXISTS step_up_grants (
 -- reference NOW() (not IMMUTABLE).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_step_up_grants_active ON step_up_grants(session_id, action_scope) WHERE used_at IS NULL;
 
--- Widen account_audit_log for Phase 6's MFA/step-up/security events.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
-  ) THEN
-    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
-  END IF;
-END $$;
-ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
-  CHECK (event_type IN (
-    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
-    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
-    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
-    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
-    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
-    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
-    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
-    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
-    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
-    'SESSION_REVOKED_FOR_SECURITY_REASON'
-  ));
-
+-- Ground Registration feature — found and removed a latent instance of the
+-- same "intermediate CHECK-narrowing" bug already fixed twice elsewhere in
+-- this file (otp_codes_purpose_check, and this same constraint's own
+-- earlier Phase-6-only widening): this block re-derived the constraint
+-- WITHOUT 'PASSWORD_RESET' even though the Auth Enhancement block further
+-- down already re-widens to the complete, correct list including it. Since
+-- schema.sql runs top-to-bottom as one transaction (config/migrate.js),
+-- the moment a real PASSWORD_RESET audit row exists, this block's
+-- ADD CONSTRAINT would fail against it and abort the whole migration
+-- before ever reaching the correct block below — never triggered so far
+-- only because no PASSWORD_RESET row had been recorded yet. Removed
+-- entirely rather than patched, since the later block already derives the
+-- fully correct current state from scratch (same fix shape as the two
+-- prior instances of this bug).
+--
 -- Auth Enhancement — password login + forgot-password. otp_codes.purpose's
 -- own comment (see its CREATE TABLE above) literally anticipated
 -- 'PASSWORD_RESET' as a future value.
@@ -2235,7 +2315,21 @@ BEGIN
     ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
   END IF;
 END $$;
-ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET', 'SIGNUP_VERIFY'));
+-- Ground Registration feature — the CHECK constraint has been widened
+-- several times (SIGNUP_VERIFY, PASSWORD_RESET, ...) but the underlying
+-- column TYPE was never widened alongside it — every prior purpose value
+-- happened to fit in VARCHAR(20) by coincidence. 'GROUND_CONTACT_VERIFY'
+-- (21 chars) and 'GROUND_REGISTRATION_LOOKUP' (26 chars) don't, and would
+-- fail with a truncation error at insert time despite passing the CHECK
+-- constraint's own string list. Same fix shape as players.role's earlier
+-- VARCHAR(20)->VARCHAR(30) widening for 'WICKET_KEEPER_BATSMAN'.
+ALTER TABLE otp_codes ALTER COLUMN purpose TYPE VARCHAR(40);
+
+-- Ground Registration feature — GROUND_CONTACT_VERIFY (an authenticated
+-- Ground Owner adding/verifying a missing email or phone before submitting)
+-- and GROUND_REGISTRATION_LOOKUP (the public, no-login "find my
+-- registrations" OTP gate) join the existing purposes.
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET', 'SIGNUP_VERIFY', 'GROUND_CONTACT_VERIFY', 'GROUND_REGISTRATION_LOOKUP'));
 
 DO $$
 BEGIN
@@ -2257,5 +2351,5 @@ ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
     'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
     'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
     'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
-    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET'
+    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED'
   ));
