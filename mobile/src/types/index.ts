@@ -135,3 +135,133 @@ export interface AuthError {
   message: string
   code?: string
 }
+
+// Booking Types
+export interface AvailableSlot {
+  startTime: string  // ISO UTC
+  endTime: string    // ISO UTC
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason?: string    // For staff: BOOKED, BLOCKED, MATCH, PAST
+}
+
+export interface Availability {
+  date: string
+  slots: AvailableSlot[]
+}
+
+export interface BookingRequest {
+  startTime: string
+  purpose?: string
+  expectedPlayers?: number
+  notes?: string
+  contactPhone?: string
+  contactEmail?: string
+  clientActionId?: string
+}
+
+export interface Booking {
+  publicBookingId: string
+  bookingType: string
+  blockType?: string
+  startTime: string
+  endTime: string
+  status: 'CONFIRMED' | 'CANCELLED'
+  displayStatus: 'APPROVED' | 'COMPLETED' | 'CANCELLED'
+  purpose?: string
+  expectedPlayers?: number
+  notes?: string
+  contactPhone?: string
+  contactEmail?: string
+  customerName: string
+  createdAt: string
+  cancelledAt?: string
+}
+
+export interface SocketMatchStatePayload {
+  matchId: number
+  reason: string
+  match: {
+    id: number
+    status: 'upcoming' | 'live' | 'completed'
+    isLive: boolean
+    isInningsBreak: boolean
+    isCompleted: boolean
+    isFinalized: boolean
+  }
+  result: {
+    resultType: string
+    resultMargin: number
+    text: string
+    winnerTeamId: number
+  } | null
+  target: number | null
+  currentInnings: {
+    id: number
+    number: number
+    version: number
+    status: 'upcoming' | 'live' | 'completed'
+    battingTeamId: number
+    bowlingTeamId: number
+    runs: number
+    wickets: number
+    legalBalls: number
+    oversLabel: string
+    currentRunRate: number | null
+    chase: {
+      runsNeeded: number
+      ballsRemaining: number | null
+      requiredRunRate: number | null
+    } | null
+    striker: {
+      player: { publicPlayerId: string | null; name: string }
+      runs: number
+      balls: number
+      fours: number
+      sixes: number
+      strikeRate: number | null
+    } | null
+    nonStriker: {
+      player: { publicPlayerId: string | null; name: string }
+      runs: number
+      balls: number
+      fours: number
+      sixes: number
+      strikeRate: number | null
+    } | null
+    bowler: {
+      player: { publicPlayerId: string | null; name: string }
+      oversLabel: string
+      runs: number
+      wickets: number
+      economy: number | null
+    } | null
+    currentOver: Array<{
+      id: number
+      over: number
+      ball: number
+      batRuns: number
+      illegal: boolean
+      extra: string | null
+      totalRuns: number
+      isLegalDelivery: boolean
+      isFreeHit: boolean
+      voided: boolean
+      isDeadBall: boolean
+      wicket: boolean
+    }>
+    recentDeliveries: Array<{
+      id: number
+      over: number
+      ball: number
+      batRuns: number
+      illegal: boolean
+      extra: string | null
+      totalRuns: number
+      isLegalDelivery: boolean
+      isFreeHit: boolean
+      voided: boolean
+      isDeadBall: boolean
+      wicket: boolean
+    }>
+  } | null
+}

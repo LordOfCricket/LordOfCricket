@@ -32,18 +32,31 @@ export async function getGroundTimeline(date: string) {
   return response.data
 }
 
-export async function createBooking(
-  startTime: string,
-  purpose: string,
-  expectedPlayers: number,
-  contactPhone: string
-) {
-  const response = await api.post('/bookings', {
-    startTime,
-    purpose,
-    expectedPlayers,
-    contactPhone,
-  })
+export async function getAvailability(date: string) {
+  const response = await api.get('/bookings/availability', { params: { date } })
+  return response.data
+}
+
+export async function getMyBookings() {
+  const response = await api.get('/bookings/my')
+  return response.data
+}
+
+export async function createBooking(booking: {
+  startTime: string
+  purpose?: string
+  expectedPlayers?: number
+  notes?: string
+  contactPhone?: string
+  contactEmail?: string
+  clientActionId?: string
+}) {
+  const response = await api.post('/bookings', booking)
+  return response.data
+}
+
+export async function cancelBooking(publicBookingId: string) {
+  const response = await api.post(`/bookings/${publicBookingId}/cancel`)
   return response.data
 }
 
