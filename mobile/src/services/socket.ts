@@ -61,6 +61,8 @@ class SocketService {
   private joinedMatches: Set<number> = new Set()
   private connectionAttempts = 0
   private readonly maxReconnectAttempts = 5
+  private bookingUpdateListeners: Array<(data: any) => void> = []
+  private bookingListenerRegistered = false
 
   /**
    * Initialize Socket.IO connection with session cookies.
@@ -133,6 +135,14 @@ class SocketService {
             }
           })
         })
+
+        // Register booking listener if there are active subscribers
+        if (this.bookingUpdateListeners.length > 0 && !this.bookingListenerRegistered) {
+          this.socket.on('booking:dateChanged', (data: any) => {
+            this.bookingUpdateListeners.forEach(listener => listener(data))
+          })
+          this.bookingListenerRegistered = true
+        }
       } catch (error) {
         reject(error)
       }
@@ -170,25 +180,17 @@ class SocketService {
     }
   }
 
-  private bookingUpdateListeners: Array<(data: any) => void> = []
-
   /**
    * Subscribe to booking availability updates.
    * Notified when bookings change for any ground/date.
+   * Automatically ensures socket is connected.
    */
   subscribeToBookingUpdates(callback: (data: any) => void): () => void {
-    // Ensure socket is connected
-    this.connect().catch(() => {}) // Ignore errors, just try to connect
-
-    // Add listener
+    // Add listener first
     this.bookingUpdateListeners.push(callback)
 
-    // Register global listener if first subscriber
-    if (this.bookingUpdateListeners.length === 1 && this.socket?.connected) {
-      this.socket.on('booking:dateChanged', (data: any) => {
-        this.bookingUpdateListeners.forEach(listener => listener(data))
-      })
-    }
+    // Ensure socket is connected, which will register the listener if needed
+    this.connect().catch(() => {}) // Ignore connection errors; listeners work on reconnect
 
     // Return unsubscribe function
     return () => {

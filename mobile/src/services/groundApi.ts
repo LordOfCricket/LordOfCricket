@@ -22,18 +22,13 @@ export async function searchGrounds(query: string, limit = 20, offset = 0) {
   return response.data
 }
 
-export async function getGroundAvailability(date: string) {
+export async function getAvailability(date: string) {
   const response = await api.get('/bookings/availability', { params: { date } })
   return response.data
 }
 
 export async function getGroundTimeline(date: string) {
   const response = await api.get('/ground/timeline', { params: { date } })
-  return response.data
-}
-
-export async function getAvailability(date: string) {
-  const response = await api.get('/bookings/availability', { params: { date } })
   return response.data
 }
 
@@ -75,15 +70,5 @@ export async function createTeamBooking(
     teamId,
     participantPlayerIds,
   })
-  return response.data
-}
-
-export async function getMyBookings() {
-  const response = await api.get('/bookings/my')
-  return response.data
-}
-
-export async function cancelBooking(publicBookingId: string) {
-  const response = await api.post(`/bookings/${publicBookingId}/cancel`)
   return response.data
 }

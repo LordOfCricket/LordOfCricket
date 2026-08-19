@@ -36,8 +36,13 @@ export default function NewBookingScreen() {
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false)
     if (date) {
-      // Prevent selecting past dates
-      if (date < new Date()) {
+      // Prevent selecting past dates (compare dates only, not time)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const selectedDateOnly = new Date(date)
+      selectedDateOnly.setHours(0, 0, 0, 0)
+
+      if (selectedDateOnly < today) {
         Alert.alert('Invalid Date', 'Please select a future date')
         return
       }
