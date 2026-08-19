@@ -13,6 +13,7 @@ import {
   resetPassword,
 } from '../controllers/auth.controller.js'
 import { sendCode as signupSendCode, verifyCode as signupVerifyCode, createAccount } from '../controllers/signup.controller.js'
+import { changePasswordHandler } from '../controllers/passwordChange.controller.js'
 import { requireAuth } from '../middlewares/auth.js'
 import {
   otpRequestLimiter,
@@ -20,6 +21,7 @@ import {
   passwordLoginLimiter,
   passwordLoginIdentifierLimiter,
   accountCreationLimiter,
+  passwordChangeLimiter,
 } from '../middlewares/rateLimit.js'
 
 const router = Router()
@@ -68,5 +70,12 @@ router.post('/signup/create-account', accountCreationLimiter, createAccount)
 router.get('/me', requireAuth, me)
 router.patch('/role', requireAuth, selectRole)
 router.patch('/player-type', requireAuth, selectPlayerType)
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — self-service change
+// password while authenticated. Deliberately requireAuth-only, never
+// requireStaffRole — this must stay reachable for a force_password_change=
+// true account, which requireStaffRole itself blocks from every OTHER
+// staff route (see middlewares/auth.js).
+router.post('/change-password', requireAuth, passwordChangeLimiter, changePasswordHandler)
 
 export default router

@@ -1,5 +1,6 @@
 import { pool } from '../config/db.js'
 import { generatePublicId } from '../utils/publicId.js'
+import { findDefaultGround } from '../models/ground.model.js'
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
 import { computeDayAvailability } from '../domain/booking/availability.js'
 import { findNearbyAlternatives } from '../domain/booking/recommendations.js'
@@ -28,15 +29,27 @@ function assertBookableDate(dateStr) {
   if (dateStr > maxDate) throw new BookingError(BOOKING_ERROR_CODES.INVALID_DATE, `Bookings are only open up to ${MAX_BOOKING_HORIZON_DAYS} days ahead.`)
 }
 
+/** Phase 24 — the walk-in flow has no :publicGroundId in its URL (Part 51:
+ * preserve the existing API) and never did before ground_id existed on
+ * ground_bookings at all. findDefaultGround() (not findSingleGround())
+ * deterministically resolves the platform's original ground even when other
+ * grounds exist (real registrations, or accumulated test-fixture grounds in
+ * this dev database) — see its own doc comment in ground.model.js. */
+async function resolveDefaultGroundId() {
+  const ground = await findDefaultGround()
+  if (!ground) throw new BookingError(BOOKING_ERROR_CODES.BOOKING_NOT_FOUND, 'No ground is configured yet.')
+  return ground.id
+}
+
 /** Builds the flat `{startTime, endTime, reason}` occupancy list a single
  * day's availability is computed against: confirmed bookings/staff blocks
  * (real ranges) + LOC match days (whole-day, Part 37). */
-async function buildOccupiedRanges(dateStr) {
+async function buildOccupiedRanges(dateStr, groundId) {
   const dayStart = groundLocalToUtc(dateStr, 0, 0)
   const dayEnd = groundLocalToUtc(dateStr, 24, 0)
 
   const [confirmed, matchDates] = await Promise.all([
-    bookingRepo.listConfirmedInRange(dayStart, dayEnd),
+    bookingRepo.listConfirmedInRange(dayStart, dayEnd, groundId),
     bookingRepo.listMatchDatesInRange(dateStr, addDaysToDateStr(dateStr, 1)),
   ])
 
@@ -58,7 +71,8 @@ async function buildOccupiedRanges(dateStr) {
  * the public view only ever sees AVAILABLE/UNAVAILABLE (Part 47 — "Unavailable is often enough"). */
 export async function getDayAvailability(dateStr, { isStaff = false } = {}) {
   assertBookableDate(dateStr)
-  const occupied = await buildOccupiedRanges(dateStr)
+  const groundId = await resolveDefaultGroundId()
+  const occupied = await buildOccupiedRanges(dateStr, groundId)
   const slots = computeDayAvailability(dateStr, occupied)
   return slots.map((s) => ({
     startTime: s.startTime.toISOString(),
@@ -76,11 +90,12 @@ async function buildRecommendations(dateStr, hour, minute) {
   // Bounded pre-fetch: the requested day plus a short lookahead window,
   // matching recommendations.js's own default maxDaysAhead.
   const maxDaysAhead = 7
+  const groundId = await resolveDefaultGroundId()
   const cache = new Map()
   const dates = [dateStr, ...Array.from({ length: maxDaysAhead }, (_, i) => addDaysToDateStr(dateStr, i + 1))]
   for (const d of dates) {
     if (d > addDaysToDateStr(groundTodayDateStr(), MAX_BOOKING_HORIZON_DAYS)) continue
-    const occupied = await buildOccupiedRanges(d)
+    const occupied = await buildOccupiedRanges(d, groundId)
     cache.set(d, computeDayAvailability(d, occupied))
   }
   const alternatives = findNearbyAlternatives(dateStr, hour, minute, availabilityLookupFactory(cache), { maxDaysAhead })
@@ -127,6 +142,8 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     if (existing) return { booking: existing, idempotentReplay: true }
   }
 
+  const groundId = await resolveDefaultGroundId()
+
   // Match-day pre-check: a friendly, fast rejection before even attempting
   // the INSERT (matches are rarely created in the same instant as a booking
   // attempt, so this check-then-act window is not the guarantee the
@@ -144,6 +161,7 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
   try {
     await client.query('BEGIN')
     booking = await bookingRepo.insertBooking(client, {
+      groundId,
       publicBookingId: generatePublicId('LOC', 6),
       bookingType,
       userId,

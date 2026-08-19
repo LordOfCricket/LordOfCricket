@@ -106,6 +106,16 @@ export function requireStaffRole(...allowedNames) {
     if (req.user.staff_role === 'super_admin' && !req.mfaVerified) {
       return respondMfaRequired(res)
     }
+    // SUPER_ADMIN Identity & Secure Provisioning feature — the bootstrap
+    // Super Admin (and any staff account an admin resets via a temporary
+    // credential) must change their password before touching ANY other
+    // staff-privileged route. Enforced here, not just the client redirect
+    // in roleRedirect.model.js#getPostLoginPath — POST /auth/change-password
+    // itself is a plain requireAuth endpoint (not behind requireStaffRole),
+    // so this can never block the one route that's supposed to fix it.
+    if (req.user.force_password_change) {
+      return res.status(403).json({ code: 'FORCE_PASSWORD_CHANGE_REQUIRED', error: 'You must change your password before continuing.' })
+    }
     next()
   }
 }

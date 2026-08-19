@@ -131,7 +131,16 @@ export async function verifyLoginOtp({ identifier: rawIdentifier, code, ipAddres
   const { rawToken, expiresAt } = await createSessionForUser(user.id, { ipAddress, userAgent })
   logger.info('Authentication succeeded (OTP)', { userId: user.id })
 
-  const { password_hash, ...publicUser } = user
+  // SUPER_ADMIN Identity & Secure Provisioning feature — "Admin login" is
+  // explicitly one of the brief's auditable events. Staff accounts don't
+  // normally OTP-login (password is the primary staff credential), but
+  // this path is reachable (e.g. a legacy/pre-password staff row), so it's
+  // covered here too, not just loginWithPassword.
+  if (user.role === 'staff') {
+    await recordEvent(ACCOUNT_AUDIT_EVENTS.ADMIN_LOGIN, { actorUserId: user.id, targetUserId: user.id, metadata: { staffRole: user.staff_role, via: 'otp' } })
+  }
+
+  const { password_hash, temp_password_hash, ...publicUser } = user
   return { user: publicUser, sessionToken: rawToken, sessionExpiresAt: expiresAt }
 }
 
@@ -155,14 +164,28 @@ export async function verifyLoginOtp({ identifier: rawIdentifier, code, ipAddres
 // explicit anti-enumeration requirement).
 const DUMMY_HASH_FOR_TIMING_SAFETY = bcrypt.hashSync('not-a-real-password-used-only-for-constant-time-comparison', 10)
 
+// SUPER_ADMIN Identity & Secure Provisioning feature — the submitted
+// password may also match a still-valid, unexpired ADMIN-generated
+// temporary credential (users.temp_password_hash/temp_password_expires_at
+// — see services/adminPasswordRecovery.service.js). Only ever checked as a
+// FALLBACK when the real password_hash doesn't match, and only while a
+// live, unexpired temp credential actually exists — never widens what
+// counts as a valid login beyond that.
+async function tempCredentialMatches(user, password) {
+  if (!user?.temp_password_hash || !user.temp_password_expires_at) return false
+  if (new Date(user.temp_password_expires_at).getTime() <= Date.now()) return false
+  return bcrypt.compare(typeof password === 'string' ? password : '', user.temp_password_hash)
+}
+
 export async function loginWithPassword({ identifier: rawIdentifier, password, ipAddress, userAgent }) {
   const { identifier, identifierType } = resolveIdentifier(rawIdentifier)
 
   const user = await findUserByIdentifier(identifier, identifierType)
   const hashToCompare = user?.password_hash || DUMMY_HASH_FOR_TIMING_SAFETY
   const passwordMatches = await bcrypt.compare(typeof password === 'string' ? password : '', hashToCompare)
+  const viaTempCredential = !passwordMatches && (await tempCredentialMatches(user, password))
 
-  if (!user || !user.password_hash || !passwordMatches) {
+  if (!user || !user.password_hash || (!passwordMatches && !viaTempCredential)) {
     logger.warn('Password login failed', { identifier: maskIdentifier(identifier, identifierType), identifierType })
     throw new OtpAuthError(CODES.INVALID_CREDENTIALS, 'Incorrect email/phone or password.')
   }
@@ -172,11 +195,24 @@ export async function loginWithPassword({ identifier: rawIdentifier, password, i
     throw new OtpAuthError(CODES.ACCOUNT_NOT_ACTIVE, 'This account is not able to sign in right now. Contact support.')
   }
 
-  const { rawToken, expiresAt } = await createSessionForUser(user.id, { ipAddress, userAgent })
-  logger.info('Authentication succeeded (password)', { userId: user.id })
+  // Single-use, invalidated the instant it succeeds — never promoted into
+  // being the permanent password (the user still lands on
+  // force_password_change=true and must set a real one via
+  // POST /auth/change-password before doing anything else on a staff route).
+  if (viaTempCredential) {
+    await updateUser(user.id, { temp_password_hash: null, temp_password_expires_at: null })
+    await recordEvent(ACCOUNT_AUDIT_EVENTS.TEMPORARY_CREDENTIAL_USED, { targetUserId: user.id })
+  }
 
-  const { password_hash, ...publicUser } = user
-  return { user: publicUser, sessionToken: rawToken, sessionExpiresAt: expiresAt }
+  const { rawToken, expiresAt } = await createSessionForUser(user.id, { ipAddress, userAgent })
+  logger.info('Authentication succeeded (password)', { userId: user.id, viaTempCredential })
+
+  if (user.role === 'staff') {
+    await recordEvent(ACCOUNT_AUDIT_EVENTS.ADMIN_LOGIN, { actorUserId: user.id, targetUserId: user.id, metadata: { staffRole: user.staff_role, via: 'password' } })
+  }
+
+  const { password_hash, temp_password_hash, ...publicUser } = user
+  return { user: { ...publicUser, force_password_change: viaTempCredential ? true : user.force_password_change }, sessionToken: rawToken, sessionExpiresAt: expiresAt }
 }
 
 // Auth Enhancement — forgot-password step 1. Deliberately identical shape to

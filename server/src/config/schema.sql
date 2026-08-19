@@ -721,6 +721,45 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_role_id INTEGER REFERENCES staf
 -- to a clean validation error in staff.controller.js.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;
 
+-- SUPER_ADMIN Identity & Secure Provisioning feature.
+--
+-- `username` is a NEW, purely display/reference concept — distinct from
+-- `staff_id` (which is the "LOC-ADM-001"-style Admin ID, already
+-- generated into this same column by utils/adminId.js). It is NEVER used
+-- to authenticate: login stays email/phone + password (or OTP), exactly
+-- as documented above for staff_id — introducing a third login-identifier
+-- type would itself be the kind of "second authentication system" this
+-- feature is explicitly forbidden from creating, and a fabricated
+-- @lordofcricket.* address the platform doesn't actually own would
+-- violate the brief's own "no fake email accounts" rule. The bootstrap
+-- script requires a real, reachable email from the operator; `username`
+-- is just the human-chosen handle shown alongside it in Admin Management.
+--
+-- `force_password_change` gates the bootstrap Super Admin (and later, any
+-- account an admin resets via a temporary credential — see
+-- temp_password_hash below) into a mandatory password change before they
+-- can use any staff-privileged route again. Enforced server-side in
+-- requireStaffRole (middlewares/auth.js), not just a client redirect.
+--
+-- temp_password_hash/temp_password_expires_at back the admin-initiated
+-- "reset a user's password" flow (services/adminPasswordRecovery.service.js):
+-- a cryptographically random one-time credential, bcrypt-hashed exactly
+-- like a real password (never stored/logged in plaintext), short-lived,
+-- and cleared the instant it's used successfully (services/otpAuth.service.js
+-- #loginWithPassword) or superseded by a real password change — never
+-- promoted into being the permanent password.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_expires_at TIMESTAMPTZ;
+
+-- `users` had `created_at` but no `updated_at` at all (unlike every other
+-- table this codebase has added since — grounds/ground_owner_requests both
+-- have one already). The brief's own account-structure spec explicitly
+-- wants both; `updateUser()` (models/user.model.js) now sets this on every
+-- write.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- ============================================================================
 -- PHASE 10 (3D homepage project) — Ground media storage migrated to Cloudinary
 -- ============================================================================
@@ -2270,6 +2309,27 @@ CREATE TABLE IF NOT EXISTS step_up_grants (
 -- reference NOW() (not IMMUTABLE).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_step_up_grants_active ON step_up_grants(session_id, action_scope) WHERE used_at IS NULL;
 
+-- SUPER_ADMIN Identity & Secure Provisioning feature — ADMIN_PASSWORD_RESET
+-- (generating a temporary credential for another account). Same idempotent
+-- DROP+ADD widening shape as every other CHECK constraint in this file —
+-- the CREATE TABLE above stays as originally written; this is the one
+-- place enforcement actually changes for an already-existing database.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'step_up_grants' AND constraint_name = 'step_up_grants_action_scope_check'
+  ) THEN
+    ALTER TABLE step_up_grants DROP CONSTRAINT step_up_grants_action_scope_check;
+  END IF;
+END $$;
+ALTER TABLE step_up_grants ADD CONSTRAINT step_up_grants_action_scope_check CHECK (action_scope IN (
+  'WEBAUTHN_ADD', 'WEBAUTHN_REMOVE', 'TOTP_ENABLE', 'TOTP_DISABLE',
+  'RECOVERY_CODES_REGENERATE', 'MFA_DISABLE',
+  'STAFF_CREATE', 'GROUND_OWNER_REQUEST_APPROVE', 'PERMISSION_GRANT', 'STAFF_DISABLE',
+  'ADMIN_PASSWORD_RESET'
+));
+
 -- Ground Registration feature — found and removed a latent instance of the
 -- same "intermediate CHECK-narrowing" bug already fixed twice elsewhere in
 -- this file (otp_codes_purpose_check, and this same constraint's own
@@ -2351,5 +2411,260 @@ ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
     'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
     'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
     'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
-    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED'
+    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED',
+    -- SUPER_ADMIN Identity & Secure Provisioning feature.
+    'SUPER_ADMIN_BOOTSTRAPPED', 'ADMIN_LOGIN', 'PASSWORD_CHANGED',
+    'GROUND_SUSPENDED', 'GROUND_REACTIVATED', 'ACCOUNT_STATUS_CHANGED',
+    'PASSWORD_RESET_INITIATED_BY_ADMIN', 'TEMPORARY_CREDENTIAL_GENERATED', 'TEMPORARY_CREDENTIAL_USED'
   ));
+
+-- ============================================================================
+-- PHASE 24 — Ground Booking System: Multi-Ground, Team & Player Conflict Engine
+-- ============================================================================
+--
+-- Generalizes Phase 14/18's single-ground, walk-in-only booking engine into
+-- a real multi-ground marketplace with team- and player-aware conflict
+-- checking. The proven concurrency guarantee (a Postgres EXCLUDE constraint
+-- makes two overlapping active bookings structurally impossible to both
+-- commit) is extended to two new axes — team, player — via two new small
+-- "slot" tables, each with their own EXCLUDE constraint, rather than
+-- replacing ground_bookings' own mechanism or inventing an application-level
+-- check for the new axes. See docs/BOOKING.md for the full design rationale.
+
+-- --- grounds: optional per-ground operating hours --------------------------
+-- NULL means "use the global GROUND_OPENING_HOUR/GROUND_CLOSING_HOUR policy
+-- default" (domain/booking/policy.js) — no ground is forced to configure
+-- this immediately.
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS opening_hour SMALLINT CHECK (opening_hour IS NULL OR (opening_hour >= 0 AND opening_hour <= 23));
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS closing_hour SMALLINT CHECK (closing_hour IS NULL OR (closing_hour >= 1 AND closing_hour <= 24));
+
+-- --- ground_bookings: ground-aware, purpose/team/status-machine columns ---
+
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+
+-- Backfill: every pre-existing row predates ground_id, from back when this
+-- table implicitly assumed exactly one ground (LOC's own). The lowest-id
+-- ground in this database is that ground (every other row in `grounds` is
+-- either a later real registration or accumulated test-run data, never
+-- lower-id than the original). A from-scratch database has zero
+-- ground_bookings rows, so this UPDATE is a no-op there.
+UPDATE ground_bookings SET ground_id = (SELECT id FROM grounds ORDER BY id ASC LIMIT 1) WHERE ground_id IS NULL;
+ALTER TABLE ground_bookings ALTER COLUMN ground_id SET NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_ground_id ON ground_bookings(ground_id);
+
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS booking_purpose VARCHAR(20) NOT NULL DEFAULT 'WALK_IN'
+  CHECK (booking_purpose IN ('WALK_IN', 'MATCH', 'PRACTICE'));
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS match_format VARCHAR(20);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS hold_expires_at TIMESTAMPTZ;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(300);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS rejected_reason VARCHAR(300);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS no_show_at TIMESTAMPTZ;
+
+-- Widen status to the full state machine. Blocking states (occupy the
+-- slot): HOLD, PROPOSED, PENDING, CONFIRMED. Non-blocking: REJECTED,
+-- CANCELLED, EXPIRED, COMPLETED, NO_SHOW. DRAFT is deliberately not
+-- modeled — no multi-step drafting UI exists, mirroring bookingStatus.js's
+-- existing "only model states that are real" precedent. Valid transitions
+-- are enforced in application code (domain/booking/bookingStatus.js), not
+-- the database — same division of responsibility as today.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_bookings' AND constraint_name = 'ground_bookings_status_check'
+  ) THEN
+    ALTER TABLE ground_bookings DROP CONSTRAINT ground_bookings_status_check;
+  END IF;
+END $$;
+ALTER TABLE ground_bookings ADD CONSTRAINT ground_bookings_status_check
+  CHECK (status IN ('HOLD', 'PROPOSED', 'PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'COMPLETED', 'NO_SHOW'));
+
+-- Rebuild the ground-conflict EXCLUDE constraint: now partitioned per ground
+-- (ground_id WITH =) and gated on the full blocking-status set, not just
+-- CONFIRMED. Two overlapping bookings at the SAME ground in ANY blocking
+-- status still cannot both commit; different grounds never conflict with
+-- each other.
+--
+-- EXCLUDE constraints are a Postgres extension to the SQL standard and are
+-- NOT surfaced by information_schema.table_constraints (confirmed directly
+-- against this database — the query returns zero rows even when the
+-- constraint exists) — pg_constraint is used here instead, unlike the plain
+-- CHECK-constraint guards elsewhere in this file which correctly use
+-- information_schema.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'ground_bookings'::regclass AND conname = 'ground_bookings_no_overlap') THEN
+    ALTER TABLE ground_bookings DROP CONSTRAINT ground_bookings_no_overlap;
+  END IF;
+END $$;
+ALTER TABLE ground_bookings ADD CONSTRAINT ground_bookings_no_overlap EXCLUDE USING gist (
+  ground_id WITH =,
+  tstzrange(start_time, end_time, '[)') WITH &&
+) WHERE (status IN ('HOLD', 'PROPOSED', 'PENDING', 'CONFIRMED'));
+
+-- --- match_proposals: thin metadata for an open "looking for opponent" ----
+-- match. The actual ground/team/time reservation IS a ground_bookings row
+-- (status='PROPOSED', booking_purpose='MATCH') — a proposal gets the exact
+-- same atomic conflict guarantees as any other booking, never a second,
+-- parallel reservation mechanism (Single Source of Truth).
+CREATE TABLE IF NOT EXISTS match_proposals (
+  id SERIAL PRIMARY KEY,
+  public_proposal_id VARCHAR(20) UNIQUE NOT NULL,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id),
+  booking_id INTEGER NOT NULL UNIQUE REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  proposing_team_id INTEGER NOT NULL REFERENCES teams(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'ACCEPTED', 'CONFIRMED', 'CANCELLED', 'EXPIRED')),
+  proposal_expires_at TIMESTAMPTZ NOT NULL,
+  accepted_by_team_id INTEGER REFERENCES teams(id),
+  accepted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT match_proposals_teams_differ CHECK (accepted_by_team_id IS NULL OR accepted_by_team_id <> proposing_team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_proposals_status ON match_proposals(status, proposal_expires_at);
+CREATE INDEX IF NOT EXISTS idx_match_proposals_ground ON match_proposals(ground_id);
+
+-- Added after match_proposals exists (ground_bookings -> match_proposals ->
+-- ground_bookings would otherwise be circular within a single CREATE).
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS proposal_id INTEGER REFERENCES match_proposals(id) ON DELETE SET NULL;
+
+-- --- booking_teams: which team(s) a MATCH/PRACTICE booking is for ---------
+-- Descriptive only — the conflict GUARANTEE lives in booking_team_slots
+-- below, not here.
+CREATE TABLE IF NOT EXISTS booking_teams (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  role VARCHAR(10) CHECK (role IN ('HOME', 'AWAY')),
+  UNIQUE (booking_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_teams_team ON booking_teams(team_id);
+
+-- --- booking_team_slots / booking_player_slots: the real conflict guarantee
+-- Rows exist ONLY while the parent booking is in a blocking status —
+-- inserted alongside the booking row in the same transaction, deleted the
+-- moment the booking leaves a blocking status (cancel/reject/expire/
+-- no-show/complete), also in the same transaction as that status change.
+-- This mirrors ground_bookings_no_overlap's own mechanism but avoids a
+-- WHERE clause tied to another table's mutable status column: a slot row's
+-- mere existence IS "this team/player is committed to this time range."
+CREATE TABLE IF NOT EXISTS booking_team_slots (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  time_range TSTZRANGE NOT NULL,
+  CONSTRAINT booking_team_slots_no_overlap EXCLUDE USING gist (team_id WITH =, time_range WITH &&)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_team_slots_booking ON booking_team_slots(booking_id);
+
+CREATE TABLE IF NOT EXISTS booking_player_slots (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  time_range TSTZRANGE NOT NULL,
+  CONSTRAINT booking_player_slots_no_overlap EXCLUDE USING gist (player_id WITH =, time_range WITH &&)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_player_slots_booking ON booking_player_slots(booking_id);
+
+-- --- booking_participants: permanent historical snapshot -------------------
+-- Never deleted, even on cancellation/removal (Part 32 — a later team-
+-- membership/roster change must never rewrite who was actually on a past
+-- booking). Deliberately separate from booking_player_slots (mutable, "is
+-- this slot currently occupied") — this table only ever answers "who was on
+-- this booking", permanently. removed_at tracks a mid-lifecycle removal
+-- (Part 10) without deleting the historical row; re-adding the same player
+-- later reuses the row (removed_at reset to NULL) rather than violating the
+-- uniqueness guarantee below.
+CREATE TABLE IF NOT EXISTS booking_participants (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  removed_at TIMESTAMPTZ,
+  UNIQUE (booking_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_participants_booking ON booking_participants(booking_id);
+CREATE INDEX IF NOT EXISTS idx_booking_participants_player ON booking_participants(player_id);
+
+-- --- ground_audit_log: widen for the booking-engine's new lifecycle events -
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_entity_type_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_entity_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_entity_type_check
+  CHECK (entity_type IN ('BOOKING', 'BLOCK', 'PROPOSAL'));
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_action_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_action_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
+  CHECK (action IN (
+    'CREATED', 'CANCELLED', 'GOOGLE_SYNC',
+    'CONFIRMED', 'REJECTED', 'EXPIRED', 'NO_SHOW', 'CHECKED_IN',
+    'PARTICIPANT_ADDED', 'PARTICIPANT_REMOVED', 'ACCEPTED', 'ACCEPT_FAILED', 'ADMIN_OVERRIDE'
+  ));
+
+-- --- ground_notifications: widen for the booking-engine's new lifecycle ----
+-- events. Must restate every value already live in this database (the
+-- Umpire Operations phases widened this CHECK long after schema.sql's own
+-- inline definition was last edited), not just schema.sql's original list —
+-- verified directly against the live constraint before writing this.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN (
+    'BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'UMPIRE_SLOTS_FULLY_STAFFED',
+    'MATCH_STARTING', 'MATCH_COMPLETED', 'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M', 'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
+    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED', 'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED',
+    'BOOKING_REJECTED', 'PROPOSAL_RECEIVED', 'PROPOSAL_ACCEPTED', 'PROPOSAL_EXPIRED', 'BOOKING_EXPIRING_SOON', 'NO_SHOW_RECORDED'
+  ));
+
+-- --- permissions: booking delegation for GROUND_ADMIN staff ----------------
+INSERT INTO permissions (key, description) VALUES
+  ('BOOKING_VIEW', 'View match/practice bookings and proposals for a ground'),
+  ('BOOKING_MANAGE', 'Create, cancel, and manage match/practice bookings and proposals for a ground')
+ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================================
+-- PHASE 25 — Match Proposals
+-- ============================================================================
+--
+-- An open proposal's ground/team/player reservation IS a ground_bookings
+-- row (status='PROPOSED', booking_purpose='MATCH', booking_teams has one
+-- HOME row for the proposing team) — match_proposals (Phase 24) is thin
+-- metadata layered on top, never a second reservation mechanism. Accepting
+-- attaches a second (AWAY) booking_teams/booking_team_slots/participants
+-- set to the SAME booking row and flips both rows CONFIRMED together, all
+-- inside one transaction — see services/matchProposal.service.js.
+--
+-- Supports the lazy expiry sweep every proposal-creating/accepting
+-- transaction runs first (services/bookingConflict.service.js#
+-- sweepExpiredHolds): finds ground_bookings rows stuck in a blocking-but-
+-- stale state (PROPOSED/HOLD past their hold_expires_at) so an expired
+-- proposal can never block a ground slot indefinitely just because no
+-- external scheduler has swept it yet. Partial (only rows that could ever
+-- match) and covers exactly the sweep's own WHERE clause.
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_stale_holds ON ground_bookings(status, hold_expires_at) WHERE hold_expires_at IS NOT NULL;

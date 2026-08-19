@@ -16,8 +16,14 @@ import { pool } from '../config/db.js'
 // their profile). getPostLoginPath (client) treats NULL the same as
 // false — "not completed" — never inferred from which fields are filled,
 // just this one column on the players row.
+// SUPER_ADMIN Identity & Secure Provisioning feature — username/
+// force_password_change join the public shape (never temp_password_hash/
+// temp_password_expires_at: those are internal-only, read directly by
+// otpAuth.service.js#loginWithPassword via findUserByEmail/ByPhone's own
+// `u.*`, never exposed through this explicit allowlist or any API
+// response).
 const PUBLIC_COLUMNS =
-  'u.id, u.name, u.email, u.phone, u.role, u.player_type, u.staff_id, u.status, u.created_at, sr.name AS staff_role, p.profile_onboarding_completed AS player_onboarding_completed'
+  'u.id, u.name, u.email, u.phone, u.role, u.player_type, u.staff_id, u.username, u.status, u.force_password_change, u.created_at, u.updated_at, sr.name AS staff_role, p.profile_onboarding_completed AS player_onboarding_completed'
 const FROM_USERS = 'users u LEFT JOIN staff_roles sr ON sr.id = u.staff_role_id LEFT JOIN players p ON p.user_id = u.id'
 
 export async function createUser({ name, email, passwordHash, role = 'user' }) {
@@ -34,14 +40,66 @@ export async function createUser({ name, email, passwordHash, role = 'user' }) {
 // staff.controller.js#createStaff can consume a step-up grant and create
 // the account atomically (same reasoning as every other transaction-aware
 // model function in this codebase).
-export async function createStaffUser({ name, email, passwordHash, staffId, staffRoleId }, client = pool) {
+// SUPER_ADMIN Identity & Secure Provisioning feature — username/
+// forcePasswordChange are additive optional params; every existing caller
+// that never passes them is unaffected (username stays NULL, forcePasswordChange
+// defaults false, identical to today's behavior).
+export async function createStaffUser({ name, email, passwordHash, staffId, staffRoleId, username = null, forcePasswordChange = false }, client = pool) {
   const { rows } = await client.query(
-    `INSERT INTO users (name, email, password_hash, role, staff_id, staff_role_id)
-     VALUES ($1, $2, $3, 'staff', $4, $5)
+    `INSERT INTO users (name, email, password_hash, role, staff_id, staff_role_id, username, force_password_change)
+     VALUES ($1, $2, $3, 'staff', $4, $5, $6, $7)
      RETURNING id`,
-    [name, email, passwordHash, staffId || null, staffRoleId]
+    [name, email, passwordHash, staffId || null, staffRoleId, username, forcePasswordChange]
   )
   return findUserById(rows[0].id, client)
+}
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — "Admin Management":
+// every staff account (super_admin/admin/canteen_staff), for the admin
+// list page. Never selects password_hash/temp_password_hash.
+export async function findAllStaffUsers(client = pool) {
+  const { rows } = await client.query(
+    `SELECT ${PUBLIC_COLUMNS}
+     FROM ${FROM_USERS}
+     WHERE u.role = 'staff'
+     ORDER BY u.created_at DESC`,
+  )
+  return rows
+}
+
+// "Ground Owners" admin page — every distinct user holding an active
+// GROUND_OWNER membership on at least one ground, with a per-owner ground
+// count. No existing query does this platform-wide aggregation (every
+// existing ground_users lookup is scoped to one user or one ground) —
+// genuinely new, not a duplicate of anything in groundUser.model.js.
+export async function findAllGroundOwners(client = pool) {
+  const { rows } = await client.query(
+    `SELECT u.id, u.name, u.email, u.phone, u.status, u.created_at,
+            COUNT(gu.ground_id)::int AS ground_count
+     FROM users u
+     JOIN ground_users gu ON gu.user_id = u.id AND gu.role = 'GROUND_OWNER' AND gu.is_active = true
+     GROUP BY u.id
+     ORDER BY u.name`,
+  )
+  return rows
+}
+
+// "Umpires" admin page — approved umpires (player_type already set to
+// 'umpire' by the existing selectPlayerType/signup flow; APPROVED is
+// determined by the latest umpire_requests row, same definition
+// requireApprovedUmpire/isApprovedUmpireUser already use elsewhere).
+export async function findAllUmpires(client = pool) {
+  const { rows } = await client.query(
+    `SELECT u.id, u.name, u.email, u.phone, u.status, u.created_at,
+            ur.status AS umpire_request_status
+     FROM users u
+     LEFT JOIN LATERAL (
+       SELECT status FROM umpire_requests WHERE user_id = u.id ORDER BY requested_at DESC LIMIT 1
+     ) ur ON true
+     WHERE u.role = 'player' AND u.player_type = 'umpire'
+     ORDER BY u.name`,
+  )
+  return rows
 }
 
 // Phase 4 — every function below takes an optional trailing transaction
@@ -81,6 +139,15 @@ export async function findUserByPhone(phone, client = pool) {
 // existing login/signup controllers already do).
 export async function findUserByIdentifier(identifier, identifierType, client = pool) {
   return identifierType === 'PHONE' ? findUserByPhone(identifier, client) : findUserByEmail(identifier, client)
+}
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — the one place a
+// caller needs password_hash by internal id rather than by identifier
+// (self-service change-password, confirming the CURRENT password of an
+// already-authenticated req.user, which only carries PUBLIC_COLUMNS).
+export async function findPasswordHashById(id, client = pool) {
+  const { rows } = await client.query('SELECT password_hash FROM users WHERE id = $1', [id])
+  return rows[0]?.password_hash || null
 }
 
 // Phase 3 — OTP-only signup: no password, identified by whichever of
@@ -126,16 +193,22 @@ export async function findAllUsers() {
   return rows
 }
 
-export async function updateUser(id, fields) {
+export async function updateUser(id, fields, client = pool) {
   const keys = Object.keys(fields)
-  if (keys.length === 0) return findUserById(id)
+  if (keys.length === 0) return findUserById(id, client)
 
+  // SUPER_ADMIN Identity & Secure Provisioning feature — updated_at is
+  // always bumped here rather than requiring every caller to remember it;
+  // `client` is a new optional param (default `pool`, matching every other
+  // transaction-aware model function in this file) so password-change/
+  // temp-credential flows can update atomically alongside their own audit
+  // event write.
   const setClause = keys.map((key, i) => `${key} = $${i + 2}`).join(', ')
-  await pool.query(
-    `UPDATE users SET ${setClause} WHERE id = $1`,
+  await client.query(
+    `UPDATE users SET ${setClause}, updated_at = NOW() WHERE id = $1`,
     [id, ...keys.map((key) => fields[key])]
   )
-  return findUserById(id)
+  return findUserById(id, client)
 }
 
 export async function deleteUser(id) {

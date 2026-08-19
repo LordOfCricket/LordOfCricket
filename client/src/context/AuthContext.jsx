@@ -188,6 +188,18 @@ export function AuthProvider({ children }) {
     return updated
   }
 
+  // SUPER_ADMIN Identity & Secure Provisioning feature — the endpoint
+  // itself doesn't return a user object (see auth.routes.js/
+  // passwordChange.controller.js — just a success message), so `user` is
+  // updated locally (force_password_change is what
+  // getPostLoginPath/ForcePasswordChangePage actually branch on) rather
+  // than waiting on a second /auth/me round trip.
+  const changePassword = async (currentPassword, newPassword, confirmPassword) => {
+    const result = await authApi.changePassword(currentPassword, newPassword, confirmPassword)
+    setUser((u) => (u ? { ...u, force_password_change: false } : u))
+    return result
+  }
+
   const value = {
     user,
     player,
@@ -204,6 +216,7 @@ export function AuthProvider({ children }) {
     loginWithPassword,
     forgotPassword,
     resetPassword,
+    changePassword,
     sendSignupCode,
     verifySignupCode,
     createAccount,

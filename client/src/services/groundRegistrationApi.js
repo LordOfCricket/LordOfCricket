@@ -75,8 +75,12 @@ export async function verifyLookupCode(identifier, code) {
 }
 
 // Admin review queue (super_admin only).
-export async function fetchPendingGroundRegistrations() {
-  const { data } = await api.get('/ground-owner-requests')
+// SUPER_ADMIN Identity & Secure Provisioning feature — §7 status filter
+// tabs. `status` is optional; omitting it returns every request regardless
+// of status (the backend's existing listRequests(status) behavior), which
+// remains this function's default so existing callers are unaffected.
+export async function fetchPendingGroundRegistrations(status) {
+  const { data } = await api.get('/ground-owner-requests', { params: status ? { status } : undefined })
   return data.requests
 }
 

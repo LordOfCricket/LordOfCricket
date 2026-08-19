@@ -159,3 +159,24 @@ export const accountCreationLimiter = makeLimiter({
   max: 10,
   message: 'Too many account creation attempts. Please try again shortly.',
 })
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — self-service
+// change-password (guesses at the caller's OWN current password) and the
+// admin-initiated "reset another account's password" action. Both keyed by
+// the ACTING user's id (byUserId), same shape as mfaManageLimiter — a
+// bootstrap Super Admin forced through this exact flow shouldn't be able
+// to brute-force their own current-password confirmation indefinitely,
+// and an admin resetting many accounts in a short window is itself worth
+// bounding.
+export const passwordChangeLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many password change attempts. Please try again later.',
+  keyGenerator: byUserId,
+})
+export const adminPasswordResetLimiter = makeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: 'Too many password reset actions. Please try again later.',
+  keyGenerator: byUserId,
+})

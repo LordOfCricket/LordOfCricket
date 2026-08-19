@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { requireAuth } from '../middlewares/auth.js'
+import { listTeamBookings } from '../controllers/teamBooking.controller.js'
 import healthRoutes from './health.routes.js'
 import groundPhotoRoutes from './groundPhoto.routes.js'
 import galleryImageRoutes from './galleryImage.routes.js'
@@ -21,6 +23,8 @@ import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
 import groundBookingRoutes from './groundBooking.routes.js'
+import teamBookingRoutes from './teamBooking.routes.js'
+import matchProposalRoutes from './matchProposal.routes.js'
 import groundOpsRoutes from './groundOps.routes.js'
 import matchAvailabilityRoutes, { meAvailabilityRoutes } from './matchAvailability.routes.js'
 import umpireAssignmentRoutes from './umpireAssignment.routes.js'
@@ -32,6 +36,7 @@ import matchFeedbackRoutes from './matchFeedback.routes.js'
 import tournamentRoutes from './tournament.routes.js'
 import { matchAIInsightRoutes, playerAIInsightRoutes, teamAIInsightRoutes } from './aiInsight.routes.js'
 import { playerAnalyticsRoutes, teamAnalyticsRoutes, matchAnalyticsRoutes, tournamentAnalyticsRoutes } from './analytics.routes.js'
+import adminRoutes from './admin.routes.js'
 
 const router = Router()
 
@@ -110,6 +115,10 @@ router.use('/auth', mfaRoutes)
 router.use('/umpire-requests', umpireRequestRoutes)
 router.use('/staff', staffRoutes)
 router.use('/me', meRoutes)
+// SUPER_ADMIN Identity & Secure Provisioning feature — the Admin Control
+// Center's own API surface (dashboard stats, all grounds, ground owners,
+// players, umpires, admin-initiated password recovery, audit log).
+router.use('/admin', adminRoutes)
 
 // Canteen (merged into the main LOC API, namespaced under /canteen)
 // TRANSITIONAL — Phase 10/11: single-canteen-resolving, kept for the
@@ -128,6 +137,15 @@ router.get('/canteen/health', (req, res) => {
 // is provably real and testable ahead of the frontend's own migration.
 router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/menu', groundScopedCanteenMenuRoutes)
 router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/orders', groundScopedCanteenOrderRoutes)
+
+// Phase 24 — MATCH/PRACTICE team bookings, multi-ground/team/player
+// conflict engine. Distinct from the legacy single-ground walk-in flow
+// mounted at /bookings above.
+router.use('/grounds/:publicGroundId/bookings', teamBookingRoutes)
+router.get('/team-bookings/my', requireAuth, listTeamBookings)
+
+// Phase 25 — team match proposals ("looking for an opponent").
+router.use('/grounds/:publicGroundId/proposals', matchProposalRoutes)
 
 // Phase 12 — public ground discovery (GET /grounds/nearby) and public
 // ground profile (GET /grounds/:publicGroundId). Mounted at the same

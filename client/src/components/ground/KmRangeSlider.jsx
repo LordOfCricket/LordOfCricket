@@ -11,7 +11,11 @@ import { MIN_RADIUS_KM, MAX_RADIUS_KM } from '../../models/groundDiscovery.model
 // fires on release (mouseup/touchend) or after a keyboard step. Firing a
 // refetch on every drag-tick would flood the backend with a request per
 // pixel of movement.
-export default function KmRangeSlider({ value, onCommit }) {
+// `compact` — the top filter-bar-in-a-row context (GroundsPage): drops the
+// min/max endpoint labels and shrinks to a fixed narrow width so the slider
+// sits inline with single-line buttons instead of the full-width vertical
+// block this component started as.
+export default function KmRangeSlider({ value, onCommit, compact = false }) {
   // Seeded once from `value` on mount; after that `localValue` and the
   // parent's `value` never actually diverge — every path that changes
   // `value` (drag release, keyboard step) goes through `commit` below,
@@ -26,8 +30,8 @@ export default function KmRangeSlider({ value, onCommit }) {
   }
 
   return (
-    <div className="flex w-full max-w-xs flex-col gap-2">
-      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-widest text-emerald-100/60">
+    <div className={`flex shrink-0 flex-col gap-1 ${compact ? 'w-32' : 'w-full max-w-xs gap-2'}`}>
+      <div className={`flex items-center justify-between font-semibold whitespace-nowrap text-emerald-100/60 uppercase ${compact ? 'text-[10px]' : 'text-xs tracking-widest'}`}>
         <span>Radius</span>
         <span className="text-emerald-400">{localValue} km</span>
       </div>
@@ -50,10 +54,12 @@ export default function KmRangeSlider({ value, onCommit }) {
           [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full
           [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-emerald-400"
       />
-      <div className="flex justify-between text-[11px] text-emerald-100/40">
-        <span>{MIN_RADIUS_KM} km</span>
-        <span>{MAX_RADIUS_KM} km</span>
-      </div>
+      {!compact && (
+        <div className="flex justify-between text-[11px] text-emerald-100/40">
+          <span>{MIN_RADIUS_KM} km</span>
+          <span>{MAX_RADIUS_KM} km</span>
+        </div>
+      )}
     </div>
   )
 }

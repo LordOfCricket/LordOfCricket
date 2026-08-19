@@ -49,8 +49,18 @@ export function getPostAuthPath(user) {
 // from user.model.js's players LEFT JOIN (see PUBLIC_COLUMNS) — NULL (no
 // players row yet) and false are treated identically as "not completed",
 // never inferred from anything else about the account.
+// SUPER_ADMIN Identity & Secure Provisioning feature — checked FIRST, ahead
+// of every other post-login destination: force_password_change can be true
+// for ANY role (the bootstrap Super Admin, or any account an admin reset
+// via a temporary credential — see adminPasswordRecovery.service.js), so
+// this can't be folded into the staff-only branches below. This is a UX
+// guide only — the real enforcement for staff routes is server-side in
+// requireStaffRole (middlewares/auth.js#force_password_change check);
+// non-staff accounts have no privileged route to gate, so this redirect is
+// the only enforcement they need.
 export function getPostLoginPath(user) {
   if (!user) return '/login'
+  if (user.force_password_change) return '/force-password-change'
   if (user.role === 'user') return '/role-select'
   if (user.role === 'player' && !user.player_type) return '/player-type'
   if (user.role === 'player' && user.player_type === 'team_player' && !user.player_onboarding_completed) return '/player/onboarding'

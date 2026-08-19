@@ -1,13 +1,39 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, UtensilsCrossed, ClipboardCheck, MapPinPlus, Images, UserPlus, LogOut } from 'lucide-react'
+import {
+  LayoutDashboard,
+  UtensilsCrossed,
+  ClipboardCheck,
+  MapPinPlus,
+  MapPinned,
+  Images,
+  UserPlus,
+  ShieldCheck,
+  Users,
+  Trophy,
+  ClipboardList,
+  Settings,
+  LogOut,
+} from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 
+// SUPER_ADMIN Identity & Secure Provisioning feature — §5's suggested
+// sidebar (Dashboard, Ground Requests, All Grounds, Ground Owners, Players,
+// Umpires, Account Security, Audit Logs, Admin Settings), added onto the
+// pre-existing Canteen/Umpire Requests/Edit Photos/Create Staff links
+// (still real, still reachable) rather than replacing them.
 const LINKS = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, allow: ['super_admin', 'admin'] },
+  { to: '/admin/ground-registrations', label: 'Ground Requests', icon: MapPinPlus, allow: ['super_admin'] },
+  { to: '/admin/all-grounds', label: 'All Grounds', icon: MapPinned, allow: ['super_admin'] },
+  { to: '/admin/ground-owners', label: 'Ground Owners', icon: ShieldCheck, allow: ['super_admin'] },
+  { to: '/admin/players', label: 'Players', icon: Users, allow: ['super_admin'] },
+  { to: '/admin/umpires', label: 'Umpires', icon: Trophy, allow: ['super_admin'] },
   { to: '/canteen/staff', label: 'Canteen', icon: UtensilsCrossed, allow: ['super_admin', 'admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
-  { to: '/admin/ground-registrations', label: 'Ground Registrations', icon: MapPinPlus, allow: ['super_admin'] },
   { to: '/admin/photos-hub', label: 'Edit Photos', icon: Images, allow: ['super_admin'] },
+  { to: '/security', label: 'Account Security', icon: ShieldCheck, allow: ['super_admin', 'admin'] },
+  { to: '/admin/audit-log', label: 'Audit Logs', icon: ClipboardList, allow: ['super_admin'] },
+  { to: '/admin/settings', label: 'Admin Settings', icon: Settings, allow: ['super_admin'] },
   { to: '/admin/staff/new', label: 'Create Staff', icon: UserPlus, allow: ['super_admin'] },
 ]
 

@@ -259,6 +259,25 @@ Every booking/block response also carries `displayStatus` (Phase 18): `APPROVED`
 upcoming), `COMPLETED` (confirmed, slot has passed), or `CANCELLED` — see docs/ARCHITECTURE.md §18.5
 for why LOC has no separate PENDING/REJECTED state.
 
+## Team Bookings & Match Proposals (`/api/grounds/:publicGroundId/bookings`, `/proposals`) — Phase 24/25
+
+Multi-ground, team/player-aware conflict engine — see `docs/BOOKING.md` for the full design. Distinct
+from the legacy walk-in flow above; a `booking_purpose` of `MATCH`/`PRACTICE` (never `WALK_IN`).
+`teamId` authorization is always derived from the caller's own current `players.team_id`, never
+trusted from the request body.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `POST /grounds/:publicGroundId/bookings` | Auth | Body: `{bookingPurpose: 'MATCH'\|'PRACTICE', startTime, endTime, teamId?, participantPlayerIds, matchFormat?, purpose?, notes?, clientActionId?}`. `teamId` required for `MATCH`. Straight to `CONFIRMED`; `409 GROUND_SLOT_UNAVAILABLE`/`TEAM_TIME_CONFLICT`/`PLAYER_TIME_CONFLICT` names the specific axis that lost |
+| `GET /grounds/:publicGroundId/bookings/:publicBookingId` | Auth (owner, teammate, or ground staff with `BOOKING_VIEW`/`BOOKING_MANAGE`) | `404` for a WALK_IN booking, a wrong-ground booking, or an unauthorized viewer — same shape either way |
+| `POST /grounds/:publicGroundId/bookings/:publicBookingId/cancel` | Auth (owner or any team on the booking) | |
+| `POST /grounds/:publicGroundId/bookings/:publicBookingId/staff-cancel` \| `/check-in` \| `/no-show` | `requireGroundPermission('BOOKING_MANAGE')` | Ground-scoped staff/owner only; tenancy-checked against the booking's real `ground_id`, not just the URL |
+| `GET /grounds/:publicGroundId/proposals` | Public | Every OPEN, unexpired proposal at this ground — discovery is deliberately public, same posture as `GET /bookings/availability` |
+| `GET /grounds/:publicGroundId/proposals/:publicProposalId` | Public | |
+| `POST /grounds/:publicGroundId/proposals` | Auth | Same body as a MATCH booking; `teamId` required. Reserves the ground + proposing team/players immediately (`status: 'PROPOSED'`) |
+| `POST /grounds/:publicGroundId/proposals/:publicProposalId/accept` | Auth | Body: `{teamId, participantPlayerIds}`. Atomic claim-then-attach (only one concurrent acceptor can ever win); `409 PROPOSAL_ALREADY_ACCEPTED`/`PROPOSAL_EXPIRED`/`PROPOSAL_CANCELLED`, `400 SELF_ACCEPT_NOT_ALLOWED` |
+| `POST /grounds/:publicGroundId/proposals/:publicProposalId/cancel` | Auth (proposing-team member) | OPEN proposals only — a `CONFIRMED` one must be withdrawn via the ordinary booking-cancel route above |
+
 ## Ground Operations (`/api/ground`) — Phase 18
 
 Every read here derives from the SAME `ground_bookings` table (+ the existing read-only LOC-match

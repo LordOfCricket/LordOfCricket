@@ -61,6 +61,16 @@ export async function resetPassword(identifier, code, newPassword, confirmPasswo
   return response.data
 }
 
+// SUPER_ADMIN Identity & Secure Provisioning feature — self-service change
+// password while already authenticated (distinct from forgot/reset-password
+// above, which is the logged-out OTP flow). Backs both the mandatory
+// force-password-change screen and a future "change my password" action
+// from an authenticated account in general.
+export async function changePassword(currentPassword, newPassword, confirmPassword) {
+  const response = await api.post('/auth/change-password', { currentPassword, newPassword, confirmPassword })
+  return response.data
+}
+
 // Phase 6 — now also returns `mfa: {enrolled, required, verified}` alongside
 // the unchanged `user` shape every existing caller already relies on.
 export async function fetchMe() {

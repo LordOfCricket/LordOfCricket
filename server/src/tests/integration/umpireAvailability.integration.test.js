@@ -12,6 +12,7 @@ import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import * as matchService from '../../services/match.service.js'
+import { groundTodayDateStr, addDaysToDateStr } from '../../domain/shared/groundTime.js'
 
 function stubIo() {
   const chain = { emit: () => {} }
@@ -182,10 +183,16 @@ test('GET /umpire/availability reflects what was just set', async () => {
   const umpire = await approvedUmpire('get-availability')
   try {
     await json(`${server.baseUrl}/umpire/availability/weekly`, { method: 'PATCH', token: umpire.token, body: { dayOfWeek: 2, isAvailable: false } })
+    // A fixed future offset, not a hardcoded absolute date — the original
+    // literal ('2026-08-18') was in the future when this test was written
+    // but silently became "yesterday" as real time passed in this dev
+    // environment, causing the date-override PATCH to be rejected as a
+    // past date and this test to fail (0 overrides instead of 1). Pre-
+    // existing "stale expectation" bug, unrelated to any Phase 24/25 work.
     await json(`${server.baseUrl}/umpire/availability/date`, {
       method: 'PATCH',
       token: umpire.token,
-      body: { date: '2026-08-18', startTime: '18:00', endTime: '21:00', isAvailable: false },
+      body: { date: addDaysToDateStr(groundTodayDateStr(), 30), startTime: '18:00', endTime: '21:00', isAvailable: false },
     })
 
     const res = await json(`${server.baseUrl}/umpire/availability`, { token: umpire.token })

@@ -14,6 +14,7 @@
     "db:seed:players": "node src/config/seedPlayers.js",
     "db:seed:ground": "node src/scripts/seedGroundAndCanteen.js",
     "db:seed:ground-membership": "node src/scripts/seedGroundMembership.js",
+    "db:bootstrap-admin": "node src/scripts/bootstrapSuperAdmin.js",
     "commentary:rebuild": "node src/scripts/rebuildCommentary.js",
     "migrate:gallery": "node src/scripts/migrateGalleryToPostgres.js",
     "migrate:ai-insights": "node src/scripts/migrateAiInsightsToPostgres.js",

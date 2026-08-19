@@ -6,6 +6,7 @@ import {
   touchLastUsed,
   revokeSessionByTokenHash,
   revokeAllSessionsForUser as revokeAllSessionsForUserRepo,
+  revokeAllSessionsForUserExceptCurrent as revokeAllSessionsForUserExceptCurrentRepo,
 } from '../repositories/prisma/session.prisma-repository.js'
 import { logger } from '../utils/logger.js'
 
@@ -51,4 +52,18 @@ export async function revokeSession(rawToken) {
 export async function revokeAllSessionsForUser(userId) {
   await revokeAllSessionsForUserRepo(userId)
   logger.info('All sessions revoked for user (password reset)', { userId })
+}
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — self-service
+// change-password happens WHILE authenticated (unlike the logged-out
+// forgot-password flow above), so the current session should survive its
+// own action; every OTHER session is treated as compromised-by-association
+// exactly like a full password reset. The repository function already
+// existed (mfaEnrollment.service.js has used it since Phase 6 for
+// factor-management mutations) — this is its first service-layer wrapper,
+// added for consistency with revokeAllSessionsForUser's own wrapped shape
+// rather than reaching into the repository directly.
+export async function revokeAllSessionsForUserExceptCurrent(userId, currentSessionId) {
+  await revokeAllSessionsForUserExceptCurrentRepo(userId, currentSessionId)
+  logger.info('All other sessions revoked for user (password changed)', { userId })
 }

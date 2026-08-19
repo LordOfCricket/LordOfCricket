@@ -39,11 +39,11 @@ export default function GroundFiltersBar({ grounds, selectedFacilities, onChange
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-colors ${
           selectedFacilities.length > 0 ? 'border-emerald-400/50 bg-emerald-500/10 text-white' : 'border-emerald-400/20 text-emerald-100/70 hover:text-white'
         }`}
       >
-        <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+        <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
         Facilities
         {selectedFacilities.length > 0 && <span className="rounded-full bg-emerald-500 px-1.5 text-xs text-emerald-950">{selectedFacilities.length}</span>}
       </button>

@@ -43,6 +43,15 @@ const AdminGroundRegistrationsPage = lazy(() => import('../pages/admin-ground-re
 const AdminPhotosHubPage = lazy(() => import('../pages/admin-photos-hub/AdminPhotosHubPage.jsx'))
 const CreateStaffPage = lazy(() => import('../pages/admin-staff/CreateStaffPage.jsx'))
 
+// SUPER_ADMIN Identity & Secure Provisioning feature — Admin Control Center.
+const AllGroundsPage = lazy(() => import('../pages/admin-all-grounds/AllGroundsPage.jsx'))
+const GroundOwnersPage = lazy(() => import('../pages/admin-ground-owners/GroundOwnersPage.jsx'))
+const AdminPlayersPage = lazy(() => import('../pages/admin-players/AdminPlayersPage.jsx'))
+const AdminUmpiresPage = lazy(() => import('../pages/admin-umpires/AdminUmpiresPage.jsx'))
+const AuditLogsPage = lazy(() => import('../pages/admin-audit-logs/AuditLogsPage.jsx'))
+const AdminSettingsPage = lazy(() => import('../pages/admin-settings/AdminSettingsPage.jsx'))
+const ForcePasswordChangePage = lazy(() => import('../pages/force-password-change/ForcePasswordChangePage.jsx'))
+
 // Phase 6 — Privileged Account MFA & Step-Up Security
 const SecuritySettingsPage = lazy(() => import('../pages/security/SecuritySettingsPage.jsx'))
 const MfaVerifyPage = lazy(() => import('../pages/security/MfaVerifyPage.jsx'))
@@ -109,6 +118,13 @@ const CanteenStaffDashboardPage = lazy(() => import('../pages/canteen/staff/dash
 const MyBookingsPage = lazy(() => import('../pages/booking/MyBookingsPage.jsx'))
 const StaffBookingPage = lazy(() => import('../pages/booking/StaffBookingPage.jsx'))
 
+// Team booking and match proposals (Phase E)
+const CreateTeamBookingPage = lazy(() => import('../pages/team-booking/CreateTeamBookingPage.jsx'))
+const MyTeamBookingsPage = lazy(() => import('../pages/team-booking/MyTeamBookingsPage.jsx'))
+const MatchProposalsDiscoveryPage = lazy(() => import('../pages/match-proposal/MatchProposalsDiscoveryPage.jsx'))
+const MatchProposalDetailPage = lazy(() => import('../pages/match-proposal/MatchProposalDetailPage.jsx'))
+const CreateMatchProposalPage = lazy(() => import('../pages/match-proposal/CreateMatchProposalPage.jsx'))
+
 // Tournament management (public reads, staff-only mutations)
 const TournamentsPage = lazy(() => import('../pages/tournaments/TournamentsPage.jsx'))
 const TournamentPage = lazy(() => import('../pages/tournaments/TournamentPage.jsx'))
@@ -157,6 +173,12 @@ const router = createBrowserRouter([
       { path: '/admin/ground-registrations', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminGroundRegistrationsPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosHubPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<CreateStaffPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/all-grounds', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AllGroundsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/ground-owners', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<GroundOwnersPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/players', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPlayersPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/umpires', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminUmpiresPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/audit-log', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AuditLogsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/settings', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminSettingsPage />)}</RequireMfaVerified></RequireStaffRole> },
 
       // Phase 6 — Security Settings + privileged-session verification.
       { path: '/security', element: <RequirePrivilegedAccount>{withSuspense(<SecuritySettingsPage />)}</RequirePrivilegedAccount> },
@@ -164,6 +186,12 @@ const router = createBrowserRouter([
 
       // Auth
       { path: '/login', element: withSuspense(<AuthPage />) },
+      // SUPER_ADMIN Identity & Secure Provisioning feature — reachable by ANY
+      // authenticated account with force_password_change=true (the bootstrap
+      // Super Admin, or anyone an admin reset via a temp credential), not
+      // staff-only. Deliberately RequireAuth only, no RequireMfaVerified —
+      // this page must stay reachable even before MFA is set up.
+      { path: '/force-password-change', element: <RequireAuth>{withSuspense(<ForcePasswordChangePage />)}</RequireAuth> },
       // New Signup Flow — its own dedicated route/page (not a `?mode=` of
       // /login like the old, much smaller register form was): this form is
       // genuinely bigger (name×3, account-type radio, dual email+phone
@@ -239,6 +267,13 @@ const router = createBrowserRouter([
       // Ground booking
       { path: '/bookings', element: <RequireAuth>{withSuspense(<MyBookingsPage />)}</RequireAuth> },
       { path: '/bookings/staff', element: <RequireAuth>{withSuspense(<StaffBookingPage />)}</RequireAuth> },
+
+      // Team booking and match proposals (Phase E)
+      { path: '/team-booking/create', element: <RequireAuth>{withSuspense(<CreateTeamBookingPage />)}</RequireAuth> },
+      { path: '/team-bookings', element: <RequireAuth>{withSuspense(<MyTeamBookingsPage />)}</RequireAuth> },
+      { path: '/match-proposals', element: withSuspense(<MatchProposalsDiscoveryPage />) },
+      { path: '/match-proposals/:publicProposalId', element: withSuspense(<MatchProposalDetailPage />) },
+      { path: '/match-proposal/create', element: <RequireAuth>{withSuspense(<CreateMatchProposalPage />)}</RequireAuth> },
 
       // Tournament management (public reads, no auth wall)
       { path: '/tournaments', element: withSuspense(<TournamentsPage />) },

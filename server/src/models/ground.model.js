@@ -94,6 +94,23 @@ export async function findSingleGround() {
   return rows[0]
 }
 
+// Phase 24 — the legacy single-ground walk-in booking flow (groundBooking.
+// service.js) never had a ground concept at all before ground_bookings
+// gained a NOT NULL ground_id column; it still has no :publicGroundId in its
+// URL and isn't gaining one (Part 51 — preserve the existing API). Unlike
+// findSingleGround() above, this deliberately does NOT throw once a second
+// ground exists — real multi-ground registrations (or, in this dev
+// database, accumulated test-fixture grounds) must never break the one
+// walk-in flow that predates multi-ground entirely. Lowest id = the
+// platform's original ground, deterministically and permanently (matches
+// the exact same resolution the ground_bookings.ground_id backfill
+// migration used, schema.sql Phase 24, so historical and new walk-in rows
+// always agree on which ground they belong to).
+export async function findDefaultGround() {
+  const { rows } = await pool.query('SELECT * FROM grounds ORDER BY id ASC LIMIT 1')
+  return rows[0] || null
+}
+
 // Phase 12 Step 24 — DRAFT/SUSPENDED grounds must not be reachable through
 // the public profile endpoint at all; filtering status here (rather than
 // fetching then checking in the controller) means an unknown id and a
@@ -374,4 +391,57 @@ export async function findDistinctActiveCities() {
     `SELECT DISTINCT city FROM grounds WHERE status = 'ACTIVE' AND city IS NOT NULL ORDER BY city`,
   )
   return rows.map((r) => r.city)
+}
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — "All Grounds" admin
+// page (§11): every ground regardless of status, unlike every discovery
+// query above (all explicitly ACTIVE-only, by design — a pending/rejected/
+// suspended ground must never appear there). Admin-only surface, so no
+// status filter here at all; owner name is resolved via a correlated
+// subquery (first active GROUND_OWNER membership) purely for display.
+export async function findAllGroundsForAdmin() {
+  const { rows } = await pool.query(
+    `SELECT g.id, g.public_ground_id, g.slug, g.name, g.city, g.state, g.status, g.created_at,
+            (SELECT u.name FROM ground_users gu JOIN users u ON u.id = gu.user_id
+             WHERE gu.ground_id = g.id AND gu.role = 'GROUND_OWNER' AND gu.is_active = true
+             ORDER BY gu.id LIMIT 1) AS owner_name
+     FROM grounds g
+     ORDER BY g.created_at DESC`,
+  )
+  return rows
+}
+
+export async function countActiveGrounds() {
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM grounds WHERE status = 'ACTIVE'`)
+  return rows[0].count
+}
+
+export async function countAllGrounds() {
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM grounds`)
+  return rows[0].count
+}
+
+// Suspend/reactivate (§11) — reuses the EXISTING grounds.status enum
+// ('DRAFT'|'ACTIVE'|'SUSPENDED', schema.sql) rather than a new column; a
+// SUSPENDED ground fails findPublicActiveGroundByPublicId's `status =
+// 'ACTIVE'` filter exactly like a still-pending one, so it's already
+// correctly invisible to every public discovery/profile query with zero
+// further changes. Guarded transitions only (ACTIVE->SUSPENDED,
+// SUSPENDED->ACTIVE) — a DRAFT ground (mid-approval, shouldn't exist in
+// practice since approval sets ACTIVE directly, but defensively excluded
+// anyway) is never toggled by this.
+export async function suspendGround(publicGroundId) {
+  const { rows } = await pool.query(
+    `UPDATE grounds SET status = 'SUSPENDED', updated_at = NOW() WHERE public_ground_id = $1 AND status = 'ACTIVE' RETURNING *`,
+    [publicGroundId],
+  )
+  return rows[0] || null
+}
+
+export async function reactivateGround(publicGroundId) {
+  const { rows } = await pool.query(
+    `UPDATE grounds SET status = 'ACTIVE', updated_at = NOW() WHERE public_ground_id = $1 AND status = 'SUSPENDED' RETURNING *`,
+    [publicGroundId],
+  )
+  return rows[0] || null
 }

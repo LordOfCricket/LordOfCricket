@@ -62,10 +62,14 @@ test('CONCURRENCY (non-negotiable, Part 51): two simultaneous booking requests f
 })
 
 test('OVERLAP (Part 52): the database exclusion constraint correctly rejects every overlapping shape and allows touching ranges', async () => {
+  // Phase 24 — ground_id is NOT NULL; this direct-SQL test (deliberately
+  // bypassing the service layer to exercise the raw constraint) needs the
+  // same ground every other booking in this suite implicitly uses.
+  const { rows: [{ id: groundId }] } = await pool.query('SELECT id FROM grounds ORDER BY id ASC LIMIT 1')
   const insert = (ref, startHour, startMin, endHour, endMin) =>
     pool.query(
-      `INSERT INTO ground_bookings (public_booking_id, customer_name, start_time, end_time) VALUES ($1,'t',$2,$3)`,
-      [ref, groundLocalToUtc(TEST_DATE_2, startHour, startMin), groundLocalToUtc(TEST_DATE_2, endHour, endMin)]
+      `INSERT INTO ground_bookings (ground_id, public_booking_id, customer_name, start_time, end_time) VALUES ($1,$2,'t',$3,$4)`,
+      [groundId, ref, groundLocalToUtc(TEST_DATE_2, startHour, startMin), groundLocalToUtc(TEST_DATE_2, endHour, endMin)]
     )
   const tryInsert = async (...args) => {
     try {

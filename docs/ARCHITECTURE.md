@@ -1268,9 +1268,11 @@ manages."
 current architecture. Later phases (Phase 8 grounds/canteens, Phase 9 `ground_users` ground-scoped RBAC,
 Phase 12 ground_id on ground_photos/amenities, Phase 21 matches.ground_id) built a real, active
 multi-ground platform on top of this original single-ground design. See `docs/DATABASE.md` for the
-current, accurate state. `ground_bookings` itself is the one table that still has no `ground_id` (the
-single-ground assumption survives there specifically); `advertisements`/`partners`/`gallery_images`/
-`ai_insights` remain deliberately global/ground-less by design, not by oversight.
+current, accurate state. **Update 2 (Phase 24, corrected in place):** `ground_bookings` also gained a
+`ground_id` column — the one remaining single-ground holdout described above no longer holds; see
+`docs/BOOKING.md` for the full multi-ground booking/team/player conflict engine this enabled.
+`advertisements`/`partners`/`gallery_images`/`ai_insights` remain deliberately global/ground-less by
+design, not by oversight.
 
 The mandate was explicit: reuse Phase 14's existing booking architecture, never redesign a working
 module, never touch scoring or the tournament engine. Every decision below follows directly from

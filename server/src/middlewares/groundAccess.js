@@ -114,6 +114,27 @@ export function requireGroundPermission(permissionKey) {
   }
 }
 
+// Phase 24 — resolves req.ground from :publicGroundId with NO role/
+// membership check, for routes any authenticated user (a player creating
+// their own team's booking, not ground staff) needs to reach — the ground-
+// scoped-but-not-staff-gated counterpart to attachGroundCanteenContext
+// below. Authorization for what the request is actually allowed to DO is
+// then owned entirely by the service layer (bookingConflict.service.js),
+// same "resolve tenancy here, authorize there" split attachGroundCanteenContext
+// already uses for its own public variant.
+export async function attachGroundContext(req, res, next) {
+  try {
+    const ground = await findGroundByPublicId(req.params.publicGroundId)
+    if (!ground) {
+      return res.status(404).json({ error: 'Ground not found.' })
+    }
+    req.ground = ground
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
 // Canteen access foundation (Step 12/13, Phase 9): resolves the canteen's
 // OWN ground_id from the database — never from the client — then runs the
 // same membership check requireGroundRole does. Does NOT verify against a

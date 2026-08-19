@@ -12,6 +12,18 @@ test('getPostLoginPath: role=user (mandatory role selection not yet done) still 
   assert.equal(getPostLoginPath({ role: 'user' }), '/role-select')
 })
 
+// SUPER_ADMIN Identity & Secure Provisioning feature
+test('getPostLoginPath: force_password_change wins over every other destination, for any role', () => {
+  assert.equal(getPostLoginPath({ role: 'staff', staff_role: 'super_admin', force_password_change: true }), '/force-password-change')
+  assert.equal(getPostLoginPath({ role: 'user', force_password_change: true }), '/force-password-change')
+  assert.equal(getPostLoginPath({ role: 'player', player_type: null, force_password_change: true }), '/force-password-change')
+})
+
+test('getPostLoginPath: force_password_change=false or absent does not affect a staff account\'s normal destination', () => {
+  assert.equal(getPostLoginPath({ role: 'staff', staff_role: 'super_admin', force_password_change: false }), '/')
+  assert.equal(getPostLoginPath({ role: 'staff', staff_role: 'super_admin' }), '/')
+})
+
 test('getPostLoginPath: a player without player_type (mandatory step not yet done) still goes to /player-type', () => {
   assert.equal(getPostLoginPath({ role: 'player', player_type: null }), '/player-type')
 })
