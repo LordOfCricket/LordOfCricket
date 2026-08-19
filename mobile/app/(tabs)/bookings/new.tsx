@@ -10,6 +10,7 @@ import {
   TextInput as RNTextInput,
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
+import { randomUUID } from 'expo-crypto'
 import { useRouter } from 'expo-router'
 import { useAvailability, useCreateBooking } from '../../src/hooks/useBooking'
 import { Colors, Spacing, Typography } from '../../src/constants/colors'
@@ -63,11 +64,16 @@ export default function NewBookingScreen() {
     }
 
     try {
+      // Generate clientActionId ONCE per user action
+      // This UUID will be reused if TanStack Query retries the request
+      const clientActionId = randomUUID()
+
       await createBooking.mutateAsync({
         startTime: selectedSlot.startTime,
         expectedPlayers: expectedPlayers ? parseInt(expectedPlayers, 10) : undefined,
         contactPhone: contactPhone || undefined,
         notes: notes || undefined,
+        clientActionId,
       })
 
       Alert.alert('Success', 'Booking confirmed!', [
