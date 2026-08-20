@@ -29,10 +29,6 @@ export default function GroundsScreen() {
     10
   )
 
-  useEffect(() => {
-    requestLocation()
-  }, [])
-
   const requestLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync()
@@ -51,6 +47,10 @@ export default function GroundsScreen() {
       setLocationLoading(false)
     }
   }
+
+  useEffect(() => {
+    requestLocation()
+  }, [])
 
   const handleRefresh = async () => {
     setRefreshing(true)

@@ -31,7 +31,7 @@ export function useGroundDetail(publicGroundId: string) {
 export function useGroundAvailability(date: string) {
   return useQuery({
     queryKey: ['grounds', 'availability', date],
-    queryFn: () => groundApi.getGroundAvailability(date),
+    queryFn: () => groundApi.getAvailability(date),
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: !!date,
   })
@@ -43,13 +43,5 @@ export function useGroundTimeline(date: string) {
     queryFn: () => groundApi.getGroundTimeline(date),
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: !!date,
-  })
-}
-
-export function useMyBookings() {
-  return useQuery({
-    queryKey: ['bookings', 'my'],
-    queryFn: () => groundApi.getMyBookings(),
-    staleTime: 1000 * 60, // 1 minute
   })
 }

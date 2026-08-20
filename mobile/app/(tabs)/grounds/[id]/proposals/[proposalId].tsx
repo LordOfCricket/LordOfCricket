@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useAuth } from '../../../../../src/hooks/useAuth'
+import { useMyPlayer } from '../../../../../src/hooks/usePlayer'
 import { useMatchProposalDetail, useAcceptMatchProposal, useCancelMatchProposal } from '../../../../../src/hooks/useMatchProposals'
 import { Colors, Spacing, Typography } from '../../../../../src/constants/colors'
 import { LoadingScreen } from '../../../../../src/components/LoadingScreen'
@@ -20,7 +21,7 @@ export default function ProposalDetailScreen() {
   const router = useRouter()
   const { id: groundId, proposalId } = useLocalSearchParams<{ id: string; proposalId: string }>()
   const { user } = useAuth()
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const playerQuery = useMyPlayer(user?.role === 'player')
 
   const { data: detailData, isLoading, isError, refetch } = useMatchProposalDetail(groundId || '', proposalId || '')
   const acceptMutation = useAcceptMatchProposal()
@@ -29,7 +30,13 @@ export default function ProposalDetailScreen() {
   const proposal = detailData?.proposal
 
   const handleAccept = () => {
-    if (!groundId || !proposalId || !user) return
+    const player = playerQuery.data
+    if (!groundId || !proposalId || !user || !player?.team_id) {
+      Alert.alert('Error', 'You must be a member of a team to accept this proposal.')
+      return
+    }
+
+    const teamId = player.team_id
 
     Alert.alert('Accept Proposal', 'Do you want to accept this proposal?', [
       { text: 'Cancel', onPress: () => {} },
@@ -41,7 +48,7 @@ export default function ProposalDetailScreen() {
               publicGroundId: groundId,
               publicProposalId: proposalId,
               data: {
-                teamId: user.id, // Backend will derive actual team from authenticated player
+                teamId: teamId,
                 participantPlayerIds: [],
               },
             },
