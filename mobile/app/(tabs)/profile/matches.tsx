@@ -35,6 +35,7 @@ export default function MatchHistoryScreen() {
   React.useEffect(() => {
     if (statsQuery.data?.matchHistory?.items) {
       if (offset === 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setAllMatches(statsQuery.data.matchHistory.items)
       } else {
         setAllMatches((prev) => [...prev, ...statsQuery.data.matchHistory.items])

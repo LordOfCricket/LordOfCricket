@@ -6,7 +6,6 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useMyPlayerStats } from '../../../../src/hooks/usePlayer'

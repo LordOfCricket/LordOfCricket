@@ -8,8 +8,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
-  SectionList,
-  SectionListData,
   TouchableOpacity,
   Alert,
 } from "react-native"
