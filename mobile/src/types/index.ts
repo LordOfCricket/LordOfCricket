@@ -14,21 +14,156 @@ export interface Player {
   user_id: number
   name: string
   public_player_id: string
-  role?: string
-  batting_style?: string
-  bowling_style?: string
-  jersey_number?: number
-  photo_url?: string
-  city?: string
-  bio?: string
-  nickname?: string
-  date_of_birth?: string
+  role?: string | null
+  batting_style?: string | null
+  bowling_style?: string | null
+  jersey_number?: number | null
+  photo_url?: string | null
+  city?: string | null
+  bio?: string | null
+  nickname?: string | null
+  date_of_birth?: string | null
   is_wicket_keeper?: boolean
-  address_line?: string
-  state?: string
-  postal_code?: string
+  address_line?: string | null
+  state?: string | null
+  postal_code?: string | null
   profile_onboarding_completed: boolean
   created_at: string
+  updated_at?: string
+  team_id?: number | null
+}
+
+// Editable fields for PATCH /me/player
+export interface EditablePlayerFields {
+  name?: string
+  jersey_number?: number | null
+  role?: string | null
+  batting_style?: string | null
+  bowling_style?: string | null
+  city?: string | null
+  bio?: string | null
+  photo_url?: string | null
+  nickname?: string | null
+  date_of_birth?: string | null
+  is_wicket_keeper?: boolean
+  address_line?: string | null
+  state?: string | null
+  postal_code?: string | null
+  profile_onboarding_completed?: boolean
+}
+
+// Career batting statistics
+export interface BattingStats {
+  innings: number
+  notOuts: number
+  runs: number
+  ballsFaced: number
+  highestScore: { runs: number; notOut: boolean } | null
+  average: number | null
+  strikeRate: number | null
+  fours: number
+  sixes: number
+  thirties: number
+  fifties: number
+  hundreds: number
+  ducks: number
+}
+
+// Career bowling statistics
+export interface BowlingStats {
+  innings: number
+  legalBalls: number
+  runsConceded: number
+  wickets: number
+  maidens: number
+  average: number | null
+  economy: number | null
+  strikeRate: number | null
+  equivalentOvers: number
+  bestBowling: { wickets: number; runs: number } | null
+  threeWicketHauls: number
+  fourWicketHauls: number
+  fiveWicketHauls: number
+}
+
+// Fielding statistics
+export interface FieldingStats {
+  catches: number
+  stumpings: number
+  runOuts: number
+}
+
+// Career statistics aggregate
+export interface CareerStats {
+  matches: number
+  batting: BattingStats
+  bowling: BowlingStats
+  fielding: FieldingStats
+}
+
+// Batting performance in a single match
+export interface MatchBattingPerformance {
+  didBat: boolean
+  runs?: number
+  balls?: number
+  fours?: number
+  sixes?: number
+  notOut?: boolean
+  strikeRate?: number | null
+}
+
+// Bowling performance in a single match
+export interface MatchBowlingPerformance {
+  didBowl: boolean
+  legalBalls?: number
+  runs?: number
+  wickets?: number
+  maidens?: number
+  ballsPerOver?: number
+  economy?: number | null
+}
+
+// Performance in a single match
+export interface PlayerMatchPerformance {
+  matchId: number
+  date: string
+  venue: string | null
+  opponent: string
+  result: string
+  won: boolean | null
+  batting: MatchBattingPerformance
+  bowling: MatchBowlingPerformance
+}
+
+// Match history response
+export interface MatchHistory {
+  total: number
+  limit: number
+  offset: number
+  items: PlayerMatchPerformance[]
+}
+
+// Personal bests
+export interface PersonalBests {
+  highestScore: { runs: number; notOut: boolean } | null
+  bestBowling: { wickets: number; runs: number } | null
+}
+
+// Player minimal info for stats context
+export interface PlayerMinimal {
+  id: number
+  publicPlayerId: string
+  name: string
+  role: string | null
+}
+
+// Complete player statistics response (GET /me/stats or GET /players/:id/stats)
+export interface PlayerStats {
+  player: PlayerMinimal
+  career: CareerStats
+  recentForm: PlayerMatchPerformance[]
+  matchHistory: MatchHistory
+  personalBests: PersonalBests
 }
 
 export interface Team {
@@ -175,6 +310,24 @@ export interface Booking {
   customerName: string
   createdAt: string
   cancelledAt?: string
+}
+
+export interface Notification {
+  id: number
+  userId: number
+  type: string
+  title: string
+  body?: string
+  relatedBookingId?: number
+  relatedMatchId?: number
+  isRead: boolean
+  createdAt: string
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[]
+  total: number
+  unreadCount: number
 }
 
 export interface SocketMatchStatePayload {
