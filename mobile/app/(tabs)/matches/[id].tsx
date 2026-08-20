@@ -6,20 +6,55 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  AppState,
+  AppStateStatus,
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useMatchDetail } from '../../../src/hooks/useMatches'
+import { useLiveMatch } from '../../../src/hooks/useSocketMatches'
+import { useSocketCommentary } from '../../../src/hooks/useSocketCommentary'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { LiveIndicator } from '../../../src/components/LiveIndicator'
+import { CurrentPlayers } from '../../../src/components/CurrentPlayers'
+import { RecentDeliveries } from '../../../src/components/RecentDeliveries'
+import { LiveCommentary } from '../../../src/components/LiveCommentary'
 
 export default function MatchDetailsScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
   const matchId = parseInt(id || '0', 10)
   const [refreshing, setRefreshing] = useState(false)
+  const [appState, setAppState] = useState<AppStateStatus>('active')
 
   const { data: match, isLoading, isError, error, refetch } = useMatchDetail(matchId)
+
+  // Subscribe to realtime match state (enabled when match is live)
+  const liveMatch = useLiveMatch(matchId && match?.match?.status === 'live' ? matchId : null, {
+    enabled: !!(matchId && match),
+  })
+
+  // Subscribe to realtime commentary (enabled when match exists)
+  const commentary = useSocketCommentary(matchId && match ? matchId : null, {
+    enabled: !!(matchId && match),
+  })
+
+  // Handle app background/foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState)
+    return () => subscription.remove()
+  }, [])
+
+  // Focus effect ensures proper cleanup when navigating away
+  useFocusEffect(
+    React.useCallback(() => {
+      // Screen is in focus — listeners should be active (handled by hooks)
+      return () => {
+        // Screen lost focus — hooks will clean up automatically on unmount
+      }
+    }, [])
+  )
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -73,19 +108,58 @@ export default function MatchDetailsScreen() {
     minute: '2-digit',
   })
 
-  const getStatusColor = () => {
-    const status = match.match?.status
-    switch (status) {
-      case 'live':
-        return Colors.statusOngoing
-      case 'upcoming':
-        return Colors.statusUpcoming
-      case 'completed':
-        return Colors.statusCompleted
-      case 'cancelled':
-        return Colors.statusCancelled
-      default:
-        return Colors.textTertiary
+  // Use live data if available and it's the current innings, otherwise use HTTP data
+  const displayMatch = liveMatch.data && liveMatch.data.currentInnings
+    ? liveMatch.data
+    : match
+
+  // Determine actual status (prefer live data)
+  const actualStatus = displayMatch?.match?.status || match?.match?.status
+
+  // Get team scores — prefer live data if available
+  const getTeamScore = (teamId: number) => {
+    if (!liveMatch.data?.currentInnings) {
+      // Use HTTP data
+      if (teamId === match?.match?.team_a_id) {
+        return {
+          runs: match?.match?.team_a_runs,
+          wickets: match?.match?.team_a_wickets,
+          overs: match?.match?.team_a_overs,
+        }
+      } else {
+        return {
+          runs: match?.match?.team_b_runs,
+          wickets: match?.match?.team_b_wickets,
+          overs: match?.match?.team_b_overs,
+        }
+      }
+    }
+
+    // Use live data for current innings
+    const teamBattingInCurrent =
+      liveMatch.data.currentInnings.battingTeamId === teamId
+    if (!teamBattingInCurrent) {
+      // This team hasn't batted yet or already finished — use HTTP data
+      if (teamId === match?.match?.team_a_id) {
+        return {
+          runs: match?.match?.team_a_runs,
+          wickets: match?.match?.team_a_wickets,
+          overs: match?.match?.team_a_overs,
+        }
+      } else {
+        return {
+          runs: match?.match?.team_b_runs,
+          wickets: match?.match?.team_b_wickets,
+          overs: match?.match?.team_b_overs,
+        }
+      }
+    }
+
+    // This team is batting now — use live data
+    return {
+      runs: liveMatch.data.currentInnings.runs,
+      wickets: liveMatch.data.currentInnings.wickets,
+      overs: liveMatch.data.currentInnings.oversLabel,
     }
   }
 
@@ -98,16 +172,10 @@ export default function MatchDetailsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <View
-          style={[
-            styles.statusBadge,
-            {
-              backgroundColor: getStatusColor(),
-            },
-          ]}
-        >
-          <Text style={styles.statusText}>{match.match?.status?.toUpperCase()}</Text>
-        </View>
+        <LiveIndicator
+          status={(actualStatus as 'live' | 'upcoming' | 'completed' | 'finalized' | 'cancelled') || 'upcoming'}
+          isConnected={liveMatch.connected}
+        />
       </View>
 
       {/* Match Info */}
@@ -116,18 +184,21 @@ export default function MatchDetailsScreen() {
         {match.match?.venue && <Text style={styles.venueText}>{match.match.venue}</Text>}
       </View>
 
-      {/* Teams */}
+      {/* Teams with Live Score */}
       <View style={styles.card}>
         <View style={styles.teamContainer}>
           <View style={styles.team}>
             <Text style={styles.teamName}>{match.teamA?.name || 'Team A'}</Text>
-            {match.match?.team_a_runs !== null && (
+            {getTeamScore(match.match?.team_a_id)?.runs !== null && (
               <Text style={styles.score}>
-                {match.match?.team_a_runs || 0}/{match.match?.team_a_wickets || 0}
+                {getTeamScore(match.match?.team_a_id)?.runs || 0}/
+                {getTeamScore(match.match?.team_a_id)?.wickets || 0}
               </Text>
             )}
-            {match.match?.team_a_overs && (
-              <Text style={styles.overs}>{match.match.team_a_overs} overs</Text>
+            {getTeamScore(match.match?.team_a_id)?.overs && (
+              <Text style={styles.overs}>
+                {getTeamScore(match.match?.team_a_id)?.overs} overs
+              </Text>
             )}
           </View>
 
@@ -135,23 +206,73 @@ export default function MatchDetailsScreen() {
 
           <View style={styles.team}>
             <Text style={styles.teamName}>{match.teamB?.name || 'Team B'}</Text>
-            {match.match?.team_b_runs !== null && (
+            {getTeamScore(match.match?.team_b_id)?.runs !== null && (
               <Text style={styles.score}>
-                {match.match?.team_b_runs || 0}/{match.match?.team_b_wickets || 0}
+                {getTeamScore(match.match?.team_b_id)?.runs || 0}/
+                {getTeamScore(match.match?.team_b_id)?.wickets || 0}
               </Text>
             )}
-            {match.match?.team_b_overs && (
-              <Text style={styles.overs}>{match.match.team_b_overs} overs</Text>
+            {getTeamScore(match.match?.team_b_id)?.overs && (
+              <Text style={styles.overs}>
+                {getTeamScore(match.match?.team_b_id)?.overs} overs
+              </Text>
             )}
           </View>
         </View>
       </View>
 
+      {/* Chase Information (if available) */}
+      {liveMatch.data?.currentInnings?.chase && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Chase</Text>
+          <View style={styles.chaseInfo}>
+            <View style={styles.chaseItem}>
+              <Text style={styles.chaseLabel}>Target</Text>
+              <Text style={styles.chaseValue}>{liveMatch.data.currentInnings.chase.runsNeeded}</Text>
+            </View>
+            {liveMatch.data.currentInnings.chase.ballsRemaining && (
+              <View style={styles.chaseItem}>
+                <Text style={styles.chaseLabel}>Balls Remaining</Text>
+                <Text style={styles.chaseValue}>
+                  {liveMatch.data.currentInnings.chase.ballsRemaining}
+                </Text>
+              </View>
+            )}
+            {liveMatch.data.currentInnings.chase.requiredRunRate && (
+              <View style={styles.chaseItem}>
+                <Text style={styles.chaseLabel}>Required RR</Text>
+                <Text style={styles.chaseValue}>
+                  {liveMatch.data.currentInnings.chase.requiredRunRate.toFixed(2)}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Current Players (Live Only) */}
+      {liveMatch.data?.currentInnings && (
+        <CurrentPlayers
+          striker={liveMatch.data.currentInnings.striker}
+          nonStriker={liveMatch.data.currentInnings.nonStriker}
+          bowler={liveMatch.data.currentInnings.bowler}
+        />
+      )}
+
+      {/* Recent Deliveries (Live Only) */}
+      {liveMatch.data?.currentInnings && (
+        <RecentDeliveries
+          deliveries={liveMatch.data.currentInnings.recentDeliveries}
+        />
+      )}
+
       {/* Result/Toss Info */}
-      {match.match?.result && (
+      {(liveMatch.data?.result || match.match?.result) && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Result</Text>
-          <Text style={styles.resultText}>{match.match.result}</Text>
+          <Text style={styles.resultText}>
+            {liveMatch.data?.result?.text || match.match?.result}
+          </Text>
         </View>
       )}
 
@@ -182,13 +303,12 @@ export default function MatchDetailsScreen() {
         </View>
       )}
 
-      {/* Commentary */}
-      {match.commentary && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Commentary</Text>
-          <Text style={styles.commentaryText}>{match.commentary}</Text>
-        </View>
-      )}
+      {/* Live Commentary */}
+      <LiveCommentary
+        entries={commentary.entries}
+        loading={commentary.loading}
+        error={commentary.error}
+      />
     </ScrollView>
   )
 }
@@ -304,5 +424,25 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     color: Colors.text,
     lineHeight: 20,
+  },
+  chaseInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: Spacing.md,
+  },
+  chaseItem: {
+    alignItems: 'center',
+  },
+  chaseLabel: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+    textTransform: 'uppercase',
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  chaseValue: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primary,
   },
 })

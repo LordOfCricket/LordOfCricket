@@ -102,14 +102,21 @@ export default function GroundDetailsScreen() {
         </View>
       )}
 
-      {/* Booking Button */}
-      {availableSlots > 0 && (
-        <View style={styles.actionSection}>
+      {/* Action Buttons */}
+      <View style={styles.actionSection}>
+        {availableSlots > 0 && (
           <TouchableOpacity style={styles.bookButton}>
             <Text style={styles.bookButtonText}>Book a Slot</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+        <TouchableOpacity
+          style={styles.proposalsButton}
+          onPress={() => router.push(`/(tabs)/grounds/${id}/proposals`)}
+          accessibilityLabel="View open proposals"
+        >
+          <Text style={styles.proposalsButtonText}>View Proposals</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Slot Grid */}
       {availability && availability.slots && availability.slots.length > 0 && (
@@ -219,6 +226,20 @@ const styles = StyleSheet.create({
   },
   bookButtonText: {
     color: Colors.white,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  proposalsButton: {
+    backgroundColor: Colors.backgroundAlt,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  proposalsButtonText: {
+    color: Colors.primary,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
   },

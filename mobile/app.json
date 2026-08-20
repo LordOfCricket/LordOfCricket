@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "supportsTabletMode": false
+      "supportsTabletMode": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "We need access to your camera to take a profile photo.",
+        "NSPhotoLibraryUsageDescription": "We need access to your photos to upload a profile photo.",
+        "NSPhotoLibraryAddOnlyUsageDescription": "We need permission to save photos."
+      }
     },
     "android": {
       "adaptiveIcon": {

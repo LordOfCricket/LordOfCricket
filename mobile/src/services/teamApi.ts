@@ -36,3 +36,8 @@ export async function getTeamPlayers(teamId: number) {
   const response = await api.get(`/teams/${teamId}/players`)
   return response.data
 }
+
+export async function createTeam(data: { name: string; short_name: string; logo_url?: string }): Promise<{ team: Team }> {
+  const response = await api.post<{ team: Team }>('/teams', data)
+  return response.data
+}

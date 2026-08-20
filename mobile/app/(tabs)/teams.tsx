@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useDiscoverTeams } from '../../src/hooks/useTeams'
+import { useAuth } from '../../src/hooks/useAuth'
 import { Colors, Spacing, Typography } from '../../src/constants/colors'
 import { LoadingScreen } from '../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../src/components/ErrorScreen'
@@ -17,6 +18,7 @@ import { EmptyState } from '../../src/components/EmptyState'
 
 export default function TeamsScreen() {
   const router = useRouter()
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
 
@@ -51,8 +53,21 @@ export default function TeamsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Teams</Text>
-        <Text style={styles.subtitle}>Browse cricket teams</Text>
+        <View style={styles.headerTitleContainer}>
+          <View>
+            <Text style={styles.title}>Teams</Text>
+            <Text style={styles.subtitle}>Browse cricket teams</Text>
+          </View>
+          {user?.role === 'player' && (
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => router.push('/(tabs)/teams/create')}
+              accessibilityLabel="Create new team"
+            >
+              <Text style={styles.createButtonText}>+ Create</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Search Bar */}
@@ -118,6 +133,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing['3xl'],
     backgroundColor: Colors.primary,
   },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   title: {
     fontSize: Typography.fontSize['2xl'],
     fontWeight: Typography.fontWeight.bold,
@@ -128,6 +148,17 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     color: Colors.white,
     opacity: 0.9,
+  },
+  createButton: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 6,
+  },
+  createButtonText: {
+    color: Colors.primary,
+    fontWeight: Typography.fontWeight.bold,
+    fontSize: Typography.fontSize.sm,
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,

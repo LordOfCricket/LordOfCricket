@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
-  UtensilsCrossed,
   ClipboardCheck,
   MapPinPlus,
   MapPinned,
@@ -28,7 +27,6 @@ const LINKS = [
   { to: '/admin/ground-owners', label: 'Ground Owners', icon: ShieldCheck, allow: ['super_admin'] },
   { to: '/admin/players', label: 'Players', icon: Users, allow: ['super_admin'] },
   { to: '/admin/umpires', label: 'Umpires', icon: Trophy, allow: ['super_admin'] },
-  { to: '/canteen/staff', label: 'Canteen', icon: UtensilsCrossed, allow: ['super_admin', 'admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
   { to: '/admin/photos-hub', label: 'Edit Photos', icon: Images, allow: ['super_admin'] },
   { to: '/security', label: 'Account Security', icon: ShieldCheck, allow: ['super_admin', 'admin'] },

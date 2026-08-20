@@ -58,6 +58,13 @@ export default function TabsLayout() {
           tabBarLabel: 'Notifications',
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarLabel: 'Settings',
+        }}
+      />
     </Tabs>
   )
 }

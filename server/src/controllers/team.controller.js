@@ -2,6 +2,7 @@ import { findAllTeams, findTeamById } from '../models/team.model.js'
 import { findPlayersByTeam } from '../models/player.model.js'
 import * as publicTeamService from '../services/publicTeam.service.js'
 import * as teamRosterService from '../services/teamRoster.service.js'
+import * as teamCreationService from '../services/teamCreation.service.js'
 
 // Phase 10 Part 2 — public team ecosystem (no auth, same public-read posture
 // as GET /teams and GET /matches/discover).
@@ -75,6 +76,22 @@ export async function removeTeamPlayer(req, res, next) {
   try {
     const players = await teamRosterService.removePlayerFromTeamRoster(req.params.id, req.params.publicPlayerId)
     res.json({ players })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Phase 5D.4 — Team Creation (authenticated players only)
+export async function createTeam(req, res, next) {
+  try {
+    const userId = req.user?.id
+    const team = await teamCreationService.createTeamByPlayer({
+      userId,
+      name: req.body.name,
+      shortName: req.body.short_name,
+      logoUrl: req.body.logo_url,
+    })
+    res.status(201).json({ team })
   } catch (err) {
     next(err)
   }

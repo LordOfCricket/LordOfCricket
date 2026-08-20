@@ -37,15 +37,18 @@ function uploadSingleImage(req, res, next) {
 
 const router = express.Router()
 
-// Phase 7 — same fix as groundPhoto.routes.js: findAllAmenities has no
-// ground WHERE clause and was reachable with zero authentication, leaking
-// internal `id`/`cloudinary_public_id` across every ground. Its only real
-// consumer is the super-admin amenities panel; the public AmenitiesGrid
-// takes its data from the ground-scoped profile endpoint instead (see
-// AmenitiesGrid.jsx's own comment).
-router.get('/', requireAuth, requireStaffRole('super_admin'), listAmenities)
-router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addAmenity)
-router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
-router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeAmenity)
+// Phase 12 — DEPRECATED DEVELOPMENT ROUTES: these exist only for the
+// single-ground development phase and use attachSingleGroundContext.
+// Amenities are ground-specific resources managed by Ground Owners and Staff.
+// Super Admin no longer has access to these operational endpoints.
+// These routes should not be called from production frontend (see AppRoutes.jsx).
+//
+// When multiple grounds are deployed, these routes will need to be replaced
+// with proper multi-ground, publicly-addressed alternatives like:
+//   /grounds/:publicGroundId/amenities
+router.get('/', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, listAmenities)
+router.post('/', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, addAmenity)
+router.post('/upload', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
+router.delete('/:id', requireAuth, requireStaffRole('admin'), removeAmenity)
 
 export default router

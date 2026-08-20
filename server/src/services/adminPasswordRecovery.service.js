@@ -23,6 +23,7 @@ import { findUserById, updateUser } from '../models/user.model.js'
 import { revokeAllSessionsForUser } from './session.service.js'
 import { consumeStepUpGrant } from './stepUp.service.js'
 import { recordEvent, ACCOUNT_AUDIT_EVENTS } from './accountAudit.service.js'
+import { sendPasswordRecoveryEmail } from './emailService.js'
 import { MfaError, MFA_ERROR_CODES } from '../domain/mfa/errors.js'
 import { AccountCreationError, ACCOUNT_CREATION_ERROR_CODES as CODES } from '../domain/accountCreation/errors.js'
 import { logger } from '../utils/logger.js'
@@ -85,19 +86,23 @@ export async function generateTemporaryCredential(targetUserId, actorUser, sessi
 
     await client.query('COMMIT')
 
-    // Outside the transaction — session revocation isn't part of the same
-    // atomic unit as the credential write; a partial failure here (rare)
-    // shouldn't roll back an already-committed, correctly-generated
-    // credential.
     await revokeAllSessionsForUser(targetUserId)
 
     logger.info('Temporary credential generated for account recovery', { actorUserId: actorUser.id, targetUserId, expiresAt })
 
-    // The ONE sanctioned place this plaintext value ever exists outside
-    // the admin's own eyes for the next few seconds — never logged (the
-    // logger.info above deliberately omits it), never persisted anywhere
-    // but this bcrypt hash, returned exactly once to the calling
-    // controller for exactly one HTTP response.
+    try {
+      const loginUrl = process.env.APP_URL || 'https://lordofcricket.com'
+      await sendPasswordRecoveryEmail({
+        recipientEmail: targetUser.email,
+        recipientName: targetUser.name,
+        temporaryPassword,
+        loginUrl,
+      })
+      logger.info('Password recovery email sent', { targetUserId, email: targetUser.email })
+    } catch (emailErr) {
+      logger.error('Failed to send password recovery email', { targetUserId, email: targetUser.email, error: emailErr.message })
+    }
+
     return { temporaryPassword, expiresAt, targetUser }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})

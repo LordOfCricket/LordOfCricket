@@ -2,7 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 import * as SecureStore from 'expo-secure-store'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'
 const COOKIE_STORAGE_KEY = 'loc_session_cookie'
 
 class ApiClient {

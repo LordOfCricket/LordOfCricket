@@ -171,6 +171,7 @@ export interface Team {
   name: string
   short_name: string
   logo_url?: string
+  owner_id?: number
   created_at: string
 }
 
@@ -328,6 +329,27 @@ export interface NotificationsResponse {
   notifications: Notification[]
   total: number
   unreadCount: number
+}
+
+export interface MatchProposal {
+  publicProposalId: string
+  status: 'OPEN' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED'
+  proposingTeamId: number
+  acceptedByTeamId?: number
+  proposalExpiresAt: string
+  createdAt: string
+  updatedAt: string
+  publicBookingId?: string
+  startTime?: string
+  endTime?: string
+  matchFormat?: string
+  purpose?: string
+  bookingStatus?: string
+}
+
+export interface MatchProposalsListResponse {
+  proposals: MatchProposal[]
+  total?: number
 }
 
 export interface SocketMatchStatePayload {

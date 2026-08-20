@@ -1,3 +1,5 @@
+import crypto from 'crypto'
+import bcrypt from 'bcryptjs'
 import { pool } from '../config/db.js'
 import * as requestModel from '../models/groundOwnerRequest.model.js'
 import * as photoModel from '../models/groundRegistrationPhoto.model.js'
@@ -5,11 +7,12 @@ import * as amenitySelectionModel from '../models/groundRegistrationAmenity.mode
 import * as amenityCatalogModel from '../models/amenityCatalog.model.js'
 import { createGround, findGroundBySlug } from '../models/ground.model.js'
 import { createMembership } from '../models/groundUser.model.js'
-import { findUserByIdentifier, createUserFromOtp } from '../models/user.model.js'
+import { findUserByIdentifier, createUserFromOtp, updateUser } from '../models/user.model.js'
 import { insertMany as insertGroundPhotos } from '../models/groundPhoto.model.js'
 import { insertMany as insertGroundAmenities } from '../models/groundAmenity.model.js'
 import { recordEvent, ACCOUNT_AUDIT_EVENTS } from './accountAudit.service.js'
 import { consumeStepUpGrant } from './stepUp.service.js'
+import { sendGroundApprovalEmail } from './emailService.js'
 import { requiredText, optionalText, validateEmail, validatePhone, isValidHttpUrl } from '../domain/accountCreation/validation.js'
 import { AccountCreationError, ACCOUNT_CREATION_ERROR_CODES as CODES } from '../domain/accountCreation/errors.js'
 import { MfaError, MFA_ERROR_CODES } from '../domain/mfa/errors.js'
@@ -19,12 +22,15 @@ import { logger } from '../utils/logger.js'
 
 const FIELD_LIMITS = { applicantName: 100, groundName: 150, groundDescription: 500, addressLine: 255, city: 100, state: 100, country: 100, postalCode: 20, groundPhone: 30, groundWebsite: 300, rejectionReason: 500, moreInfoNotes: 500 }
 
-// Ground Registration feature — exactly 6, matching the brief's slideshow
-// requirement. Gallery has a generous but real cap (mass-assignment/DoS
-// defense-in-depth — nothing about "optional extra photos" should mean
-// "unbounded").
 const REQUIRED_FEATURED_PHOTO_COUNT = 6
 const MAX_GALLERY_PHOTOS = 20
+
+const TEMP_CREDENTIAL_TTL_MS = 30 * 60 * 1000
+const TEMP_CREDENTIAL_BYTE_LENGTH = 18
+
+function generateTemporaryPassword() {
+  return crypto.randomBytes(TEMP_CREDENTIAL_BYTE_LENGTH).toString('base64url')
+}
 
 function parseCoordinate(raw, min, max) {
   if (raw === undefined || raw === '' || raw === null) return { value: null }
@@ -301,12 +307,23 @@ export async function approveRequest(publicRequestId, actorUserId, sessionId) {
     }
 
     let user = await findUserByIdentifier(request.applicant_email || request.applicant_phone, request.applicant_email ? 'EMAIL' : 'PHONE', client)
+    const isNewUser = !user
     if (!user) {
       user = await createUserFromOtp(
         { identifier: request.applicant_email || request.applicant_phone, identifierType: request.applicant_email ? 'EMAIL' : 'PHONE', name: request.applicant_name },
         client,
       )
     }
+
+    const temporaryPassword = generateTemporaryPassword()
+    const tempHash = await bcrypt.hash(temporaryPassword, 10)
+    const tempExpiresAt = new Date(Date.now() + TEMP_CREDENTIAL_TTL_MS)
+
+    await updateUser(
+      user.id,
+      { temp_password_hash: tempHash, temp_password_expires_at: tempExpiresAt, force_password_change: true },
+      client,
+    )
 
     const slug = await ensureUniqueSlug(request.ground_name, client)
     const ground = await createGround(
@@ -358,9 +375,31 @@ export async function approveRequest(publicRequestId, actorUserId, sessionId) {
       client,
     )
 
+    await recordEvent(
+      ACCOUNT_AUDIT_EVENTS.TEMPORARY_CREDENTIAL_GENERATED,
+      { actorUserId, targetUserId: user.id, targetRequestId: request.id, metadata: { expiresAt: tempExpiresAt.toISOString(), reason: 'ground_approval' } },
+      client,
+    )
+
     await client.query('COMMIT')
     logger.info('Ground owner request approved', { publicRequestId, userId: user.id, groundPublicId: ground.public_ground_id })
-    return { request: { ...request, status: 'APPROVED', created_ground_id: ground.id }, user, ground }
+
+    const approvalResult = { request: { ...request, status: 'APPROVED', created_ground_id: ground.id }, user, ground, temporaryPassword, tempExpiresAt }
+
+    try {
+      const loginUrl = process.env.APP_URL || 'https://lordofcricket.com'
+      await sendGroundApprovalEmail({
+        recipientEmail: request.applicant_email,
+        recipientName: request.applicant_name,
+        temporaryPassword,
+        loginUrl,
+      })
+      logger.info('Ground approval email sent', { userId: user.id, email: request.applicant_email })
+    } catch (emailErr) {
+      logger.error('Failed to send ground approval email', { userId: user.id, email: request.applicant_email, error: emailErr.message })
+    }
+
+    return approvalResult
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     throw err

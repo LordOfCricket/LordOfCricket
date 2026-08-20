@@ -31,16 +31,12 @@ const GroundRegistrationWizardPage = lazy(() => import('../pages/register-ground
 const CheckGroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/CheckGroundRegistrationStatusPage.jsx'))
 const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/GroundRegistrationStatusPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
-const AdminPhotosPage = lazy(() => import('../pages/admin-photos/AdminPhotosPage.jsx'))
-const AdminGalleryPage = lazy(() => import('../pages/admin-gallery/AdminGalleryPage.jsx'))
-const AdminAmenitiesPage = lazy(() => import('../pages/admin-amenities/AdminAmenitiesPage.jsx'))
 const AdminPartnersPage = lazy(() => import('../pages/admin-partners/AdminPartnersPage.jsx'))
 
 // Super Admin Staff Dashboard
 const AdminDashboardPage = lazy(() => import('../pages/admin-dashboard/AdminDashboardPage.jsx'))
 const AdminUmpireRequestsPage = lazy(() => import('../pages/admin-umpire-requests/AdminUmpireRequestsPage.jsx'))
 const AdminGroundRegistrationsPage = lazy(() => import('../pages/admin-ground-registrations/AdminGroundRegistrationsPage.jsx'))
-const AdminPhotosHubPage = lazy(() => import('../pages/admin-photos-hub/AdminPhotosHubPage.jsx'))
 const CreateStaffPage = lazy(() => import('../pages/admin-staff/CreateStaffPage.jsx'))
 
 // SUPER_ADMIN Identity & Secure Provisioning feature — Admin Control Center.
@@ -159,9 +155,6 @@ const router = createBrowserRouter([
       { path: '/register-ground/check', element: withSuspense(<CheckGroundRegistrationStatusPage />) },
       { path: '/register-ground/status/:publicRequestId', element: withSuspense(<GroundRegistrationStatusPage />) },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
-      { path: '/admin/photos', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosPage />)}</RequireMfaVerified></RequireStaffRole> },
-      { path: '/admin/gallery', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminGalleryPage />)}</RequireMfaVerified></RequireStaffRole> },
-      { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminAmenitiesPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/partners', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPartnersPage />)}</RequireMfaVerified></RequireStaffRole> },
 
       // Super Admin Staff Dashboard — RequireMfaVerified is a no-op for a
@@ -171,7 +164,6 @@ const router = createBrowserRouter([
       { path: '/admin/dashboard', element: <RequireStaffRole allow={['super_admin', 'admin']}><RequireMfaVerified>{withSuspense(<AdminDashboardPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/umpire-requests', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminUmpireRequestsPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/ground-registrations', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminGroundRegistrationsPage />)}</RequireMfaVerified></RequireStaffRole> },
-      { path: '/admin/photos-hub', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPhotosHubPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/staff/new', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<CreateStaffPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/all-grounds', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AllGroundsPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/ground-owners', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<GroundOwnersPage />)}</RequireMfaVerified></RequireStaffRole> },

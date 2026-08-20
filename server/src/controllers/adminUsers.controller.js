@@ -90,13 +90,14 @@ export async function resetUserPassword(req, res, next) {
       return res.status(404).json({ message: 'Account not found.' })
     }
 
-    const { temporaryPassword, expiresAt } = await generateTemporaryCredential(targetUserId, req.user, req.session?.id)
+    const { expiresAt } = await generateTemporaryCredential(targetUserId, req.user, req.session?.id)
 
     res.json({
-      temporaryPassword,
+      success: true,
+      emailSent: true,
       expiresAt,
       targetUser: { id: targetUser.id, name: targetUser.name, email: targetUser.email },
-      message: 'Share this temporary password with the user through a secure, out-of-band channel. It will not be shown again.',
+      message: 'Password recovery initiated. A temporary password has been sent to the user\'s registered email. The temporary password will expire in 30 minutes.',
     })
   } catch (err) {
     next(err)
