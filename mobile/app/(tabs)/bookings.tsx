@@ -40,7 +40,7 @@ export default function BookingsScreen() {
 
   const upcomingBookings = bookings.filter(isUpcoming)
   const pastBookings = bookings.filter(isPast)
-  const cancelledBookings = bookings.filter(b => b.status === 'CANCELLED')
+  const cancelledBookings = bookings.filter((b: Booking) => b.status === 'CANCELLED')
 
   if (isLoading) {
     return <LoadingScreen />
@@ -80,7 +80,7 @@ export default function BookingsScreen() {
       {upcomingBookings.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upcoming</Text>
-          {upcomingBookings.map(booking => (
+          {upcomingBookings.map((booking: Booking) => (
             <BookingCard
               key={booking.publicBookingId}
               booking={booking}
@@ -97,7 +97,7 @@ export default function BookingsScreen() {
       {pastBookings.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Completed</Text>
-          {pastBookings.map(booking => (
+          {pastBookings.map((booking: Booking) => (
             <BookingCard
               key={booking.publicBookingId}
               booking={booking}
@@ -114,7 +114,7 @@ export default function BookingsScreen() {
       {cancelledBookings.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cancelled</Text>
-          {cancelledBookings.map(booking => (
+          {cancelledBookings.map((booking: Booking) => (
             <BookingCard
               key={booking.publicBookingId}
               booking={booking}

@@ -22,7 +22,7 @@ export default function BookingDetailsScreen() {
   const cancelBooking = useCancelBooking()
   const [showCancelDialog, setShowCancelDialog] = useState(false)
 
-  const booking = bookings.find(b => b.publicBookingId === id) as Booking | undefined
+  const booking = bookings.find((b: Booking) => b.publicBookingId === id) as Booking | undefined
 
   if (isLoading) {
     return <LoadingScreen />
@@ -275,8 +275,8 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: Spacing.lg,
-    paddingBottomWidth: 1,
-    paddingBottomColor: Colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   sectionTitle: {
     ...Typography.body2,
