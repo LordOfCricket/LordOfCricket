@@ -26,13 +26,13 @@ function PreviewRow({ title, matches, emptyMessage, viewAllTo }) {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold text-white">{title}</h3>
-        <Link to={viewAllTo} className="text-xs font-bold uppercase tracking-wide text-emerald-300 hover:text-emerald-200">
+        <h3 className="text-xl font-bold text-loc-warmwhite">{title}</h3>
+        <Link to={viewAllTo} className="text-xs font-bold uppercase tracking-wide text-loc-grass hover:text-loc-gold transition-colors duration-200">
           View All
         </Link>
       </div>
       {matches.length === 0 ? (
-        <p className="mt-4 rounded-2xl border border-dashed border-emerald-400/15 bg-emerald-900/20 px-6 py-8 text-center text-sm text-emerald-100/60">
+        <p className="mt-4 rounded-2xl border border-dashed border-loc-gold/15 bg-loc-stadium/20 px-6 py-8 text-center text-sm text-loc-text2-dark">
           {emptyMessage}
         </p>
       ) : (

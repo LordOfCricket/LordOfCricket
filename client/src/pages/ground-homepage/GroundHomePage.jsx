@@ -29,15 +29,15 @@ function SectionHeading({ eyebrow, title, subtitle }) {
   return (
     <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex flex-col items-center gap-3 text-center">
       {eyebrow && (
-        <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+        <span className="text-sm font-semibold uppercase tracking-widest text-loc-gold">
           {eyebrow}
         </span>
       )}
-      <h2 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+      <h2 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
         {title}
       </h2>
-      <span className="h-1 w-16 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600" />
-      {subtitle && <p className="max-w-2xl text-emerald-100/60">{subtitle}</p>}
+      <span className="h-1 w-16 rounded-full bg-linear-to-r from-loc-gold to-loc-grass" />
+      {subtitle && <p className="max-w-2xl text-loc-text2-dark">{subtitle}</p>}
     </ScrollReveal>
   )
 }
@@ -165,20 +165,20 @@ export default function GroundHomePage() {
           <ScrollReveal
             variant={spotlightReveal}
             amount={0.35}
-            className="relative mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-emerald-400/20 bg-linear-to-b from-emerald-400/10 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm"
+            className="relative mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-loc-gold/20 bg-linear-to-b from-loc-stadium/30 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm"
           >
-            <h2 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+            <h2 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
               Book {ground.name}
             </h2>
-            <span className="h-1 w-16 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600" />
-            <p className="max-w-xl text-emerald-100/60">
+            <span className="h-1 w-16 rounded-full bg-linear-to-r from-loc-gold to-loc-grass" />
+            <p className="max-w-xl text-loc-text2-dark">
               Check live availability and reserve a pitch, nets, or the full ground for your next match.
             </p>
             <PublicAvailabilityPreview />
             <button
               type="button"
               onClick={() => setBookingOpen(true)}
-              className="mt-2 inline-flex items-center rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 px-7 py-3 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-emerald-400/50"
+              className="mt-2 inline-flex items-center rounded-full bg-loc-stadium px-7 py-3 text-sm font-semibold text-loc-warmwhite shadow-lg shadow-loc-gold/25 transition-all duration-200 hover:bg-loc-stadium-hover hover:-translate-y-0.5 hover:shadow-loc-gold/40"
             >
               Book Ground
             </button>
@@ -191,7 +191,7 @@ export default function GroundHomePage() {
         as="footer"
         variant={settleFade}
         amount={0.15}
-        className="relative border-t border-emerald-400/10 bg-loc-dark/60 px-6 py-10 lg:px-10"
+        className="relative border-t border-loc-gold/10 bg-loc-dark/60 px-6 py-10 lg:px-10"
       >
         <div className="flex w-full flex-col items-center justify-between gap-6 lg:flex-row">
           <div className="flex items-center">
@@ -206,7 +206,7 @@ export default function GroundHomePage() {
           <GroundContact ground={ground} />
         </div>
 
-        <p className="mt-8 text-center text-xs text-emerald-100/40">
+        <p className="mt-8 text-center text-xs text-loc-muted-dark">
           © {currentYear} {ground.name} — Powered by LOC. All rights reserved.
         </p>
       </ScrollReveal>
