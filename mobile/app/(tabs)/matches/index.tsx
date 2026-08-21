@@ -8,12 +8,12 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native'
-import { useUpcomingMatches, useLiveMatches, useCompletedMatches } from '../../src/hooks/useMatches'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
-import { EmptyState } from '../../src/components/EmptyState'
-import { MatchCard } from '../../src/components/MatchCard'
+import { useUpcomingMatches, useLiveMatches, useCompletedMatches } from '../../../src/hooks/useMatches'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { EmptyState } from '../../../src/components/EmptyState'
+import { MatchCard } from '../../../src/components/MatchCard'
 
 type MatchCategory = 'LIVE' | 'UPCOMING' | 'COMPLETED'
 

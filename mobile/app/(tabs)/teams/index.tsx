@@ -9,12 +9,12 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useDiscoverTeams } from '../../src/hooks/useTeams'
-import { useAuth } from '../../src/hooks/useAuth'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
-import { EmptyState } from '../../src/components/EmptyState'
+import { useDiscoverTeams } from '../../../src/hooks/useTeams'
+import { useAuth } from '../../../src/hooks/useAuth'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { EmptyState } from '../../../src/components/EmptyState'
 
 export default function TeamsScreen() {
   const router = useRouter()

@@ -27,9 +27,24 @@ class ApiClient {
         const cookieHeader = await AsyncStorage.getItem(COOKIE_STORAGE_KEY)
         if (cookieHeader) {
           config.headers.Cookie = cookieHeader
+          // TEMPORARY DEBUG
+          if (config.url?.includes('/matches/home')) {
+            console.log('[LOC HOME AUTH]')
+            console.log('AUTH TOKEN PRESENT: true')
+          }
+        } else {
+          // TEMPORARY DEBUG
+          if (config.url?.includes('/matches/home')) {
+            console.log('[LOC HOME AUTH]')
+            console.log('AUTH TOKEN PRESENT: false')
+          }
         }
       } catch (error) {
         // Silent fail - cookie not available yet
+        if (config.url?.includes('/matches/home')) {
+          console.log('[LOC HOME AUTH]')
+          console.log('AUTH TOKEN PRESENT: false (error retrieving)')
+        }
       }
       return config
     })

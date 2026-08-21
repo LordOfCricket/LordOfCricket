@@ -1,10 +1,17 @@
 import { create } from 'zustand'
+import type { QueryClient } from '@tanstack/react-query'
 import * as authApi from '../services/authApi'
 import * as playerApi from '../services/playerApi'
 import api from '../services/api'
 import { User, Player, MfaStatus } from '../types'
 
 const DEFAULT_MFA: MfaStatus = { enrolled: false, required: false, verified: false }
+
+let queryClientInstance: QueryClient | null = null
+
+export function initializeAuthStore(queryClient: QueryClient) {
+  queryClientInstance = queryClient
+}
 
 interface AuthStore {
   user: User | null
@@ -140,6 +147,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // Logout anyway even if API call fails
     }
     await api.clearSession()
+
+    // Clear all TanStack Query cache to prevent private data leakage to next user
+    if (queryClientInstance) {
+      queryClientInstance.clear()
+    }
+
     set({
       user: null,
       player: null,

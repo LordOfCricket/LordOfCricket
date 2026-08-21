@@ -9,8 +9,30 @@ export async function discoverMatches(category: 'LIVE' | 'UPCOMING' | 'RESULTS',
 }
 
 export async function getHomeFeed() {
-  const response = await api.get('/matches/home')
-  return response.data
+  // TEMPORARY DEBUG: Log exact request details
+  const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'
+  const endpoint = '/matches/home'
+  const fullUrl = `${apiBaseUrl}${endpoint}`
+
+  console.log('[LOC HOME DEBUG]')
+  console.log('API BASE URL:', apiBaseUrl)
+  console.log('REQUEST URL:', fullUrl)
+  console.log('METHOD: GET')
+
+  try {
+    const response = await api.get('/matches/home')
+    console.log('[LOC HOME DEBUG - SUCCESS]')
+    console.log('STATUS:', response.status)
+    console.log('RESPONSE KEYS:', Object.keys(response.data || {}))
+    return response.data
+  } catch (error: any) {
+    console.log('[LOC HOME DEBUG - ERROR]')
+    console.log('ERROR TYPE:', error.code)
+    console.log('ERROR MESSAGE:', error.message)
+    console.log('HTTP STATUS:', error.response?.status)
+    console.log('RESPONSE:', error.response?.data)
+    throw error
+  }
 }
 
 export async function getMatchById(matchId: number): Promise<MatchSummary> {

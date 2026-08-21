@@ -10,11 +10,11 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import * as Location from 'expo-location'
-import { useNearbyGrounds } from '../../src/hooks/useGrounds'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
-import { EmptyState } from '../../src/components/EmptyState'
+import { useNearbyGrounds } from '../../../src/hooks/useGrounds'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { EmptyState } from '../../../src/components/EmptyState'
 
 export default function GroundsScreen() {
   const router = useRouter()
