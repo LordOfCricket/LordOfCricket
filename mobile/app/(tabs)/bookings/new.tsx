@@ -12,10 +12,10 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { randomUUID } from 'expo-crypto'
 import { useRouter } from 'expo-router'
-import { useAvailability, useCreateBooking } from '../../src/hooks/useBooking'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
+import { useAvailability, useCreateBooking } from '../../../src/hooks/useBooking'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
 
 type Step = 'date' | 'slot' | 'details' | 'confirm'
 
@@ -158,6 +158,7 @@ function DateSelectionStep({
 
   return (
     <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepCounter} accessibilityLabel="Step 1 of 4">Step 1 of 4</Text>
       <Text style={styles.stepTitle}>Select Date</Text>
       <Text style={styles.stepDescription}>Choose a date within the next 30 days</Text>
 
@@ -247,6 +248,7 @@ function SlotSelectionStep({
 
   return (
     <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepCounter} accessibilityLabel="Step 2 of 4">Step 2 of 4</Text>
       <Text style={styles.stepTitle}>Select Time Slot</Text>
       <Text style={styles.stepDescription}>
         {date.toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
@@ -320,6 +322,7 @@ function BookingDetailsStep({
 }) {
   return (
     <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepCounter} accessibilityLabel="Step 3 of 4">Step 3 of 4</Text>
       <Text style={styles.stepTitle}>Booking Details</Text>
       <Text style={styles.stepDescription}>Add optional information</Text>
 
@@ -328,7 +331,7 @@ function BookingDetailsStep({
         <TextInput
           style={styles.input}
           placeholder="e.g., 11"
-          keyboardType="numeric"
+          keyboardType="number-pad"
           value={expectedPlayers}
           onChangeText={onPlayersChange}
         />
@@ -393,6 +396,7 @@ function BookingConfirmStep({
 
   return (
     <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepCounter} accessibilityLabel="Step 4 of 4">Step 4 of 4</Text>
       <Text style={styles.stepTitle}>Confirm Booking</Text>
 
       <View style={styles.summaryCard}>
@@ -475,6 +479,12 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
     padding: Spacing.lg,
+  },
+  stepCounter: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.md,
   },
   stepTitle: {
     ...Typography.title,

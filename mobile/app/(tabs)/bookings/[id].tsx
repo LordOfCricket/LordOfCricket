@@ -9,11 +9,11 @@ import {
   Alert,
 } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
-import { useCancelBooking, useMyBookings } from '../../src/hooks/useBooking'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
-import { Booking } from '../../src/types'
+import { useCancelBooking, useMyBookings } from '../../../src/hooks/useBooking'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { Booking } from '../../../src/types'
 
 export default function BookingDetailsScreen() {
   const router = useRouter()
