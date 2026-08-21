@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import Navbar from '../../components/home/Navbar.jsx'
 import PlatformHero from '../../components/home/PlatformHero.jsx'
 import AboutSection from '../../components/home/AboutSection.jsx'
@@ -24,6 +25,10 @@ import SiteFooter from '../../components/home/SiteFooter.jsx'
 // (GroundsPage.jsx). PlatformHero's and FinalCtaSection's "Join LOC" CTAs
 // route to /grounds instead of scrolling to a same-page section.
 export default function DiscoveryPage() {
+  useEffect(() => {
+    document.title = 'Lord Of Cricket'
+  }, [])
+
   return (
     <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
       <MouseParallaxProvider>
