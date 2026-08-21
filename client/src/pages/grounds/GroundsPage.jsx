@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { MapPin } from 'lucide-react'
+import { MapPin, ChevronDown } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
 import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
@@ -15,16 +15,6 @@ import { useAllGrounds } from '../../hooks/useAllGrounds.js'
 import { useGroundSearch } from '../../hooks/useGroundSearch.js'
 import { DEFAULT_RADIUS_KM, DEFAULT_PAGE_SIZE } from '../../models/groundDiscovery.model.js'
 import { fadeUpSoft } from '../../lib/revealVariants.js'
-
-// "First sort by city" (Amazon/Flipkart-style sort bar) — city is the
-// default and first option; name/newest are the same two real sorts the
-// homepage's browse views already use. No fake "Most Popular"/"Best Rated"
-// — those fields don't exist in the schema.
-const SORT_OPTIONS = [
-  { value: 'city', label: 'City (A–Z)' },
-  { value: 'name', label: 'Name (A–Z)' },
-  { value: 'newest', label: 'Newest' },
-]
 
 function EmptyState({ message }) {
   return (
@@ -49,27 +39,86 @@ function ErrorState({ message, onRetry }) {
   )
 }
 
-// "List our all registered grounds... first sort by city... if user wants,
-// give a landmark, list out grounds around it... range selector of
-// kilometers." Two modes, exactly one active at a time:
-//   - browse: every ACTIVE ground (useAllGrounds), sorted by the chosen
-//     SORT_OPTIONS value — the default landing state.
-//   - search: grounds within `radiusKm` of a resolved landmark/GPS point
-//     (useGroundSearch's existing 'nearby' mode) — entered once
-//     LandmarkSearch resolves real coordinates.
-// Facilities filtering (GroundFiltersBar) applies client-side over whichever
-// mode is active, same as DiscoveryPage's own "Find Your Perfect Ground".
+function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, onFacilitiesChange, grounds, isSearchMode, searchCoords, onBackToAll, radiusKm, onRadiusCommit }) {
+  return (
+    <aside className="w-full lg:w-64 flex-shrink-0">
+      <div className="sticky top-32 space-y-6">
+        {/* Search & Nearby */}
+        {!isSearchMode && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold uppercase text-loc-gold">Search Nearby</h3>
+            <LandmarkSearch compact onResolved={({ latitude, longitude, label }) => {}} />
+          </div>
+        )}
+
+        {isSearchMode && (
+          <div className="space-y-3 rounded-lg border border-loc-gold/20 bg-loc-stadium/10 p-3">
+            <div className="flex items-start gap-2 text-xs text-loc-text2-dark">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-gold mt-0.5" aria-hidden="true" />
+              <span>
+                Within {radiusKm} km of <span className="font-semibold text-loc-warmwhite">{searchCoords.label}</span>
+              </span>
+            </div>
+            <KmRangeSlider value={radiusKm} onCommit={onRadiusCommit} compact />
+            <button type="button" onClick={onBackToAll} className="text-xs font-semibold text-loc-gold hover:underline">
+              Clear Search
+            </button>
+          </div>
+        )}
+
+        {/* City Filter */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold uppercase text-loc-gold">Filter by City</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            <button
+              onClick={() => onCitySelect(null)}
+              className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
+                selectedCity === null
+                  ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
+                  : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+              }`}
+            >
+              All Cities
+            </button>
+            {cities.map((city) => (
+              <button
+                key={city}
+                onClick={() => onCitySelect(city)}
+                className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
+                  selectedCity === city
+                    ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
+                    : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                }`}
+              >
+                {city}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Facilities Filter */}
+        {grounds.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold uppercase text-loc-gold">Facilities</h3>
+            <GroundFiltersBar grounds={grounds} selectedFacilities={selectedFacilities} onChange={onFacilitiesChange} />
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
 export default function GroundsPage() {
   useEffect(() => {
     document.title = 'Grounds — Lord Of Cricket'
   }, [])
 
-  const [browseSort, setBrowseSort] = useState('city')
+  const [selectedCity, setSelectedCity] = useState(null)
   const [selectedFacilities, setSelectedFacilities] = useState([])
-  const [searchCoords, setSearchCoords] = useState(null) // { latitude, longitude, label } once resolved
+  const [searchCoords, setSearchCoords] = useState(null)
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM)
 
-  const browse = useAllGrounds({ sort: browseSort, limit: DEFAULT_PAGE_SIZE })
+  const browse = useAllGrounds({ sort: 'city', limit: DEFAULT_PAGE_SIZE })
   const search = useGroundSearch()
 
   const isSearchMode = searchCoords !== null
@@ -77,23 +126,41 @@ export default function GroundsPage() {
     ? { grounds: search.grounds, loading: search.loading, loadingMore: search.loadingMore, error: search.error, hasMore: search.hasMore, loadMore: search.loadMore, retry: search.retry }
     : { grounds: browse.grounds, loading: browse.loading, loadingMore: browse.loadingMore, error: browse.error, hasMore: browse.hasMore, loadMore: browse.loadMore, retry: browse.retry }
 
-  // Client-side, over the already-fetched page — same semantics as
-  // DiscoveryPage's own facility filter: a ground must have every checked
-  // facility to remain visible.
-  const visibleGrounds = useMemo(
-    () => (selectedFacilities.length === 0 ? active.grounds : active.grounds.filter((g) => selectedFacilities.every((f) => (g.amenities || []).includes(f)))),
-    [active.grounds, selectedFacilities],
+  // Extract unique cities and sort alphabetically
+  const cities = useMemo(
+    () => [...new Set(active.grounds.map((g) => g.city).filter(Boolean))].sort(),
+    [active.grounds],
   )
+
+  // Filter by city and facilities
+  const visibleGrounds = useMemo(() => {
+    let filtered = active.grounds
+
+    // Filter by city
+    if (selectedCity) {
+      filtered = filtered.filter((g) => g.city === selectedCity)
+    }
+
+    // Filter by facilities
+    if (selectedFacilities.length > 0) {
+      filtered = filtered.filter((g) => selectedFacilities.every((f) => (g.amenities || []).includes(f)))
+    }
+
+    // Sort by city, then by name
+    filtered.sort((a, b) => {
+      const cityCompare = (a.city || '').localeCompare(b.city || '')
+      if (cityCompare !== 0) return cityCompare
+      return (a.name || '').localeCompare(b.name || '')
+    })
+
+    return filtered
+  }, [active.grounds, selectedCity, selectedFacilities])
 
   const handleResolved = ({ latitude, longitude, label }) => {
     setSearchCoords({ latitude, longitude, label })
     search.searchNearby(latitude, longitude, radiusKm)
   }
 
-  // Shared by both the pre-search slider (inside LandmarkSearch) and the
-  // post-search slider below — before a landmark/GPS point is resolved this
-  // just remembers the chosen radius for the next search; after, it
-  // re-runs the same nearby search at the new radius.
   const handleRadiusCommit = (km) => {
     setRadiusKm(km)
     if (searchCoords) search.searchNearby(searchCoords.latitude, searchCoords.longitude, km)
@@ -113,97 +180,86 @@ export default function GroundsPage() {
         <Navbar />
       </MouseParallaxProvider>
 
-      <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pt-32 pb-20 lg:px-10">
-        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
+      <main className="relative mx-auto w-full max-w-7xl px-6 pt-32 pb-20 lg:px-10">
+        {/* Page Title */}
+        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="mb-10 flex w-full flex-col items-center gap-3 text-center">
           <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
             Every Ground Registered on LOC
           </h1>
         </ScrollReveal>
 
-        {/* Amazon/Flipkart-style layout — sort/search/radius/filter controls
-            in one compact horizontal bar above the results, wrapping onto a
-            second line (no horizontal scrollbar) on narrow screens rather
-            than stacking beside the grid (which left the results column
-            too narrow for even one card below the lg breakpoint). */}
-        <div className="rounded-2xl border border-loc-gold/10 bg-white/3 px-5 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            {!isSearchMode ? (
-              <>
-                <div className="flex shrink-0 items-center gap-2">
-                  <label htmlFor="grounds-sort" className="text-[11px] font-semibold whitespace-nowrap text-loc-muted-dark uppercase">
-                    Sort
-                  </label>
-                  <select
-                    id="grounds-sort"
-                    value={browseSort}
-                    onChange={(e) => setBrowseSort(e.target.value)}
-                    className="h-8 rounded-full border border-loc-gold/20 bg-white/5 px-3 text-xs font-semibold text-loc-warmwhite focus:border-loc-gold/50 focus:outline-none"
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-loc-dark text-white">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+        {/* Main Layout: Sidebar + Grid */}
+        <div className="flex flex-col gap-8 lg:flex-row">
+          {/* Left Sidebar */}
+          <LeftSidebar
+            cities={cities}
+            selectedCity={selectedCity}
+            onCitySelect={setSelectedCity}
+            selectedFacilities={selectedFacilities}
+            onFacilitiesChange={setSelectedFacilities}
+            grounds={active.grounds}
+            isSearchMode={isSearchMode}
+            searchCoords={searchCoords}
+            onBackToAll={handleBackToAll}
+            radiusKm={radiusKm}
+            onRadiusCommit={handleRadiusCommit}
+          />
+
+          {/* Main Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex w-full flex-col gap-6">
+              {/* Results Header */}
+              {active.grounds.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold uppercase tracking-widest text-loc-muted-dark">
+                    {visibleGrounds.length} {visibleGrounds.length === 1 ? 'Ground' : 'Grounds'}
+                  </p>
                 </div>
+              )}
 
-                <span className="shrink-0 text-[11px] font-semibold text-loc-muted-dark uppercase">or</span>
+              {/* Grounds Grid */}
+              <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {active.loading && Array.from({ length: 6 }).map((_, i) => <GroundCardSkeleton key={i} />)}
+                {!active.loading && !active.error && visibleGrounds.map((ground) => <GroundCard key={ground.publicGroundId} ground={ground} />)}
+              </div>
 
-                <LandmarkSearch onResolved={handleResolved} />
-              </>
-            ) : (
-              <div className="flex shrink-0 items-center gap-2 text-xs text-loc-text2-dark">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-gold" aria-hidden="true" />
-                <span className="whitespace-nowrap">
-                  Within {radiusKm} km of <span className="font-semibold text-loc-warmwhite">{searchCoords.label}</span>
-                </span>
-                <button type="button" onClick={handleBackToAll} className="font-semibold whitespace-nowrap text-loc-gold underline-offset-2 hover:underline">
-                  Back to All
+              {/* Error State */}
+              {!active.loading && active.error && <ErrorState message={active.error} onRetry={active.retry} />}
+
+              {/* Empty States */}
+              {!active.loading && !active.error && active.grounds.length === 0 && (
+                <EmptyState message={isSearchMode ? 'No cricket grounds found within this radius. Try widening it.' : 'No grounds are registered yet.'} />
+              )}
+
+              {!active.loading && !active.error && active.grounds.length > 0 && visibleGrounds.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-loc-text2-dark">No grounds match the selected filters.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCity(null)
+                      setSelectedFacilities([])
+                    }}
+                    className="mt-4 inline-flex rounded-full bg-loc-stadium px-6 py-2 text-sm font-semibold text-loc-warmwhite transition hover:bg-loc-stadium-hover"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              )}
+
+              {/* Load More Button */}
+              {!active.loading && !active.error && active.hasMore && (
+                <button
+                  type="button"
+                  onClick={active.loadMore}
+                  disabled={active.loadingMore}
+                  className="self-center rounded-full border border-loc-gold/20 px-6 py-2.5 text-sm font-semibold text-loc-warmwhite transition-colors hover:border-loc-gold/50 hover:text-loc-gold disabled:opacity-50"
+                >
+                  {active.loadingMore ? 'Loading…' : 'Load More'}
                 </button>
-              </div>
-            )}
-
-            <KmRangeSlider value={radiusKm} onCommit={handleRadiusCommit} compact />
-
-            {active.grounds.length > 0 && (
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="text-[11px] font-semibold whitespace-nowrap text-loc-muted-dark uppercase">Filter</span>
-                <GroundFiltersBar grounds={active.grounds} selectedFacilities={selectedFacilities} onChange={setSelectedFacilities} />
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="flex w-full min-w-0 flex-1 flex-col gap-6">
-          {active.grounds.length > 0 && (
-            <p className="text-sm font-semibold uppercase tracking-widest text-loc-muted-dark">
-              {visibleGrounds.length} {visibleGrounds.length === 1 ? 'Ground' : 'Grounds'}
-            </p>
-          )}
-
-          <div className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {active.loading && Array.from({ length: 6 }).map((_, i) => <GroundCardSkeleton key={i} />)}
-            {!active.loading && !active.error && visibleGrounds.map((ground) => <GroundCard key={ground.publicGroundId} ground={ground} />)}
-          </div>
-
-          {!active.loading && active.error && <ErrorState message={active.error} onRetry={active.retry} />}
-          {!active.loading && !active.error && active.grounds.length === 0 && (
-            <EmptyState message={isSearchMode ? 'No cricket grounds found within this radius. Try widening it.' : 'No grounds are registered yet.'} />
-          )}
-          {!active.loading && !active.error && active.grounds.length > 0 && visibleGrounds.length === 0 && (
-            <p className="text-loc-text2-dark">No grounds match the selected facilities.</p>
-          )}
-
-          {!active.loading && !active.error && active.hasMore && (
-            <button
-              type="button"
-              onClick={active.loadMore}
-              disabled={active.loadingMore}
-              className="self-center rounded-full border border-loc-gold/20 px-6 py-2.5 text-sm font-semibold text-loc-warmwhite transition-colors hover:border-loc-gold/50 hover:text-loc-gold disabled:opacity-50"
-            >
-              {active.loadingMore ? 'Loading…' : 'Load More'}
-            </button>
-          )}
         </div>
       </main>
 
