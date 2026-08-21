@@ -1,19 +1,15 @@
 import React, { useEffect } from 'react'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
-import { useFonts } from 'expo-font'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '../src/store/authStore'
+import { useAuthStore, initializeAuthStore } from '../src/store/authStore'
 
 SplashScreen.preventAutoHideAsync()
 
 const queryClient = new QueryClient()
+initializeAuthStore(queryClient)
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  })
-
   const { initialize, status } = useAuthStore()
 
   useEffect(() => {
@@ -21,15 +17,13 @@ export default function RootLayout() {
       try {
         await initialize()
       } finally {
-        if (fontsLoaded) {
-          SplashScreen.hideAsync()
-        }
+        SplashScreen.hideAsync()
       }
     }
     setup()
-  }, [fontsLoaded])
+  }, [])
 
-  if (!fontsLoaded || status === 'loading') {
+  if (status === 'loading') {
     return null
   }
 
