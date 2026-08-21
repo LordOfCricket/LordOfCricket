@@ -1,14 +1,49 @@
 import api from './api'
 import { User, AuthResponse, MfaStatus } from '../types'
 
+// DEVELOPMENT-ONLY OTP BYPASS
+// This should NEVER be enabled in production
+// Used for testing without depending on SMS service
+const DEV_OTP_CODE = '123456'
+const isDevelopment = process.env.EXPO_PUBLIC_APP_ENV === 'development'
+
 export async function sendOtp(identifier: string) {
+  // DEVELOPMENT-ONLY: Skip SMS service in development
+  if (isDevelopment) {
+    // Simulate API response without calling real SMS provider
+    return { success: true, message: 'OTP sent (development mode)' }
+  }
+
+  // PRODUCTION: Use real OTP service
   const response = await api.post('/auth/send-otp', { identifier })
   return response.data
 }
 
 export async function verifyOtp(identifier: string, code: string): Promise<User> {
+  // DEVELOPMENT-ONLY: Accept dev OTP in development
+  if (isDevelopment && code === DEV_OTP_CODE) {
+    // For development, send the dev OTP to backend for verification
+    // This allows testing the complete auth flow without depending on SMS
+    try {
+      const response = await api.post<AuthResponse>('/auth/verify-otp', {
+        identifier,
+        code: DEV_OTP_CODE,
+      })
+      return response.data.user
+    } catch (error) {
+      // If backend doesn't recognize dev OTP, re-throw error
+      // The user should see this in development
+      throw error
+    }
+  }
+
+  // PRODUCTION: Verify real OTP only
   const response = await api.post<AuthResponse>('/auth/verify-otp', { identifier, code })
   return response.data.user
+}
+
+export function getDevOtpCode(): string | null {
+  return isDevelopment ? DEV_OTP_CODE : null
 }
 
 export async function logout() {

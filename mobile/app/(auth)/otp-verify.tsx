@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useAuthStore } from '../../src/store/authStore'
 import { Colors, Spacing, Typography } from '../../src/constants/colors'
 import { getErrorMessage } from '../../src/utils/errors'
+import { getDevOtpCode } from '../../src/services/authApi'
 
 export default function OtpVerifyScreen() {
   const router = useRouter()
@@ -57,6 +58,15 @@ export default function OtpVerifyScreen() {
 
         <Text style={styles.title}>Verify OTP</Text>
         <Text style={styles.subtitle}>We've sent an OTP to {identifier}</Text>
+
+        {/* DEVELOPMENT-ONLY: Show OTP code for testing */}
+        {getDevOtpCode() && (
+          <View style={styles.devModeBox}>
+            <Text style={styles.devModeLabel}>🔧 Development Mode</Text>
+            <Text style={styles.devModeOtp}>OTP: {getDevOtpCode()}</Text>
+            <Text style={styles.devModeNote}>This is test-only. Not for production.</Text>
+          </View>
+        )}
 
         <View style={styles.form}>
           <Text style={styles.label}>Enter OTP</Text>
@@ -184,5 +194,33 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     color: Colors.primary,
     fontWeight: Typography.fontWeight.semibold,
+  },
+  // DEVELOPMENT-ONLY: Styles for dev mode OTP display
+  devModeBox: {
+    backgroundColor: '#FEF3C7',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    padding: Spacing.md,
+    borderRadius: 6,
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.lg,
+  },
+  devModeLabel: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: '#B45309',
+    marginBottom: Spacing.xs,
+  },
+  devModeOtp: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#000000',
+    marginBottom: Spacing.sm,
+    fontFamily: 'monospace',
+  },
+  devModeNote: {
+    fontSize: Typography.fontSize.xs,
+    color: '#92400E',
+    fontStyle: 'italic',
   },
 })
