@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  AccessibilityInfo,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../src/store/authStore'
@@ -19,9 +20,16 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState('')
   const [loading, setLoading] = useState(false)
 
+  // Announce errors to screen readers
+  useEffect(() => {
+    if (error) {
+      AccessibilityInfo.announceForAccessibility(error)
+    }
+  }, [error])
+
   const handleSendOtp = async () => {
     if (!identifier.trim()) {
-      setError('Please enter your email or phone number')
+      setError('Please enter your mobile number')
       return
     }
 
@@ -46,19 +54,20 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Mobile App</Text>
 
         <View style={styles.form}>
-          <Text style={styles.label}>Email or Phone Number</Text>
+          <Text style={styles.label}>Mobile Number</Text>
           <TextInput
             style={styles.input}
-            placeholder="example@email.com or +91XXXXXXXXXX"
+            placeholder="+91 XXXXX XXXXX"
             placeholderTextColor={Colors.textTertiary}
             value={identifier}
             onChangeText={(text) => {
-              setIdentifier(text)
+              setIdentifier(text.trim())
               setError(null)
             }}
             editable={!loading}
-            keyboardType="email-address"
+            keyboardType="phone-pad"
             autoCapitalize="none"
+            accessibilityRole="text"
           />
 
           {error && <Text style={styles.error}>{error}</Text>}
