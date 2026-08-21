@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MapPin } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
@@ -29,7 +29,7 @@ const SORT_OPTIONS = [
 function EmptyState({ message }) {
   return (
     <div className="flex flex-col items-center gap-2 py-12 text-center">
-      <p className="text-emerald-100/70">{message}</p>
+      <p className="text-loc-text2-dark">{message}</p>
     </div>
   )
 }
@@ -41,7 +41,7 @@ function ErrorState({ message, onRetry }) {
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-full bg-emerald-500 px-6 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
+        className="rounded-full bg-loc-stadium px-6 py-2 text-sm font-semibold text-loc-warmwhite transition hover:bg-loc-stadium-hover"
       >
         Retry
       </button>
@@ -60,6 +60,10 @@ function ErrorState({ message, onRetry }) {
 // Facilities filtering (GroundFiltersBar) applies client-side over whichever
 // mode is active, same as DiscoveryPage's own "Find Your Perfect Ground".
 export default function GroundsPage() {
+  useEffect(() => {
+    document.title = 'Grounds — Lord Of Cricket'
+  }, [])
+
   const [browseSort, setBrowseSort] = useState('city')
   const [selectedFacilities, setSelectedFacilities] = useState([])
   const [searchCoords, setSearchCoords] = useState(null) // { latitude, longitude, label } once resolved
@@ -110,12 +114,10 @@ export default function GroundsPage() {
       </MouseParallaxProvider>
 
       <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pt-32 pb-20 lg:px-10">
-        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex flex-col items-start gap-3 text-left">
-          <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">All Grounds</span>
-          <h1 className="bg-linear-to-r from-white to-emerald-200 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
+          <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
             Every Ground Registered on LOC
           </h1>
-          <p className="max-w-2xl text-emerald-100/60">Browse every ground sorted by city, or search around a landmark and set your travel radius.</p>
         </ScrollReveal>
 
         {/* Amazon/Flipkart-style layout — sort/search/radius/filter controls
@@ -123,19 +125,19 @@ export default function GroundsPage() {
             second line (no horizontal scrollbar) on narrow screens rather
             than stacking beside the grid (which left the results column
             too narrow for even one card below the lg breakpoint). */}
-        <div className="rounded-2xl border border-emerald-400/10 bg-white/3 px-5 py-3">
+        <div className="rounded-2xl border border-loc-gold/10 bg-white/3 px-5 py-3">
           <div className="flex flex-wrap items-center justify-between gap-4">
             {!isSearchMode ? (
               <>
                 <div className="flex shrink-0 items-center gap-2">
-                  <label htmlFor="grounds-sort" className="text-[11px] font-semibold whitespace-nowrap text-emerald-100/50 uppercase">
+                  <label htmlFor="grounds-sort" className="text-[11px] font-semibold whitespace-nowrap text-loc-muted-dark uppercase">
                     Sort
                   </label>
                   <select
                     id="grounds-sort"
                     value={browseSort}
                     onChange={(e) => setBrowseSort(e.target.value)}
-                    className="h-8 rounded-full border border-emerald-400/20 bg-white/5 px-3 text-xs font-semibold text-emerald-100/80 focus:border-emerald-400/50 focus:outline-none"
+                    className="h-8 rounded-full border border-loc-gold/20 bg-white/5 px-3 text-xs font-semibold text-loc-warmwhite focus:border-loc-gold/50 focus:outline-none"
                   >
                     {SORT_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value} className="bg-loc-dark text-white">
@@ -145,17 +147,17 @@ export default function GroundsPage() {
                   </select>
                 </div>
 
-                <span className="shrink-0 text-[11px] font-semibold text-emerald-100/40 uppercase">or</span>
+                <span className="shrink-0 text-[11px] font-semibold text-loc-muted-dark uppercase">or</span>
 
                 <LandmarkSearch onResolved={handleResolved} />
               </>
             ) : (
-              <div className="flex shrink-0 items-center gap-2 text-xs text-emerald-100/70">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
+              <div className="flex shrink-0 items-center gap-2 text-xs text-loc-text2-dark">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-gold" aria-hidden="true" />
                 <span className="whitespace-nowrap">
-                  Within {radiusKm} km of <span className="font-semibold text-white">{searchCoords.label}</span>
+                  Within {radiusKm} km of <span className="font-semibold text-loc-warmwhite">{searchCoords.label}</span>
                 </span>
-                <button type="button" onClick={handleBackToAll} className="font-semibold whitespace-nowrap text-emerald-400 underline-offset-2 hover:underline">
+                <button type="button" onClick={handleBackToAll} className="font-semibold whitespace-nowrap text-loc-gold underline-offset-2 hover:underline">
                   Back to All
                 </button>
               </div>
@@ -165,7 +167,7 @@ export default function GroundsPage() {
 
             {active.grounds.length > 0 && (
               <div className="flex shrink-0 items-center gap-2">
-                <span className="text-[11px] font-semibold whitespace-nowrap text-emerald-100/50 uppercase">Filter</span>
+                <span className="text-[11px] font-semibold whitespace-nowrap text-loc-muted-dark uppercase">Filter</span>
                 <GroundFiltersBar grounds={active.grounds} selectedFacilities={selectedFacilities} onChange={setSelectedFacilities} />
               </div>
             )}
@@ -174,7 +176,7 @@ export default function GroundsPage() {
 
         <div className="flex w-full min-w-0 flex-1 flex-col gap-6">
           {active.grounds.length > 0 && (
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-100/50">
+            <p className="text-sm font-semibold uppercase tracking-widest text-loc-muted-dark">
               {visibleGrounds.length} {visibleGrounds.length === 1 ? 'Ground' : 'Grounds'}
             </p>
           )}
@@ -189,7 +191,7 @@ export default function GroundsPage() {
             <EmptyState message={isSearchMode ? 'No cricket grounds found within this radius. Try widening it.' : 'No grounds are registered yet.'} />
           )}
           {!active.loading && !active.error && active.grounds.length > 0 && visibleGrounds.length === 0 && (
-            <p className="text-emerald-100/60">No grounds match the selected facilities.</p>
+            <p className="text-loc-text2-dark">No grounds match the selected facilities.</p>
           )}
 
           {!active.loading && !active.error && active.hasMore && (
@@ -197,7 +199,7 @@ export default function GroundsPage() {
               type="button"
               onClick={active.loadMore}
               disabled={active.loadingMore}
-              className="self-center rounded-full border border-emerald-400/20 px-6 py-2.5 text-sm font-semibold text-emerald-100/80 transition-colors hover:border-emerald-400/50 hover:text-white disabled:opacity-50"
+              className="self-center rounded-full border border-loc-gold/20 px-6 py-2.5 text-sm font-semibold text-loc-warmwhite transition-colors hover:border-loc-gold/50 hover:text-loc-gold disabled:opacity-50"
             >
               {active.loadingMore ? 'Loading…' : 'Load More'}
             </button>
