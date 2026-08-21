@@ -1,11 +1,38 @@
 import api from './api'
 import { User, AuthResponse, MfaStatus } from '../types'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 // DEVELOPMENT-ONLY OTP BYPASS
 // This should NEVER be enabled in production
 // Used for testing without depending on SMS service
 const DEV_OTP_CODE = '123456'
 const isDevelopment = process.env.EXPO_PUBLIC_APP_ENV === 'development'
+const DEV_SESSION_COOKIE = 'dev-session=test-dev-user; Path=/; HttpOnly'
+const COOKIE_STORAGE_KEY = 'loc_session_cookie'
+
+// Mock user for development mode
+function createMockDevUser(identifier: string): User {
+  return {
+    id: 999,
+    name: 'Dev Test Player',
+    email: identifier.includes('@') ? identifier : 'dev@test.local',
+    phone: identifier.includes('@') ? '+919999999999' : identifier,
+    role: 'player',
+    status: 'ACTIVE',
+    force_password_change: false,
+    created_at: new Date().toISOString(),
+  }
+}
+
+// Set up development session in AsyncStorage
+async function setDevSession(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(COOKIE_STORAGE_KEY, DEV_SESSION_COOKIE)
+  } catch (error) {
+    console.warn('Failed to set development session cookie:', error)
+    // Continue anyway - development mode is best-effort
+  }
+}
 
 export async function sendOtp(identifier: string) {
   // DEVELOPMENT-ONLY: Skip SMS service in development
@@ -22,19 +49,11 @@ export async function sendOtp(identifier: string) {
 export async function verifyOtp(identifier: string, code: string): Promise<User> {
   // DEVELOPMENT-ONLY: Accept dev OTP in development
   if (isDevelopment && code === DEV_OTP_CODE) {
-    // For development, send the dev OTP to backend for verification
-    // This allows testing the complete auth flow without depending on SMS
-    try {
-      const response = await api.post<AuthResponse>('/auth/verify-otp', {
-        identifier,
-        code: DEV_OTP_CODE,
-      })
-      return response.data.user
-    } catch (error) {
-      // If backend doesn't recognize dev OTP, re-throw error
-      // The user should see this in development
-      throw error
-    }
+    // For development, create mock session without calling backend
+    // This allows testing the complete auth flow locally without SMS or backend
+    await setDevSession()
+    // Return a valid mock user - auth store will set authenticated state
+    return createMockDevUser(identifier)
   }
 
   // PRODUCTION: Verify real OTP only
