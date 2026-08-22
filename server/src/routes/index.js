@@ -32,6 +32,9 @@ import matchMessageRoutes from './matchMessage.routes.js'
 import { topUmpiresRoutes } from './umpireLeaderboard.routes.js'
 import umpireSelfRoutes from './umpireSelf.routes.js'
 import groundOwnerRoutes from './groundOwner.routes.js'
+import groundOwnerMediaRoutes from './groundOwnerMedia.routes.js'
+import groundOwnerAmenitiesRoutes from './groundOwnerAmenities.routes.js'
+import groundOwnerBookingRoutes from './groundOwnerBooking.routes.js'
 import matchFeedbackRoutes from './matchFeedback.routes.js'
 import tournamentRoutes from './tournament.routes.js'
 import { matchAIInsightRoutes, playerAIInsightRoutes, teamAIInsightRoutes } from './aiInsight.routes.js'
@@ -74,7 +77,13 @@ router.use('/matches', matchMessageRoutes)
 router.use('/umpire', umpireSelfRoutes)
 // Phase 21 (U5) — Ground Owner match management (own grounds, own matches,
 // creating a match scoped to an owned ground).
+// Phase 2 — Ground Owner media management (upload, delete, reorder, set hero).
+// Phase 3 — Ground Owner amenity management (select from catalog, remove).
+// Phase 6 — Ground Owner booking management (availability, list, check-in, no-show).
 router.use('/ground-owner', groundOwnerRoutes)
+router.use('/ground-owner/grounds/:publicGroundId/media', groundOwnerMediaRoutes)
+router.use('/ground-owner/grounds/:publicGroundId/amenities', groundOwnerAmenitiesRoutes)
+router.use('/ground-owner/grounds/:publicGroundId/bookings', groundOwnerBookingRoutes)
 // Phase 22 (U6) — post-match feedback (Ground/Umpire/App), eligibility
 // computed per (match, user) inside the service.
 router.use('/matches', matchFeedbackRoutes)

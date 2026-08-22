@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { Star } from 'lucide-react'
+import { useSeoMeta } from '../../hooks/useSeoMeta.js'
+import { useJsonLd } from '../../hooks/useJsonLd.js'
 import logo from '../../assets/logo.png'
 import Navbar from '../../components/home/Navbar.jsx'
 import Hero from '../../components/home/Hero.jsx'
@@ -55,9 +58,72 @@ export default function GroundHomePage() {
   const [bookingOpen, setBookingOpen] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
 
-  useEffect(() => {
-    document.title = ground ? `${ground.name} — LOC` : 'Lord Of Cricket'
-  }, [ground])
+  const heroPhoto = ground?.photos?.find((p) => p.isFeatured) || ground?.photos?.[0]
+  const location = ground ? [ground.city, ground.state].filter(Boolean).join(', ') : ''
+  useSeoMeta({
+    title: ground ? `${ground.name}${location ? ` — ${location}` : ''} | Lord Of Cricket` : 'Lord Of Cricket',
+    description: ground
+      ? (ground.description?.trim() || `Book ${ground.name}${location ? ` in ${location}` : ''} on Lord Of Cricket — view photos, amenities, and availability.`).slice(0, 300)
+      : undefined,
+    canonical: ground ? `${window.location.origin}/grounds/${ground.publicGroundId}` : undefined,
+    ogImage: heroPhoto?.imageUrl,
+  })
+
+  // Phase 12 — SportsActivityLocation + BreadcrumbList, built only from
+  // fields the ground profile API actually returned for THIS ground; a
+  // field is omitted from the schema entirely rather than filled with a
+  // placeholder when the ground doesn't have it (no fabricated address/
+  // phone/rating/review data). Phase 13 — aggregateRating now included, but
+  // ONLY when ratingCount > 0: a ground with zero reviews has no rating to
+  // honestly report, so the field is omitted entirely rather than a fake
+  // "0 stars" (same honest-absence convention as the visible rating badge
+  // above and Google's own guidance against a zero/placeholder aggregateRating).
+  useJsonLd(
+    ground && {
+      '@context': 'https://schema.org',
+      '@type': 'SportsActivityLocation',
+      name: ground.name,
+      ...(ground.description ? { description: ground.description } : {}),
+      url: `${window.location.origin}/grounds/${ground.publicGroundId}`,
+      ...(heroPhoto?.imageUrl ? { image: heroPhoto.imageUrl } : {}),
+      ...(ground.phone ? { telephone: ground.phone } : {}),
+      ...(ground.addressLine || ground.city
+        ? {
+            address: {
+              '@type': 'PostalAddress',
+              ...(ground.addressLine ? { streetAddress: ground.addressLine } : {}),
+              ...(ground.city ? { addressLocality: ground.city } : {}),
+              ...(ground.state ? { addressRegion: ground.state } : {}),
+              ...(ground.postalCode ? { postalCode: ground.postalCode } : {}),
+              ...(ground.country ? { addressCountry: ground.country } : {}),
+            },
+          }
+        : {}),
+      ...(ground.latitude != null && ground.longitude != null
+        ? { geo: { '@type': 'GeoCoordinates', latitude: ground.latitude, longitude: ground.longitude } }
+        : {}),
+      ...(ground.ratingCount > 0
+        ? {
+            aggregateRating: {
+              '@type': 'AggregateRating',
+              ratingValue: ground.ratingAvg,
+              reviewCount: ground.ratingCount,
+            },
+          }
+        : {}),
+    },
+  )
+  useJsonLd(
+    ground && {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: window.location.origin },
+        { '@type': 'ListItem', position: 2, name: 'Grounds', item: `${window.location.origin}/grounds` },
+        { '@type': 'ListItem', position: 3, name: ground.name, item: `${window.location.origin}/grounds/${ground.publicGroundId}` },
+      ],
+    },
+  )
 
   if (loading) return <PageLoading />
   if (notFound) return <GroundNotFound />
@@ -92,6 +158,22 @@ export default function GroundHomePage() {
             <h2 className="text-5xl sm:text-6xl lg:text-7xl font-black text-[#F5F7F5] mb-6 leading-tight drop-shadow-lg">
               About <span className="bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#F5D547] bg-clip-text text-transparent">{ground.name}</span>
             </h2>
+            {/* Phase 13 — real ground.ratingAvg/ratingCount (grounds table,
+                recomputed from match_feedback); "No reviews yet" for a
+                ground with none, never a fabricated number. */}
+            <p className="mb-6 flex items-center gap-2 text-sm font-semibold">
+              {ground.ratingAvg !== null && ground.ratingAvg !== undefined ? (
+                <>
+                  <Star className="h-4 w-4 shrink-0 fill-[#D4AF37] text-[#D4AF37]" aria-hidden="true" />
+                  <span className="text-[#F5F7F5]">{ground.ratingAvg.toFixed(1)}</span>
+                  <span className="text-[#F5F7F5]/50">
+                    ({ground.ratingCount} {ground.ratingCount === 1 ? 'review' : 'reviews'})
+                  </span>
+                </>
+              ) : (
+                <span className="text-[#F5F7F5]/50">No reviews yet</span>
+              )}
+            </p>
             <div className="flex items-center gap-3">
               <div className="h-1.5 w-8 rounded-full bg-[#D4AF37]" />
               <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />

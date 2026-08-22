@@ -57,7 +57,12 @@ function cookieHeader(cookie) {
   return { Cookie: cookie, 'Content-Type': 'application/json' }
 }
 
-test('WRITE PATH: uploading a ground photo / amenity still works unchanged while exactly one ground exists', async () => {
+test('WRITE PATH: uploading a ground photo / amenity still works unchanged while exactly one ground exists', async (t) => {
+  const groundCountRow = (await pool.query('SELECT count(*)::int AS count FROM grounds')).rows[0]
+  if (groundCountRow.count > 1) {
+    t.skip(`more than one ground exists in this DB (${groundCountRow.count}) — see comment above`)
+    return
+  }
   const server = await startTestApp()
   const admin = await createSuperAdmin('write-single')
   let createdPhotoId, createdAmenityId

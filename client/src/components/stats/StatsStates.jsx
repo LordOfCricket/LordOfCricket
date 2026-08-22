@@ -33,11 +33,17 @@ export function StatsErrorState({ message, onRetry }) {
   )
 }
 
-export function StatsEmptyState({ label = 'Your cricket statistics' }) {
+// `suffix` defaults to the original fixed sentence every existing caller
+// (CareerOverview, ProfilePage, PublicPlayerProfilePage) already relies on
+// `label` reading as a subject for ("Your cricket statistics" + suffix).
+// Pass `suffix=""` when `label` is already a complete sentence on its own
+// (e.g. a ground-scoped empty state that isn't about a player's first
+// match) — see GroundReviewsPage.jsx/GroundAnalyticsPage.jsx.
+export function StatsEmptyState({ label = 'Your cricket statistics', suffix = ' will appear after your first LOC match is finalized.' }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center">
       <BarChart3 className="h-8 w-8 text-slate-500" />
-      <p className="text-sm text-slate-300">{label} will appear after your first LOC match is finalized.</p>
+      <p className="text-sm text-slate-300">{label}{suffix}</p>
     </div>
   )
 }

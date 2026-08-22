@@ -295,3 +295,24 @@ export async function upsertOrderByLegacyMongoId({ canteenId, legacyMongoId, use
     client.release()
   }
 }
+
+// Phase 14 — Ground Owner canteen revenue. 'Completed' is the ONLY status
+// counted as revenue: PRESET_STATUS/FINISHED_STATUSES above already
+// establish 'Completed' and 'Cancelled' as the two distinct terminal
+// outcomes for an order — a cancelled order was never actually sold, so
+// counting it as revenue would overstate real earnings. A ground can have
+// multiple canteens (canteens.ground_id, Step 18) — this SUMs across every
+// canteen belonging to the ground, not just one. Date-range filters on
+// ordered_at (when the sale was placed), matching how booking analytics
+// filters on ground_bookings.start_time — the moment the transaction
+// happened, not an administrative timestamp.
+export async function sumCompletedRevenueForGround(groundId, fromUtc, toUtc) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM(o.total), 0)::numeric(12,2) AS revenue, COUNT(*)::int AS order_count
+     FROM orders o
+     JOIN canteens c ON c.id = o.canteen_id
+     WHERE c.ground_id = $1 AND o.status = 'Completed' AND o.ordered_at >= $2 AND o.ordered_at < $3`,
+    [groundId, fromUtc, toUtc],
+  )
+  return { revenue: Number(rows[0].revenue), orderCount: rows[0].order_count }
+}

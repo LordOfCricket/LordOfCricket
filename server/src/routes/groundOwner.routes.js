@@ -3,6 +3,7 @@ import { requireAuth } from '../middlewares/auth.js'
 import { requireGroundRole, requireGroundPermission } from '../middlewares/groundAccess.js'
 import {
   listMyGrounds,
+  updateGroundProfile,
   listGroundMatches,
   createGroundMatch,
   getGroundMatchUmpireSlots,
@@ -23,6 +24,10 @@ import {
   grantStaffPermissionHandler,
   revokeStaffPermissionHandler,
   disableStaffMembershipHandler,
+  getGroundDashboard,
+  getGroundAnalytics,
+  exportGroundAnalyticsCsv,
+  getGroundReviews,
 } from '../controllers/groundOwner.controller.js'
 import { proposeUmpireForSlot, listMatchProposals, cancelMatchProposal } from '../controllers/umpireProposal.controller.js'
 
@@ -39,6 +44,18 @@ import { proposeUmpireForSlot, listMatchProposals, cancelMatchProposal } from '.
 // level, not with a runtime check.
 const router = Router()
 router.get('/grounds', requireAuth, listMyGrounds)
+router.patch('/grounds/:publicGroundId', requireAuth, requireGroundRole('GROUND_OWNER'), updateGroundProfile)
+router.get('/grounds/:publicGroundId/dashboard', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundDashboard)
+// Phase 11 audit — Phase 10's analytics service existed but had no route
+// (an unreachable "broken flow" caught by the Phase 11 audit).
+router.get('/grounds/:publicGroundId/analytics', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundAnalytics)
+// Phase 14 — CSV export. Owner-only (financially sensitive — revenue),
+// same requireGroundRole('GROUND_OWNER') as every Owner-only route above,
+// never delegated to staff permissions.
+router.get('/grounds/:publicGroundId/analytics/export', requireAuth, requireGroundRole('GROUND_OWNER'), exportGroundAnalyticsCsv)
+// Phase 13 — Ground Owner Reviews. Owner-only (requireGroundRole), same
+// posture as Dashboard/Analytics above — not delegated to staff.
+router.get('/grounds/:publicGroundId/reviews', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundReviews)
 router.get('/grounds/:publicGroundId/matches', requireAuth, requireGroundPermission('MATCH_VIEW'), listGroundMatches)
 router.post('/grounds/:publicGroundId/matches', requireAuth, requireGroundPermission('MATCH_MANAGE'), createGroundMatch)
 router.get('/grounds/:publicGroundId/matches/:matchId/umpire-slots', requireAuth, requireGroundPermission('MATCH_VIEW'), getGroundMatchUmpireSlots)

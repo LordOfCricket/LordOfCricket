@@ -77,6 +77,13 @@ function serializeGroundCard(row) {
     // array_agg over zero rows is SQL NULL, never [] — coalesce here so the
     // client only ever sees a real array.
     amenities: row.amenity_names || [],
+    // Phase 13 — real rating_avg/rating_count columns (see schema.sql),
+    // already recomputed on every match_feedback submission by
+    // ratingAggregation.service.js. NULL ratingAvg + ratingCount=0 IS the
+    // honest "no reviews yet" state — never coerced to 0/fabricated.
+    // NUMERIC(3,2) arrives from pg as a string; Number() only when non-null.
+    ratingAvg: row.rating_avg !== null && row.rating_avg !== undefined ? Number(row.rating_avg) : null,
+    ratingCount: row.rating_count ?? 0,
   }
 }
 
@@ -234,6 +241,10 @@ export async function getGroundProfile(req, res, next) {
         phone: ground.phone,
         email: ground.email,
         website: ground.website,
+        // Phase 13 — same honest-absence convention as serializeGroundCard:
+        // NULL ratingAvg + ratingCount=0 for a ground with no reviews yet.
+        ratingAvg: ground.rating_avg !== null && ground.rating_avg !== undefined ? Number(ground.rating_avg) : null,
+        ratingCount: ground.rating_count ?? 0,
       },
       photos: photos.map((p) => ({ title: p.title, imageUrl: p.image_url, sortOrder: p.sort_order, isFeatured: p.is_featured })),
       // Legacy, super_admin-uploaded-photo amenities (unchanged) — kept

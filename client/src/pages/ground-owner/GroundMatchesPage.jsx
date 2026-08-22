@@ -13,6 +13,7 @@ import { PAYMENT_STATUSES, paymentStatusLabel, paymentStatusClasses, formatAmoun
 import { proposalStatusLabel, proposalStatusClasses } from '../../models/umpireProposal.model.js'
 import { staffingForecastLabel, staffingForecastClasses } from '../../models/staffingForecast.model.js'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
+import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import ReplacementPicker from '../../components/ground-owner/ReplacementPicker.jsx'
 import RecommendedUmpires from '../../components/ground-owner/RecommendedUmpires.jsx'
 import AssignmentHistory from '../../components/ground-owner/AssignmentHistory.jsx'
@@ -508,6 +509,7 @@ export default function GroundMatchesPage() {
   return (
     <GroundOwnerLayout>
       <BackButton label="Back to Dashboard" fallback="/ground-owner/dashboard" />
+      <GroundNavTabs />
 
       <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">{groundsLoading ? 'Loading…' : ground?.name || 'Ground'}</h1>
 

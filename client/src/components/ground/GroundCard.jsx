@@ -1,14 +1,16 @@
 import { Link } from 'react-router-dom'
 import { MapPin } from 'lucide-react'
 import { formatDistance } from '../../models/groundDiscovery.model.js'
+import RatingBadge from './RatingBadge.jsx'
 
 const MAX_VISIBLE_FACILITIES = 3
 
 // Every field here comes straight from GET /api/grounds/search|nearby|
 // (city/nearby/browse-all discovery); nothing is hardcoded per-ground.
 // Navigation always uses the API's own publicGroundId, never an array
-// index or numeric id. No rating/price shown — those fields don't exist in
-// the schema, so they're simply absent, not a fake placeholder.
+// index or numeric id. No price shown — that field doesn't exist in the
+// schema. Phase 13 — rating now DOES exist (grounds.rating_avg/rating_count,
+// real match_feedback data) and is shown via RatingBadge.
 export default function GroundCard({ ground }) {
   const facilities = ground.amenities || []
   const extraCount = Math.max(0, facilities.length - MAX_VISIBLE_FACILITIES)
@@ -22,7 +24,7 @@ export default function GroundCard({ ground }) {
         {ground.primaryPhoto ? (
           <img
             src={ground.primaryPhoto}
-            alt=""
+            alt={ground.name}
             loading="lazy"
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
@@ -51,6 +53,9 @@ export default function GroundCard({ ground }) {
               {[ground.city, ground.state].filter(Boolean).join(', ')}
             </p>
           )}
+          <div className="mt-1.5">
+            <RatingBadge ratingAvg={ground.ratingAvg} ratingCount={ground.ratingCount} />
+          </div>
         </div>
 
         {facilities.length > 0 && (

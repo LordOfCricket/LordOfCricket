@@ -64,3 +64,120 @@ export async function insertMany(groundId, photos, client = pool) {
   )
   return rows
 }
+
+// Phase 2 — Ground Owner operations scoped to their own grounds.
+// All functions verify ground ownership before any operation.
+
+// Fetch all photos for a ground (owner-scoped, returns internal fields)
+export async function findPhotosByGroundIdForOwner(groundId) {
+  const { rows } = await pool.query(
+    `SELECT id, title, image_url, sort_order, is_featured, cloudinary_public_id, created_at
+     FROM ground_photos
+     WHERE ground_id = $1
+     ORDER BY is_featured DESC, sort_order, created_at`,
+    [groundId],
+  )
+  return rows
+}
+
+// Find a single photo by id, verify it belongs to the specified ground
+export async function findPhotoByIdAndGroundId(photoId, groundId) {
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM ground_photos
+     WHERE id = $1 AND ground_id = $2`,
+    [photoId, groundId],
+  )
+  return rows[0] || null
+}
+
+// Set one photo as featured (hero), unfeature all others in that ground
+export async function setFeaturedPhoto(groundId, photoId, client) {
+  const providedClient = client
+  const shouldRelease = !providedClient
+  if (shouldRelease) client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+
+    // Verify photo belongs to this ground
+    const photo = await client.query(
+      'SELECT id FROM ground_photos WHERE id = $1 AND ground_id = $2',
+      [photoId, groundId],
+    )
+    if (photo.rows.length === 0) {
+      await client.query('ROLLBACK')
+      return null
+    }
+
+    // Unfeature all others
+    await client.query(
+      `UPDATE ground_photos SET is_featured = false WHERE ground_id = $1 AND id != $2`,
+      [groundId, photoId],
+    )
+
+    // Feature this one
+    const { rows } = await client.query(
+      `UPDATE ground_photos SET is_featured = true WHERE id = $1 RETURNING *`,
+      [photoId],
+    )
+
+    await client.query('COMMIT')
+    return rows[0] || null
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    if (shouldRelease) client.release()
+  }
+}
+
+// Update sort order for multiple photos atomically
+export async function updatePhotoSortOrder(groundId, updates, client) {
+  // updates: [{ photoId, sortOrder }, ...]
+  if (!updates || updates.length === 0) return []
+
+  const providedClient = client
+  const shouldRelease = !providedClient
+  if (shouldRelease) client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+
+    const results = []
+    for (const { photoId, sortOrder } of updates) {
+      // Verify each photo belongs to this ground
+      const photo = await client.query(
+        'SELECT id FROM ground_photos WHERE id = $1 AND ground_id = $2',
+        [photoId, groundId],
+      )
+      if (photo.rows.length === 0) {
+        await client.query('ROLLBACK')
+        return null // Partial update not allowed — all or nothing
+      }
+
+      const { rows } = await client.query(
+        `UPDATE ground_photos SET sort_order = $1 WHERE id = $2 RETURNING *`,
+        [sortOrder, photoId],
+      )
+      results.push(rows[0])
+    }
+
+    await client.query('COMMIT')
+    return results
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    if (shouldRelease) client.release()
+  }
+}
+
+// Delete a photo by id, with ground verification
+export async function deleteGroundPhotoByOwner(photoId, groundId) {
+  const { rows } = await pool.query(
+    `DELETE FROM ground_photos WHERE id = $1 AND ground_id = $2 RETURNING *`,
+    [photoId, groundId],
+  )
+  return rows[0] || null
+}

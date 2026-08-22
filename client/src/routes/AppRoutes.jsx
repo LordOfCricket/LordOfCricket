@@ -72,7 +72,21 @@ const UmpireEarningsPage = lazy(() => import('../pages/umpire/UmpireEarningsPage
 const MatchBriefingPage = lazy(() => import('../pages/umpire/MatchBriefingPage.jsx'))
 const GroundOwnerDashboardPage = lazy(() => import('../pages/ground-owner/GroundOwnerDashboardPage.jsx'))
 const GroundMatchesPage = lazy(() => import('../pages/ground-owner/GroundMatchesPage.jsx'))
+const GroundOperationsPage = lazy(() => import('../pages/ground-owner/GroundOperationsPage.jsx'))
+const GroundAnalyticsPage = lazy(() => import('../pages/ground-owner/GroundAnalyticsPage.jsx'))
+const GroundReviewsPage = lazy(() => import('../pages/ground-owner/GroundReviewsPage.jsx'))
+const GroundProfilePage = lazy(() => import('../pages/ground-owner/GroundProfilePage.jsx'))
+const GroundMediaPage = lazy(() => import('../pages/ground-owner/GroundMediaPage.jsx'))
+const GroundAmenitiesPage = lazy(() => import('../pages/ground-owner/GroundAmenitiesPage.jsx'))
+const GroundLocationPage = lazy(() => import('../pages/ground-owner/GroundLocationPage.jsx'))
 const GroundStaffPage = lazy(() => import('../pages/ground-owner/GroundStaffPage.jsx'))
+const GroundBookingPage = lazy(() => import('../pages/ground-owner/GroundBookingPage.jsx'))
+const GroundBookingCalendarPage = lazy(() => import('../pages/ground-owner/GroundBookingCalendarPage.jsx'))
+const GroundBookingListPage = lazy(() => import('../pages/ground-owner/GroundBookingListPage.jsx'))
+const GroundCanteenPage = lazy(() => import('../pages/ground-owner/GroundCanteenPage.jsx'))
+const GroundCanteenMenuPage = lazy(() => import('../pages/ground-owner/GroundCanteenMenuPage.jsx'))
+const GroundCanteenTodayPage = lazy(() => import('../pages/ground-owner/GroundCanteenTodayPage.jsx'))
+const GroundCanteenOrdersPage = lazy(() => import('../pages/ground-owner/GroundCanteenOrdersPage.jsx'))
 const BrowseUmpiresPage = lazy(() => import('../pages/ground-owner/BrowseUmpiresPage.jsx'))
 const UmpireProposalsPage = lazy(() => import('../pages/umpire/UmpireProposalsPage.jsx'))
 
@@ -218,7 +232,21 @@ const router = createBrowserRouter([
       { path: '/ground-owner/dashboard', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundOwnerDashboardPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/browse-umpires', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<BrowseUmpiresPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundMatchesPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/operations', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundOperationsPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/analytics', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundAnalyticsPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/reviews', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundReviewsPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/profile', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundProfilePage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/media', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundMediaPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/amenities', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundAmenitiesPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/location', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundLocationPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/staff', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundStaffPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/bookings', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/bookings/calendar', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingCalendarPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/bookings/list', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingListPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/canteen', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/canteen/menu', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenMenuPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/canteen/today', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenTodayPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/canteen/orders', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenOrdersPage />)}</RequireMfaVerified></RequireGroundOwner> },
 
       // Player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: withSuspense(<PlayersDiscoveryPage />) },

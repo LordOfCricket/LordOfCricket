@@ -120,7 +120,8 @@ export async function findDefaultGround() {
 export async function findPublicActiveGroundByPublicId(publicGroundId) {
   const { rows } = await pool.query(
     `SELECT public_ground_id, slug, name, description, address_line, city, state,
-            country, postal_code, latitude, longitude, phone, email, website, id
+            country, postal_code, latitude, longitude, phone, email, website, id,
+            rating_avg, rating_count
      FROM grounds
      WHERE public_ground_id = $1 AND status = 'ACTIVE'`,
     [publicGroundId],
@@ -157,6 +158,7 @@ export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, l
     `WITH candidate_grounds AS (
        SELECT
          public_ground_id, slug, name, city, state, country, latitude, longitude,
+         rating_avg, rating_count,
          (SELECT gp.image_url FROM ground_photos gp
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
@@ -204,6 +206,7 @@ export async function findActiveGroundsByCity({ city, limit, offset }) {
     `WITH candidate_grounds AS (
        SELECT
          public_ground_id, slug, name, city, state, country,
+         rating_avg, rating_count,
          (SELECT gp.image_url FROM ground_photos gp
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
@@ -366,6 +369,7 @@ export async function findAllActiveGrounds({ limit, offset, sort = 'name' }) {
     `WITH candidate_grounds AS (
        SELECT
          public_ground_id, slug, name, city, state, country, created_at,
+         rating_avg, rating_count,
          (SELECT gp.image_url FROM ground_photos gp
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
@@ -427,6 +431,54 @@ export async function countAllGrounds() {
 // 'ACTIVE'` filter exactly like a still-pending one, so it's already
 // correctly invisible to every public discovery/profile query with zero
 // further changes. Guarded transitions only (ACTIVE->SUSPENDED,
+// Phase 1 — Ground Owner update endpoint. Accepts only whitelisted editable
+// fields (name, description, phone, email, website) for ground profile updates.
+// Never accepts status, id, public_ground_id, or other non-editable fields.
+// The ground row is identified by id (not public_ground_id), which is resolved
+// from the req.ground object after authorization checks have already verified
+// the owner's access.
+export async function updateGroundProfile(groundId, fields) {
+  if (!groundId || typeof fields !== 'object' || !fields || Object.keys(fields).length === 0) {
+    return null
+  }
+
+  // Whitelist: only these fields are editable by a ground owner
+  const whitelisted = {}
+  if ('name' in fields) whitelisted.name = fields.name
+  if ('description' in fields) whitelisted.description = fields.description
+  if ('phone' in fields) whitelisted.phone = fields.phone
+  if ('email' in fields) whitelisted.email = fields.email
+  if ('website' in fields) whitelisted.website = fields.website
+  // Phase 4 — Location fields
+  if ('addressLine' in fields) whitelisted.addressLine = fields.addressLine
+  if ('city' in fields) whitelisted.city = fields.city
+  if ('state' in fields) whitelisted.state = fields.state
+  if ('postalCode' in fields) whitelisted.postalCode = fields.postalCode
+  if ('latitude' in fields) whitelisted.latitude = fields.latitude
+  if ('longitude' in fields) whitelisted.longitude = fields.longitude
+
+  if (Object.keys(whitelisted).length === 0) {
+    return findGroundById(groundId)
+  }
+
+  const keys = Object.keys(whitelisted)
+  const setClause = keys.map((key, i) => {
+    // Map camelCase to snake_case
+    const dbFieldName =
+      key === 'addressLine' ? 'address_line' :
+      key === 'postalCode' ? 'postal_code' :
+      key
+    return `${dbFieldName} = $${i + 2}`
+  }).join(', ')
+  const values = keys.map(key => whitelisted[key])
+
+  const { rows } = await pool.query(
+    `UPDATE grounds SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [groundId, ...values],
+  )
+  return rows[0] || null
+}
+
 // SUSPENDED->ACTIVE) — a DRAFT ground (mid-approval, shouldn't exist in
 // practice since approval sets ACTIVE directly, but defensively excluded
 // anyway) is never toggled by this.

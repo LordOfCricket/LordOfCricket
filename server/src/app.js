@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import routes from './routes/index.js'
+import sitemapRoutes from './routes/sitemap.routes.js'
 import { notFound, errorHandler } from './middlewares/errorHandler.js'
 import { allowedOrigins } from './config/corsOrigins.js'
 
@@ -58,6 +59,11 @@ app.use((req, res, next) => {
   req.io = req.app.locals.io
   next()
 })
+
+// Phase 12 — sitemap.xml, mounted before the /api no-store rule below (a
+// crawler-facing static-ish resource, not an API response — it should be
+// cacheable, unlike everything under /api).
+app.use(sitemapRoutes)
 
 // Every /api response is dynamic, and several routes return per-user data
 // (bookings, notifications, profile) — nothing under /api should ever be

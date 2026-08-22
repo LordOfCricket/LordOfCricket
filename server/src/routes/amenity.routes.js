@@ -46,9 +46,9 @@ const router = express.Router()
 // When multiple grounds are deployed, these routes will need to be replaced
 // with proper multi-ground, publicly-addressed alternatives like:
 //   /grounds/:publicGroundId/amenities
-router.get('/', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, listAmenities)
-router.post('/', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, addAmenity)
-router.post('/upload', requireAuth, requireStaffRole('admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
-router.delete('/:id', requireAuth, requireStaffRole('admin'), removeAmenity)
+router.get('/', requireAuth, requireStaffRole('super_admin'), listAmenities)
+router.post('/', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, addAmenity)
+router.post('/upload', requireAuth, requireStaffRole('super_admin'), attachSingleGroundContext, uploadSingleImage, uploadAmenity)
+router.delete('/:id', requireAuth, requireStaffRole('super_admin'), removeAmenity)
 
 export default router

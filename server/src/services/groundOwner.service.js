@@ -20,6 +20,10 @@ import { ensureEarningRecordsForMatch, findEarningsForMatch, findEarningBySlotId
 import { isValidPaymentStatusTransition } from '../domain/umpireCommerce/paymentStatus.js'
 import { utcToGroundLocalParts } from '../domain/shared/groundTime.js'
 import { computeStaffingForecast } from '../domain/umpireRecommendation/staffingForecast.js'
+import { getStaffDashboard } from './groundDashboard.service.js'
+import * as bookingRepo from '../repositories/groundBooking.repository.js'
+import { groundTodayDateStr, groundLocalToUtc, addDaysToDateStr } from '../domain/booking/timezone.js'
+import { getDailyTimeline } from './groundTimeline.service.js'
 
 // A ground-level aggregate below this many reviews is displayed as "not
 // enough data" rather than a misleading average (Workstream J's own
@@ -497,5 +501,58 @@ export async function getUmpireOperationsSummary(ground) {
     avgUmpireRating: rating.rating_count >= GROUND_RATING_MIN_SAMPLE ? Number(rating.avg_rating) : null,
     ratingSampleSize: rating.rating_count,
     noShowCount: noShowRows[0].no_show_count,
+  }
+}
+
+// Phase 9 — Ground Owner Operations Dashboard. Reuses groundDashboard.service.js
+// (staff dashboard) but adapted for ground owner perspective. Owner needs the
+// same today/upcoming visibility but MAY get additional owner-specific data
+// (e.g., revenue estimates, staff scheduling) in future phases.
+export async function getGroundOwnerDashboard(groundId) {
+  const today = groundTodayDateStr()
+  const dayStart = groundLocalToUtc(today, 0, 0)
+  const dayEnd = groundLocalToUtc(today, 24, 0)
+  const weekEnd = groundLocalToUtc(addDaysToDateStr(today, 7), 24, 0)
+
+  const [timeline, todayRows, todayMatches, upcomingBlocks, upcomingMatches] = await Promise.all([
+    getDailyTimeline(today),
+    bookingRepo.listConfirmedInRange(dayStart, dayEnd, groundId),
+    bookingRepo.listMatchEntriesInRange(today, addDaysToDateStr(today, 1), groundId),
+    bookingRepo.listBlocksInRange(dayEnd, weekEnd, groundId),
+    bookingRepo.listMatchEntriesInRange(addDaysToDateStr(today, 1), addDaysToDateStr(today, 7), groundId),
+  ])
+
+  const todayBookings = todayRows.filter((r) => r.booking_type === 'CUSTOMER')
+  const todayBlocks = todayRows.filter((r) => r.booking_type === 'STAFF_BLOCK')
+
+  return {
+    date: today,
+    groundStatus: todayMatches.length > 0 ? 'MATCH_DAY' : todayBlocks.length > 0 ? 'PARTIALLY_BLOCKED' : todayBookings.length > 0 ? 'BOOKED' : 'OPEN',
+    today: {
+      bookingsCount: todayBookings.length,
+      blocksCount: todayBlocks.length,
+      matchesCount: todayMatches.length,
+      bookings: todayBookings.map((r) => ({ publicBookingId: r.public_booking_id, startTime: r.start_time, endTime: r.end_time, purpose: r.purpose })),
+      blocks: todayBlocks.map((r) => ({ publicBookingId: r.public_booking_id, startTime: r.start_time, endTime: r.end_time, blockType: r.block_type })),
+      matches: todayMatches.map((m) => ({
+        matchId: m.id,
+        teamA: m.team_a_name,
+        teamB: m.team_b_name,
+        status: m.status,
+        tournamentName: m.tournament_name,
+        stage: m.stage,
+      })),
+      timeline: timeline.segments,
+    },
+    upcoming7Days: {
+      blocks: upcomingBlocks.map((r) => ({ publicBookingId: r.public_booking_id, startTime: r.start_time, endTime: r.end_time, blockType: r.block_type })),
+      matches: upcomingMatches.map((m) => ({
+        matchId: m.id,
+        teamA: m.team_a_name,
+        teamB: m.team_b_name,
+        matchDate: m.match_date,
+        tournamentName: m.tournament_name,
+      })),
+    },
   }
 }

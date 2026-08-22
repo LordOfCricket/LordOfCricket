@@ -57,3 +57,24 @@ export async function insertUmpireRating(client, { matchFeedbackId, umpireUserId
   )
   return rows[0]
 }
+
+// Phase 13 — Ground Owner review list. Same posture as
+// findRecentRatingsForUmpire above: rating + comments + timestamp only, no
+// submitted_by/user join at all — reviews are anonymous to the owner, not
+// just "no email/phone," matching the existing precedent that umpire
+// ratings never expose reviewer identity either. groundId always comes from
+// req.ground.id (server-resolved, never client-supplied) at the call site.
+export async function findGroundReviews(groundId, { limit, offset }) {
+  const { rows } = await pool.query(
+    `SELECT mf.ground_rating, mf.ground_comment_liked, mf.ground_comment_improve, mf.created_at,
+            COUNT(*) OVER()::int AS total_count
+     FROM match_feedback mf
+     JOIN matches m ON m.id = mf.match_id
+     WHERE m.ground_id = $1 AND mf.ground_rating IS NOT NULL
+     ORDER BY mf.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [groundId, limit, offset],
+  )
+  const total = rows.length ? rows[0].total_count : 0
+  return { rows, total }
+}

@@ -63,6 +63,32 @@ export async function listByUser(userId) {
   return rows
 }
 
+// Phase 6 — list all bookings for a ground (ground owner view).
+export async function listGroundBookingsInRange({ groundId, fromDate, toDate, status } = {}) {
+  const conditions = ['ground_id = $1']
+  const params = [groundId]
+
+  if (fromDate) {
+    params.push(fromDate)
+    conditions.push(`DATE(start_time) >= $${params.length}`)
+  }
+  if (toDate) {
+    params.push(toDate)
+    conditions.push(`DATE(start_time) <= $${params.length}`)
+  }
+  if (status) {
+    params.push(status)
+    conditions.push(`status = $${params.length}`)
+  }
+
+  const where = conditions.join(' AND ')
+  const { rows } = await pool.query(
+    `SELECT * FROM ground_bookings WHERE ${where} ORDER BY start_time DESC`,
+    params,
+  )
+  return rows
+}
+
 export async function listForStaffSchedule({ fromUtc, toUtc } = {}) {
   const conditions = []
   const params = []
@@ -156,12 +182,16 @@ export async function updateGoogleSync(id, { eventId, status }) {
  * strings, compared directly against the naive column with no implicit
  * UTC/local conversion by the driver either way — the safest choice given
  * the column's already-ambiguous timezone semantics. */
-export async function listMatchDatesInRange(fromDateStr, toDateStrExclusive) {
+// Phase 14 audit — optional groundId (default null = platform-wide,
+// unchanged for the existing legacy-staff getUtilization caller), same
+// NULL-safe pattern as every other ground-scoping fix in this file.
+export async function listMatchDatesInRange(fromDateStr, toDateStrExclusive, groundId = null) {
   const { rows } = await pool.query(
     `SELECT DISTINCT to_char(match_date, 'YYYY-MM-DD') AS date_str
      FROM matches
-     WHERE status IN ('upcoming', 'live') AND match_date::date >= $1::date AND match_date::date < $2::date`,
-    [fromDateStr, toDateStrExclusive]
+     WHERE status IN ('upcoming', 'live') AND match_date::date >= $1::date AND match_date::date < $2::date
+       AND ($3::int IS NULL OR ground_id = $3)`,
+    [fromDateStr, toDateStrExclusive, groundId]
   )
   return rows.map((r) => r.date_str)
 }
@@ -194,7 +224,7 @@ export async function listBlocksInRange(fromUtc, toUtc, groundId = null) {
  * has no end time) — this only enriches the LABEL, never fabricates a
  * narrower time range.
  */
-export async function listMatchEntriesInRange(fromDateStr, toDateStrExclusive) {
+export async function listMatchEntriesInRange(fromDateStr, toDateStrExclusive, groundId = null) {
   const { rows } = await pool.query(
     `SELECT m.id, m.match_date, m.status, m.venue,
             ta.name AS team_a_name, tb.name AS team_b_name,
@@ -205,8 +235,9 @@ export async function listMatchEntriesInRange(fromDateStr, toDateStrExclusive) {
      LEFT JOIN tournament_fixtures f ON f.match_id = m.id
      LEFT JOIN tournaments t ON t.id = f.tournament_id
      WHERE m.status IN ('upcoming', 'live') AND m.match_date::date >= $1::date AND m.match_date::date < $2::date
+       AND ($3::int IS NULL OR m.ground_id = $3)
      ORDER BY m.match_date`,
-    [fromDateStr, toDateStrExclusive]
+    [fromDateStr, toDateStrExclusive, groundId]
   )
   return rows
 }
@@ -218,7 +249,12 @@ export async function listMatchEntriesInRange(fromDateStr, toDateStrExclusive) {
  * `COUNT(*) OVER()` gives the total for pagination in one round trip (same
  * pattern `team.repository.js#listPublicTeams` already uses).
  */
-export async function searchBookings({ q = null, status = null, bookingType = null, fromUtc = null, toUtc = null, limit = 20, offset = 0 }) {
+// Phase 11 audit — optional groundId (default null = platform-wide, the
+// original Phase 18 legacy-staff-dashboard behavior via groundReport.service.js,
+// left unchanged for that existing caller) added so ground-scoped callers
+// (Ground Owner analytics) never have to fetch other grounds' bookings just
+// to filter them out in JS afterward.
+export async function searchBookings({ q = null, status = null, bookingType = null, fromUtc = null, toUtc = null, groundId = null, limit = 20, offset = 0 }) {
   const { rows } = await pool.query(
     `SELECT *, COUNT(*) OVER()::int AS total_count
      FROM ground_bookings
@@ -227,9 +263,10 @@ export async function searchBookings({ q = null, status = null, bookingType = nu
        AND ($3::text IS NULL OR booking_type = $3)
        AND ($4::timestamptz IS NULL OR start_time >= $4)
        AND ($5::timestamptz IS NULL OR start_time < $5)
+       AND ($8::int IS NULL OR ground_id = $8)
      ORDER BY start_time DESC
      LIMIT $6 OFFSET $7`,
-    [q, status, bookingType, fromUtc, toUtc, limit, offset]
+    [q, status, bookingType, fromUtc, toUtc, limit, offset, groundId]
   )
   const total = rows.length ? rows[0].total_count : 0
   return { rows, total }
@@ -261,26 +298,38 @@ export async function countBookingsByHour(fromUtc, toUtc, groundTimezone) {
   return rows
 }
 
-/** Simple status-count breakdown for a date range (Feature 11 "Bookings/Completed/Cancelled"). */
-export async function countBookingsByStatus(fromUtc, toUtc) {
+/**
+ * Simple status-count breakdown for a date range (Feature 11 "Bookings/Completed/Cancelled").
+ * Phase 11 audit — optional groundId (default null = platform-wide, the
+ * original Phase 18 legacy-staff-dashboard behavior via groundReport.service.js)
+ * so Ground Owner analytics can scope this to their own ground without
+ * touching that existing caller's cross-ground semantics.
+ */
+export async function countBookingsByStatus(fromUtc, toUtc, groundId = null) {
   const { rows } = await pool.query(
     `SELECT status, COUNT(*)::int AS count
      FROM ground_bookings
      WHERE booking_type = 'CUSTOMER' AND start_time >= $1 AND start_time < $2
+       AND ($3::int IS NULL OR ground_id = $3)
      GROUP BY 1`,
-    [fromUtc, toUtc]
+    [fromUtc, toUtc, groundId]
   )
   return rows
 }
 
 /** Sum of booked/blocked hours in a range, for utilization (Feature 12) — CONFIRMED rows only, split by booking_type. */
-export async function sumOccupiedHoursByType(fromUtc, toUtc) {
+// Phase 14 audit — optional groundId (default null = platform-wide, the
+// original Phase 18 legacy-staff-dashboard behavior via groundReport.service.js,
+// left unchanged for that existing caller), same pattern as
+// countBookingsByStatus/searchBookings above.
+export async function sumOccupiedHoursByType(fromUtc, toUtc, groundId = null) {
   const { rows } = await pool.query(
     `SELECT booking_type, COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time)) / 3600), 0)::float AS hours
      FROM ground_bookings
      WHERE status = 'CONFIRMED' AND start_time >= $1 AND start_time < $2
+       AND ($3::int IS NULL OR ground_id = $3)
      GROUP BY 1`,
-    [fromUtc, toUtc]
+    [fromUtc, toUtc, groundId]
   )
   return rows
 }

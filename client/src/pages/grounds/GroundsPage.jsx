@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useSeoMeta } from '../../hooks/useSeoMeta.js'
 import { MapPin, ChevronDown } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
@@ -109,9 +110,11 @@ function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, o
 }
 
 export default function GroundsPage() {
-  useEffect(() => {
-    document.title = 'Grounds — Lord Of Cricket'
-  }, [])
+  useSeoMeta({
+    title: 'Browse Cricket Grounds — Lord Of Cricket',
+    description: 'Browse every cricket ground registered on Lord Of Cricket — search by city, distance, or facilities and book your next match.',
+    canonical: `${window.location.origin}/grounds`,
+  })
 
   const [selectedCity, setSelectedCity] = useState(null)
   const [selectedFacilities, setSelectedFacilities] = useState([])

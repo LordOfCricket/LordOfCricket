@@ -80,6 +80,10 @@ export async function listMasterMenu(req, res) {
         price: Number(item.price),
         image: formatImageUrl(req, item.image_url),
         defaultStock: item.default_stock,
+        // Phase 11 audit fix — GroundCanteenMenuPage.jsx reads `item.stock`
+        // (never `defaultStock`) for the master-menu list; aliased here so
+        // the Ground Owner menu page stops showing "Stock: undefined".
+        stock: item.default_stock,
         isActive: item.is_active,
       })),
     })
@@ -172,7 +176,13 @@ export function updateTodaysMenu(req, res) {
 
 export async function createMenuItem(req, res) {
   try {
-    const { name, category, description, price, defaultStock } = req.body
+    // Phase 11 audit fix — the Ground Owner frontend (groundOwnerApi.js/
+    // GroundCanteenMenuPage.jsx) sends this field as `stock`, not
+    // `defaultStock`; reading only `defaultStock` silently created every
+    // owner-facing menu item with zero stock. `stock` is read first (falling
+    // back to `defaultStock`) so the legacy single-canteen test suite/caller
+    // that already sends `defaultStock` keeps working unchanged.
+    const { name, category, description, price, defaultStock, stock } = req.body
     let image = req.body.image || ''
     let imagePublicId = ''
     if (req.file) {
@@ -194,7 +204,7 @@ export async function createMenuItem(req, res) {
       price: numericPrice,
       imageUrl: image,
       cloudinaryPublicId: imagePublicId,
-      defaultStock: Number(defaultStock) || 0,
+      defaultStock: Number(stock ?? defaultStock) || 0,
     })
     return res.status(201).json({
       item: {
@@ -205,6 +215,7 @@ export async function createMenuItem(req, res) {
         price: Number(item.price),
         image: formatImageUrl(req, item.image_url),
         defaultStock: item.default_stock,
+        stock: item.default_stock,
       },
     })
   } catch (error) {
@@ -215,7 +226,11 @@ export async function createMenuItem(req, res) {
 export async function updateMenuItem(req, res) {
   try {
     const { id } = req.params
-    const { name, category, description, price } = req.body
+    // Phase 11 audit fix — same `stock`/`defaultStock` split as
+    // createMenuItem above: the field was never read here at all, so an
+    // owner's stock edit was silently dropped every time (not just
+    // defaulted wrong, as in create — completely ignored).
+    const { name, category, description, price, defaultStock, stock, isActive } = req.body
     let image = req.body.image || ''
     let imagePublicId = ''
     if (req.file) {
@@ -235,6 +250,14 @@ export async function updateMenuItem(req, res) {
       }
       update.price = numericPrice
     }
+    if (stock !== undefined || defaultStock !== undefined) {
+      const numericStock = Number(stock ?? defaultStock)
+      if (Number.isNaN(numericStock)) {
+        return res.status(400).json({ error: 'Invalid stock value.' })
+      }
+      update.defaultStock = numericStock
+    }
+    if (isActive !== undefined) update.isActive = isActive === true || isActive === 'true'
     if (image) update.imageUrl = image
     if (imagePublicId) update.cloudinaryPublicId = imagePublicId
 
@@ -252,6 +275,7 @@ export async function updateMenuItem(req, res) {
       price: Number(item.price),
       image: formatImageUrl(req, item.image_url),
       defaultStock: item.default_stock,
+      stock: item.default_stock,
       isActive: item.is_active,
     }
     return res.json({ item: responseItem })

@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useSeoMeta } from '../../hooks/useSeoMeta.js'
+import { useJsonLd } from '../../hooks/useJsonLd.js'
 import Navbar from '../../components/home/Navbar.jsx'
 import PlatformHero from '../../components/home/PlatformHero.jsx'
 import AboutSection from '../../components/home/AboutSection.jsx'
@@ -25,9 +26,17 @@ import SiteFooter from '../../components/home/SiteFooter.jsx'
 // (GroundsPage.jsx). PlatformHero's and FinalCtaSection's "Join LOC" CTAs
 // route to /grounds instead of scrolling to a same-page section.
 export default function DiscoveryPage() {
-  useEffect(() => {
-    document.title = 'Lord Of Cricket'
-  }, [])
+  useSeoMeta({
+    title: 'Lord Of Cricket — Find & Book Cricket Grounds Near You',
+    description: 'Discover and book cricket grounds, organize matches, and connect with the cricket ecosystem on Lord Of Cricket.',
+    canonical: `${window.location.origin}/`,
+  })
+  useJsonLd({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Lord Of Cricket',
+    url: window.location.origin,
+  })
 
   return (
     <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">

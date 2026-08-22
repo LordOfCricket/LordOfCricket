@@ -68,10 +68,12 @@ async function buildOccupiedRanges(dateStr, groundId) {
 }
 
 /** @param opts.isStaff — staff sees the specific reason (BOOKED/BLOCKED/MATCH/PAST);
- * the public view only ever sees AVAILABLE/UNAVAILABLE (Part 47 — "Unavailable is often enough"). */
-export async function getDayAvailability(dateStr, { isStaff = false } = {}) {
+ * the public view only ever sees AVAILABLE/UNAVAILABLE (Part 47 — "Unavailable is often enough").
+ * @param opts.groundId — Phase 6: optional ground ID for multi-ground operations. If not provided,
+ * resolves to the default ground (backward compatible with Phase 14 single-ground flow). */
+export async function getDayAvailability(dateStr, { isStaff = false, groundId: paramGroundId = null } = {}) {
   assertBookableDate(dateStr)
-  const groundId = await resolveDefaultGroundId()
+  const groundId = paramGroundId || await resolveDefaultGroundId()
   const occupied = await buildOccupiedRanges(dateStr, groundId)
   const slots = computeDayAvailability(dateStr, occupied)
   return slots.map((s) => ({
@@ -127,7 +129,7 @@ function validateSlotAlignment(dateStr, hour, minute) {
  * friendly UX/fast-path only. A 23P01 exclusion-violation from the INSERT
  * itself is what proves correctness under real concurrent requests.
  */
-export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null, blockType = null }) {
+export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null, blockType = null, groundId: paramGroundId = null }) {
   assertBookableDate(dateStr)
   const { startTime, endTime } = validateSlotAlignment(dateStr, hour, minute)
   if (!customerName || !String(customerName).trim()) {
@@ -142,7 +144,9 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     if (existing) return { booking: existing, idempotentReplay: true }
   }
 
-  const groundId = await resolveDefaultGroundId()
+  // Phase 6: groundId can be passed explicitly by ground-owner operations,
+  // otherwise resolve default (backward compatible with Phase 14 single-ground flow)
+  const groundId = paramGroundId || await resolveDefaultGroundId()
 
   // Match-day pre-check: a friendly, fast rejection before even attempting
   // the INSERT (matches are rarely created in the same instant as a booking
@@ -282,8 +286,8 @@ export async function listStaffSchedule({ fromDate, toDate } = {}) {
   return bookingRepo.listForStaffSchedule({ fromUtc, toUtc })
 }
 
-export async function createStaffBlock({ dateStr, hour, minute = 0, purpose, blockType = null, createdByStaffId }) {
-  return createBooking({ dateStr, hour, minute, customerName: purpose || 'Ground Block', purpose, bookingType: 'STAFF_BLOCK', blockType, createdByStaffId })
+export async function createStaffBlock({ dateStr, hour, minute = 0, purpose, blockType = null, createdByStaffId, groundId }) {
+  return createBooking({ dateStr, hour, minute, customerName: purpose || 'Ground Block', purpose, bookingType: 'STAFF_BLOCK', blockType, createdByStaffId, groundId })
 }
 
 export function notifyBookingDateChanged(io, dateStr) {
