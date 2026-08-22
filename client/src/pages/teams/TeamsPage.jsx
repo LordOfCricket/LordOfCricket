@@ -5,13 +5,18 @@ import { usePublicTeams } from '../../hooks/usePublicTeams.js'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import TeamCard from '../../components/teams/TeamCard.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
-import BackButton from '../../components/common/BackButton.jsx'
+import Navbar from '../../components/home/Navbar.jsx'
+import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
+import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
+import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
+import ScrollReveal from '../../components/common/ScrollReveal.jsx'
+import { fadeUpSoft } from '../../lib/revealVariants.js'
 
 const PAGE_SIZE = 12
 
 function CardSkeleton() {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/50 p-5" role="status" aria-label="Loading team">
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-loc-card-dark p-5" role="status" aria-label="Loading team">
       <div className="h-20 w-20 animate-pulse rounded-full bg-white/10" />
       <div className="h-4 w-24 animate-pulse rounded bg-white/5" />
       <div className="h-16 w-full animate-pulse rounded-xl bg-white/5" />
@@ -20,6 +25,10 @@ function CardSkeleton() {
 }
 
 export default function TeamsPage() {
+  useEffect(() => {
+    document.title = 'Teams — Lord Of Cricket'
+  }, [])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(searchParams.get('search') || '')
   const [offset, setOffset] = useState(0)
@@ -42,40 +51,50 @@ export default function TeamsPage() {
   const clearSearch = () => changeQuery('')
 
   return (
-    <main
-      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-8 text-white sm:px-6 lg:px-8"
-      style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
-    >
-      <div className="mx-auto max-w-5xl">
-        <BackButton fallback="/" />
+    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
+      <MouseParallaxProvider>
+        <BackgroundSystem />
+        <CursorGlow />
+        <Navbar />
+      </MouseParallaxProvider>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Teams</h1>
-            <p className="mt-1 text-sm text-slate-300">Discover cricket teams on Lord Of Cricket.</p>
-          </div>
+      <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pt-32 pb-20 lg:px-10">
+        {/* Page Title */}
+        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
+          <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+            Cricket Teams
+          </h1>
+          <p className="max-w-2xl text-loc-text2-dark">Discover and explore cricket teams on Lord Of Cricket.</p>
+        </ScrollReveal>
+
+        {/* Compare Teams Link */}
+        <div className="flex justify-center">
           <Link
             to="/teams/compare"
-            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-200 transition-colors hover:bg-white/10"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-stadium px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-all duration-200 hover:bg-loc-stadium-hover"
           >
             <Shield className="h-4 w-4" />
             Compare Teams
           </Link>
         </div>
 
-        <div className="relative mt-6">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => changeQuery(e.target.value)}
-            placeholder="Search teams..."
-            aria-label="Search teams"
-            className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:border-emerald-400/50 focus:outline-none"
-          />
+        {/* Search Bar */}
+        <div className="flex justify-center">
+          <div className="relative w-full max-w-2xl">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-loc-gold" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => changeQuery(e.target.value)}
+              placeholder="Search teams..."
+              aria-label="Search teams"
+              className="w-full rounded-2xl border border-loc-gold/20 bg-loc-stadium/20 py-3 pl-12 pr-4 text-sm text-loc-warmwhite placeholder:text-loc-muted-dark focus:border-loc-gold/50 focus:outline-none transition-colors"
+            />
+          </div>
         </div>
 
-        <div className="mt-6">
+        {/* Teams Grid */}
+        <div>
           {loading && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -87,12 +106,12 @@ export default function TeamsPage() {
           {!loading && error && <StatsErrorState message={error} onRetry={() => window.location.reload()} />}
 
           {!loading && !error && result && result.items.length === 0 && debouncedQuery && (
-            <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-16 text-center">
-              <p className="text-sm text-slate-300">No teams found for &ldquo;{debouncedQuery}&rdquo;.</p>
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-loc-gold/20 bg-loc-stadium/10 px-6 py-16 text-center">
+              <p className="text-sm text-loc-text2-dark">No teams found for &ldquo;{debouncedQuery}&rdquo;.</p>
               <button
                 type="button"
                 onClick={clearSearch}
-                className="rounded-full border border-emerald-400/30 px-5 py-2 text-xs font-bold uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-500/10"
+                className="rounded-full bg-loc-stadium px-5 py-2 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-colors hover:bg-loc-stadium-hover"
               >
                 Clear Search
               </button>
@@ -100,7 +119,7 @@ export default function TeamsPage() {
           )}
 
           {!loading && !error && result && result.items.length === 0 && !debouncedQuery && (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-16 text-center text-sm text-slate-300">No teams yet.</div>
+            <div className="rounded-2xl border border-dashed border-loc-gold/20 bg-loc-stadium/10 px-6 py-16 text-center text-sm text-loc-text2-dark">No teams yet.</div>
           )}
 
           {!loading && !error && result && result.items.length > 0 && (
@@ -112,23 +131,23 @@ export default function TeamsPage() {
               </div>
 
               {result.pagination.total > PAGE_SIZE && (
-                <div className="mt-6 flex items-center justify-between text-sm text-slate-300">
+                <div className="mt-8 flex items-center justify-between gap-4 rounded-full border border-loc-gold/20 bg-loc-stadium/10 px-6 py-4">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Previous
                   </button>
-                  <span>
+                  <span className="text-sm text-loc-text2-dark">
                     {offset + 1}–{Math.min(offset + PAGE_SIZE, result.pagination.total)} of {result.pagination.total}
                   </span>
                   <button
                     type="button"
                     disabled={offset + PAGE_SIZE >= result.pagination.total}
                     onClick={() => setOffset(offset + PAGE_SIZE)}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -137,7 +156,7 @@ export default function TeamsPage() {
             </>
           )}
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   )
 }

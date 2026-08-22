@@ -76,21 +76,7 @@ function NavItem({ link, onClick, className = '', activeClassName = '', underlin
   )
 }
 
-// Same visual treatment as NavItem (text/hover style), but a <button> — this
-// opens the gallery modal in place, not a route.
-function GalleryNavButton({ onClick, className = '' }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`font-loc-body text-[15px] font-medium text-loc-text2-dark transition-colors duration-200 hover:text-loc-warmwhite ${className}`}
-    >
-      Gallery
-    </button>
-  )
-}
-
-export default function Navbar({ onOpenGallery, canteenHref } = {}) {
+export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const { user, player, logout } = useAuth()
@@ -186,8 +172,6 @@ export default function Navbar({ onOpenGallery, canteenHref } = {}) {
             {navLinks.map((link) => (
               <NavItem key={link.label} link={link} />
             ))}
-            {canteenHref && <NavItem link={{ label: 'Canteen', to: canteenHref }} />}
-            {onOpenGallery && <GalleryNavButton onClick={onOpenGallery} />}
           </div>
         </nav>
 
@@ -276,24 +260,6 @@ export default function Navbar({ onOpenGallery, canteenHref } = {}) {
                     activeClassName="bg-white/5"
                   />
                 ))}
-                {canteenHref && (
-                  <NavItem
-                    link={{ label: 'Canteen', to: canteenHref }}
-                    underline={false}
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-sm px-3 py-4 text-lg"
-                    activeClassName="bg-white/5"
-                  />
-                )}
-                {onOpenGallery && (
-                  <GalleryNavButton
-                    onClick={() => {
-                      setMenuOpen(false)
-                      onOpenGallery()
-                    }}
-                    className="rounded-sm px-3 py-4 text-left text-lg"
-                  />
-                )}
               </div>
 
               <div className="mt-4 flex flex-col gap-3 border-t border-white/8 pt-4">

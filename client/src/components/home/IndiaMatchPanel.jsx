@@ -63,21 +63,12 @@ function UpcomingIndiaMatch({ match, className }) {
   )
 }
 
-function NoIndiaMatch({ className }) {
-  return (
-    <PanelSurface className={`items-start justify-center ${className}`}>
-      <p className="font-loc-display text-xs font-bold tracking-[0.18em] text-loc-gold uppercase">India</p>
-      <p className="mt-2 font-loc-body text-sm text-loc-text2-dark">No India match live right now.</p>
-    </PanelSurface>
-  )
-}
-
 export default function IndiaMatchPanel({ className = '' }) {
   const { match, loading, error } = useIndiaMatch()
 
   if (loading) return <PanelSkeleton className={className} />
   if (error) return <PanelError className={className} message={error} />
-  if (!match) return <NoIndiaMatch className={className} />
+  if (!match) return null
 
   return match.isLive ? (
     <LiveIndiaScore match={match} className={className} />

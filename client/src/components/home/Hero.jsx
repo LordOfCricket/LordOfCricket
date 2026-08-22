@@ -1,8 +1,9 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { motion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
+import BookStadiumPanel from './BookStadiumPanel.jsx'
 import ParallaxLayer from '../common/ParallaxLayer.jsx'
 import useMouseParallax from '../../hooks/useMouseParallax.js'
 import useHeroSceneMount from '../../hooks/useHeroSceneMount.js'
@@ -19,7 +20,8 @@ const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 // is "show the ground and the scores fast", not stage a headline moment.
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 
-export default function Hero({ ground, onViewGallery }) {
+export default function Hero({ ground, onViewGallery, onBook }) {
+  const [bookingOpen, setBookingOpen] = useState(false)
   const { showScene, reduceMotion } = useHeroSceneMount()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
   // Hero is the pointer "source": one listener here drives the
@@ -84,15 +86,20 @@ export default function Hero({ ground, onViewGallery }) {
               </ParallaxLayer>
             </motion.div>
 
-            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:h-full lg:grid-cols-1 lg:gap-5">
-              <motion.div {...motionProps(DELAY.loc)} className="lg:h-full">
-                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
-                  <LocMatchPanel className="lg:h-full" />
+            <div className="flex flex-col gap-3 sm:gap-4 lg:gap-5">
+              <motion.div {...motionProps(DELAY.gallery)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <BookStadiumPanel groundName={ground.name} onBook={() => onBook?.()} />
                 </ParallaxLayer>
               </motion.div>
-              <motion.div {...motionProps(DELAY.india)} className="lg:h-full">
-                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
-                  <IndiaMatchPanel className="lg:h-full" />
+              <motion.div {...motionProps(DELAY.loc)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <LocMatchPanel />
+                </ParallaxLayer>
+              </motion.div>
+              <motion.div {...motionProps(DELAY.india)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <IndiaMatchPanel />
                 </ParallaxLayer>
               </motion.div>
             </div>

@@ -7,7 +7,12 @@ import { PLAYING_ROLE_LABELS } from '../../models/player.model.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import LeaderboardPodium from '../../components/leaderboards/LeaderboardPodium.jsx'
 import LeaderboardRow from '../../components/leaderboards/LeaderboardRow.jsx'
-import BackButton from '../../components/common/BackButton.jsx'
+import Navbar from '../../components/home/Navbar.jsx'
+import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
+import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
+import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
+import ScrollReveal from '../../components/common/ScrollReveal.jsx'
+import { fadeUpSoft } from '../../lib/revealVariants.js'
 
 const METRIC_GROUPS = {
   batting: [
@@ -51,6 +56,10 @@ function qualificationText(qualification) {
 }
 
 export default function LeaderboardsPage() {
+  useEffect(() => {
+    document.title = 'Leaderboards — Lord Of Cricket'
+  }, [])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const initialMetric = searchParams.get('metric') || 'runs'
   const [category, setCategory] = useState(metricCategory(initialMetric))
@@ -77,9 +86,6 @@ export default function LeaderboardsPage() {
       .finally(() => setLoading(false))
   }, [metric, role, teamId, offset])
 
-  // Fetching is the effect; setLoading(true) happens at the call sites that
-  // actually change a metric/filter/page (below) — never synchronously
-  // inside this effect.
   useEffect(() => {
     load()
   }, [load])
@@ -117,33 +123,44 @@ export default function LeaderboardsPage() {
   const rowItems = board && offset === 0 ? board.items.slice(3) : board?.items || []
 
   return (
-    <main
-      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-10 text-white sm:px-6 lg:px-8"
-      style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.82), rgba(2,6,23,0.82)), url('/images/cricket-stadium.jpg')` }}
-    >
-      <div className="mx-auto max-w-4xl">
-        <BackButton fallback="/" />
+    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
+      <MouseParallaxProvider>
+        <BackgroundSystem />
+        <CursorGlow />
+        <Navbar />
+      </MouseParallaxProvider>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Trophy className="h-7 w-7 text-amber-300" />
-            <h1 className="text-3xl font-bold text-white">Leaderboards</h1>
+      <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pt-32 pb-20 lg:px-10">
+        {/* Page Title */}
+        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <Trophy className="h-8 w-8 text-loc-gold" />
+            <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+              Leaderboards
+            </h1>
+            <Trophy className="h-8 w-8 text-loc-gold" />
           </div>
-          <Link to="/leaderboards/umpires" className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/5">
+          <p className="max-w-2xl text-loc-text2-dark">All-time official rankings, derived from finalized LOC matches.</p>
+        </ScrollReveal>
+
+        {/* Top Umpires Link */}
+        <div className="flex justify-center">
+          <Link to="/leaderboards/umpires" className="rounded-full bg-loc-stadium px-4 py-2.5 text-xs font-bold uppercase text-loc-warmwhite transition-all hover:bg-loc-stadium-hover">
             Top Umpires →
           </Link>
         </div>
-        <p className="mt-1 text-sm text-slate-300">All-time official rankings, derived from finalized LOC matches.</p>
 
-        {/* Category tabs */}
-        <div className="mt-6 flex gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-900/50 p-1">
+        {/* Category Tabs */}
+        <div className="flex gap-1 overflow-x-auto rounded-full border border-loc-gold/20 bg-loc-stadium/20 p-1">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
               type="button"
               onClick={() => selectMetric(METRIC_GROUPS[cat][0].key)}
               className={`shrink-0 rounded-full px-5 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
-                category === cat ? 'bg-emerald-500 text-emerald-950' : 'text-slate-300 hover:bg-white/5'
+                category === cat
+                  ? 'bg-loc-stadium text-loc-warmwhite shadow-lg shadow-loc-gold/25'
+                  : 'text-loc-text2-dark hover:bg-loc-stadium/40'
               }`}
             >
               {cat}
@@ -151,15 +168,17 @@ export default function LeaderboardsPage() {
           ))}
         </div>
 
-        {/* Metric pills within the category */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        {/* Metric Pills */}
+        <div className="flex flex-wrap justify-center gap-1.5">
           {METRIC_GROUPS[category].map((m) => (
             <button
               key={m.key}
               type="button"
               onClick={() => selectMetric(m.key)}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                metric === m.key ? 'bg-white/15 text-white' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                metric === m.key
+                  ? 'bg-loc-gold/20 text-loc-warmwhite'
+                  : 'bg-loc-stadium/30 text-loc-text2-dark hover:bg-loc-stadium/50'
               }`}
             >
               {m.label}
@@ -168,15 +187,15 @@ export default function LeaderboardsPage() {
         </div>
 
         {/* Filters */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap justify-center items-center gap-3">
           <select
             value={role}
             onChange={(e) => changeRole(e.target.value)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white focus:border-emerald-400/50 focus:outline-none"
+            className="rounded-xl border border-loc-gold/20 bg-white/5 px-3 py-1.5 text-xs text-loc-warmwhite focus:border-loc-gold/50 focus:outline-none transition-colors"
           >
-            <option value="" className="bg-slate-900">All Roles</option>
+            <option value="" className="bg-loc-dark text-loc-warmwhite">All Roles</option>
             {Object.entries(PLAYING_ROLE_LABELS).map(([value, label]) => (
-              <option key={value} value={value} className="bg-slate-900">
+              <option key={value} value={value} className="bg-loc-dark text-loc-warmwhite">
                 {label}
               </option>
             ))}
@@ -184,36 +203,37 @@ export default function LeaderboardsPage() {
           <select
             value={teamId}
             onChange={(e) => changeTeam(e.target.value)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white focus:border-emerald-400/50 focus:outline-none"
+            className="rounded-xl border border-loc-gold/20 bg-white/5 px-3 py-1.5 text-xs text-loc-warmwhite focus:border-loc-gold/50 focus:outline-none transition-colors"
           >
-            <option value="" className="bg-slate-900">All Teams</option>
+            <option value="" className="bg-loc-dark text-loc-warmwhite">All Teams</option>
             {teams.map((t) => (
-              <option key={t.id} value={t.id} className="bg-slate-900">
+              <option key={t.id} value={t.id} className="bg-loc-dark text-loc-warmwhite">
                 {t.name}
               </option>
             ))}
           </select>
         </div>
 
-        <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
+        {/* Leaderboard Content */}
+        <div className="rounded-2xl border border-loc-gold/20 bg-loc-stadium/20 p-6 backdrop-blur-sm">
           {loading && <StatsLoadingGrid tiles={6} />}
           {!loading && error && <StatsErrorState message={error} onRetry={load} />}
 
           {!loading && !error && board && (
             <>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-white">{board.title}</h2>
-                {board.pagination.total > 0 && <span className="text-xs text-slate-400">{board.pagination.total} ranked</span>}
+                <h2 className="text-lg font-bold text-loc-warmwhite">{board.title}</h2>
+                {board.pagination.total > 0 && <span className="text-xs text-loc-muted-dark">{board.pagination.total} ranked</span>}
               </div>
 
               {board.qualification && qualificationText(board.qualification) && (
-                <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                <p className="mb-4 rounded-xl border border-loc-gold/20 bg-loc-stadium/40 px-3 py-2 text-xs text-loc-gold">
                   {qualificationText(board.qualification)}
                 </p>
               )}
 
               {board.items.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-16 text-center text-sm text-slate-300">
+                <div className="rounded-2xl border border-dashed border-loc-gold/20 bg-loc-stadium/10 px-6 py-16 text-center text-sm text-loc-text2-dark">
                   {board.qualification
                     ? 'No players have met the qualification yet.'
                     : 'No official rankings yet. Rankings appear as LOC matches are finalized.'}
@@ -232,23 +252,23 @@ export default function LeaderboardsPage() {
               )}
 
               {board.pagination.total > PAGE_SIZE && (
-                <div className="mt-6 flex items-center justify-between text-sm text-slate-300">
+                <div className="mt-6 flex items-center justify-between gap-4 rounded-full border border-loc-gold/20 bg-loc-stadium/10 px-6 py-4">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => changePage(Math.max(0, offset - PAGE_SIZE))}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Previous
                   </button>
-                  <span>
+                  <span className="text-sm text-loc-text2-dark">
                     #{offset + 1}–#{Math.min(offset + PAGE_SIZE, board.pagination.total)} of {board.pagination.total}
                   </span>
                   <button
                     type="button"
                     disabled={offset + PAGE_SIZE >= board.pagination.total}
                     onClick={() => changePage(offset + PAGE_SIZE)}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -257,7 +277,7 @@ export default function LeaderboardsPage() {
             </>
           )}
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   )
 }

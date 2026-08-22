@@ -4,9 +4,8 @@ import logo from '../../assets/logo.png'
 import Navbar from '../../components/home/Navbar.jsx'
 import Hero from '../../components/home/Hero.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
-import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import AmenityCatalogGrid from '../../components/common/AmenityCatalogGrid.jsx'
-import PartnersGrid from '../../components/common/PartnersGrid.jsx'
+import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
@@ -14,10 +13,12 @@ import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
 import GroundAbout from '../../components/ground/GroundAbout.jsx'
-import GroundContact from '../../components/ground/GroundContact.jsx'
+import LocationMap from '../../components/ground/LocationMap.jsx'
 import GroundNotFound from '../../components/ground/GroundNotFound.jsx'
 import GalleryModal from '../../components/ground/GalleryModal.jsx'
-import BackButton from '../../components/common/BackButton.jsx'
+import AmenitiesMarquee from '../../components/homepage/AmenitiesMarquee.jsx'
+import UpcomingFixtures from '../../components/homepage/UpcomingFixtures.jsx'
+import RecentResults from '../../components/homepage/RecentResults.jsx'
 import { useGround } from '../../hooks/useGround.js'
 import {
   fadeUpSoft,
@@ -25,26 +26,9 @@ import {
   spotlightReveal,
 } from '../../lib/revealVariants.js'
 
-function SectionHeading({ eyebrow, title, subtitle }) {
-  return (
-    <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex flex-col items-center gap-3 text-center">
-      {eyebrow && (
-        <span className="text-sm font-semibold uppercase tracking-widest text-loc-gold">
-          {eyebrow}
-        </span>
-      )}
-      <h2 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-        {title}
-      </h2>
-      <span className="h-1 w-16 rounded-full bg-linear-to-r from-loc-gold to-loc-grass" />
-      {subtitle && <p className="max-w-2xl text-loc-text2-dark">{subtitle}</p>}
-    </ScrollReveal>
-  )
-}
-
 function PageLoading() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-loc-dark" role="status" aria-label="Loading ground">
+    <div className="flex min-h-screen items-center justify-center bg-[#07110E]" role="status" aria-label="Loading ground">
       <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
     </div>
   )
@@ -52,12 +36,12 @@ function PageLoading() {
 
 function PageError({ message, onRetry }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-loc-dark px-6 text-center">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#07110E] px-6 text-center">
       <p className="text-red-300/80">{message}</p>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-full bg-emerald-500 px-6 py-2.5 font-semibold text-emerald-950 transition hover:bg-emerald-400"
+        className="rounded-full bg-[#064B38] px-6 py-2.5 font-semibold text-[#F5F7F5] transition hover:bg-[#0a5f47]"
       >
         Retry
       </button>
@@ -65,12 +49,6 @@ function PageError({ message, onRetry }) {
   )
 }
 
-// Level 2: the reusable per-ground template (Step 17). Every
-// section reads from `ground` (GET /api/grounds/:publicGroundId);
-// nothing here is specific to any one ground's id/name — a second ground
-// renders through this exact same component (see the
-// two-fixture verification). The URL's :publicGroundId is the ONLY tenancy
-// signal (Step 28) — no global "current ground" state exists anywhere.
 export default function GroundHomePage() {
   const { publicGroundId } = useParams()
   const { ground, loading, error, notFound, retry } = useGround(publicGroundId)
@@ -87,129 +65,219 @@ export default function GroundHomePage() {
   if (!ground) return null
 
   const currentYear = new Date().getFullYear()
-  // Canteen nav visibility is driven by the ground's amenities list, not
-  // the canteens table directly — a ground only gets a "Canteen" nav link
-  // once staff have actually listed "Canteen" as one of its amenities.
-  // Ground Registration feature — also checks the new catalog-based
-  // amenityCatalog (key === 'canteen'), so a ground registered through the
-  // new flow gets the same nav behavior as one set up via the legacy
-  // owner-uploaded-photo amenities panel.
-  const hasCanteenAmenity =
-    ground.amenities?.some((a) => a.name.trim().toLowerCase() === 'canteen') || ground.amenityCatalog?.some((a) => a.key === 'canteen')
 
   return (
-    <div id="home" className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
+    <div id="home" className="relative isolate overflow-x-hidden bg-[#07110E]">
       <MouseParallaxProvider>
         <BackgroundSystem />
         <CursorGlow />
 
-        <Navbar onOpenGallery={() => setGalleryOpen(true)} canteenHref={hasCanteenAmenity ? '/canteen/menu' : null} />
-        <Hero ground={ground} onViewGallery={() => setGalleryOpen(true)} />
+        <Navbar />
+        <Hero ground={ground} onViewGallery={() => setGalleryOpen(true)} onBook={() => setBookingOpen(true)} />
       </MouseParallaxProvider>
 
-      <div className="relative flex flex-col items-center gap-16 pb-16">
-        <div className="w-full px-6 pt-6">
-          <BackButton label="Back to Grounds" fallback="/grounds" />
+      {/* ABOUT THE GROUND — DARK SECTION */}
+      <section className="relative w-full bg-[#07110E] px-6 py-12 lg:py-16 overflow-hidden">
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#064B38]/20 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#D4AF37]/10 rounded-full blur-3xl" />
         </div>
-
-        {/* LOC match discovery: featured live match, upcoming fixtures, recent results */}
-        <div id="matches" className="w-full scroll-mt-24">
-          <MatchActivitySection />
-        </div>
-
-        {/* Amenities */}
-        <div id="amenities" className="flex w-full scroll-mt-24 flex-col items-center gap-10 px-6 py-6">
-          <SectionHeading
-            eyebrow="Facilities"
-            title="Amenities"
-            subtitle="Everything you need for a comfortable, hassle-free day at the ground."
-          />
-          <AmenityCatalogGrid amenities={ground.amenityCatalog} />
-          {/* Legacy owner-uploaded-photo amenities — skips its own "no
-              amenities" message when the new catalog above already has
-              entries, so a ground set up entirely through the new flow
-              doesn't show a redundant empty-state right below real content. */}
-          {(ground.amenities?.length > 0 || !ground.amenityCatalog?.length) && <AmenitiesGrid amenities={ground.amenities} />}
-        </div>
-
-        {/* About */}
-        <div id="about" className="flex w-full scroll-mt-24 flex-col items-center gap-10 px-6 py-6">
-          <SectionHeading eyebrow={ground.name} title="About This Ground" />
-          <GroundAbout ground={ground} />
-        </div>
-
-        {/* Partners — platform-wide, not ground-specific (partners have never
-            been scoped to a ground; unchanged here). */}
-        <div className="flex w-full flex-col items-center gap-10 px-6 py-6">
-          <SectionHeading
-            eyebrow="Our Network"
-            title="Our Dealing Partners"
-            subtitle="Trusted brands and businesses we work with to bring the best experience to the ground."
-          />
-          <PartnersGrid />
-        </div>
-
-        {/* Booking — the ground's booking system isn't ground-scoped on the
-            backend yet (out of scope), so
-            this stays exactly as it was: a single, global booking flow. */}
-        <div id="booking" className="relative w-full scroll-mt-24 px-6 py-6">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          >
-            <div
-              className="h-72 w-full max-w-2xl rounded-full opacity-60 blur-3xl"
-              style={{ background: 'radial-gradient(ellipse 60% 60% at 50% 50%, color-mix(in srgb, var(--color-loc-gold) 20%, transparent), transparent 70%)' }}
-            />
-          </div>
-          <ScrollReveal
-            variant={spotlightReveal}
-            amount={0.35}
-            className="relative mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-loc-gold/20 bg-linear-to-b from-loc-stadium/30 to-transparent px-8 py-12 text-center shadow-2xl shadow-black/30 backdrop-blur-sm"
-          >
-            <h2 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-              Book {ground.name}
+        <div className="relative mx-auto max-w-7xl">
+          <ScrollReveal variant={fadeUpSoft} amount={0.3} className="flex flex-col items-center gap-0 text-center mb-12">
+            <div className="mb-6 flex items-center gap-4">
+              <div className="h-px w-12 bg-gradient-to-r from-transparent to-[#D4AF37]" />
+              <span className="text-xs font-bold uppercase tracking-widest text-[#D4AF37] letter-spacing-wide">The Story</span>
+              <div className="h-px w-12 bg-gradient-to-l from-transparent to-[#D4AF37]" />
+            </div>
+            <h2 className="text-5xl sm:text-6xl lg:text-7xl font-black text-[#F5F7F5] mb-6 leading-tight drop-shadow-lg">
+              About <span className="bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#F5D547] bg-clip-text text-transparent">{ground.name}</span>
             </h2>
-            <span className="h-1 w-16 rounded-full bg-linear-to-r from-loc-gold to-loc-grass" />
-            <p className="max-w-xl text-loc-text2-dark">
-              Check live availability and reserve a pitch, nets, or the full ground for your next match.
-            </p>
-            <PublicAvailabilityPreview />
-            <button
-              type="button"
-              onClick={() => setBookingOpen(true)}
-              className="mt-2 inline-flex items-center rounded-full bg-loc-stadium px-7 py-3 text-sm font-semibold text-loc-warmwhite shadow-lg shadow-loc-gold/25 transition-all duration-200 hover:bg-loc-stadium-hover hover:-translate-y-0.5 hover:shadow-loc-gold/40"
-            >
-              Book Ground
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="h-1.5 w-8 rounded-full bg-[#D4AF37]" />
+              <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />
+              <div className="h-1.5 w-8 rounded-full bg-[#064B38]" />
+            </div>
+          </ScrollReveal>
+          <div className="flex justify-center">
+            <GroundAbout ground={ground} />
+          </div>
+        </div>
+      </section>
+
+      {/* AMENITIES MARQUEE — GREEN SECTION */}
+      <section className="relative w-full bg-gradient-to-b from-[#064B38] to-[#063A2D] py-12 lg:py-16 overflow-hidden">
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-[#D4AF37]/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+        </div>
+
+        {/* Heading - Constrained */}
+        <div className="relative px-6 mb-10">
+          <div className="mx-auto max-w-7xl">
+            <ScrollReveal variant={fadeUpSoft} amount={0.3} className="flex flex-col items-center gap-3 text-center">
+              <h2 className="text-4xl sm:text-5xl font-bold text-[#F5F7F5]">
+                Amenities
+              </h2>
+              <p className="text-[#B5C2BC] max-w-2xl text-lg">Everything you need for a perfect day at the ground</p>
+              <div className="flex items-center gap-2">
+                <div className="h-1 w-8 rounded-full bg-[#D4AF37]" />
+                <div className="h-1 w-16 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />
+                <div className="h-1 w-8 rounded-full bg-[#064B38]" />
+              </div>
+            </ScrollReveal>
+          </div>
+        </div>
+
+        {/* Amenities Marquee - Full Width */}
+        <div className="w-full overflow-hidden py-6">
+          <AmenitiesMarquee amenities={ground.amenityCatalog?.length > 0 ? ground.amenityCatalog : ground.amenities} />
+        </div>
+      </section>
+
+      {/* UPCOMING MATCHES — DARK SECTION */}
+      <section className="relative w-full bg-[#07110E] px-6 py-20 lg:py-28 overflow-hidden">
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute top-1/2 right-0 w-96 h-96 bg-[#064B38]/20 rounded-full blur-3xl" />
+        </div>
+        <div className="relative mx-auto max-w-7xl">
+          <div id="matches" className="w-full mb-16">
+            <MatchActivitySection />
+          </div>
+
+          <ScrollReveal variant={fadeUpSoft} amount={0.3} className="flex flex-col items-center gap-3 text-center mb-10">
+            <h2 className="text-4xl sm:text-5xl font-bold text-[#F5F7F5]">
+              Upcoming Matches
+            </h2>
+            <p className="text-[#B5C2BC] max-w-2xl text-lg">Fixtures scheduled for today and tomorrow</p>
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-8 rounded-full bg-[#D4AF37]" />
+              <div className="h-1 w-16 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />
+              <div className="h-1 w-8 rounded-full bg-[#064B38]" />
+            </div>
+          </ScrollReveal>
+
+          {/* Upcoming Fixtures */}
+          <div className="w-full">
+            <UpcomingFixtures groundId={ground.id} />
+          </div>
+        </div>
+      </section>
+
+      {/* RECENT RESULTS — GREEN SECTION */}
+      <section className="relative w-full bg-gradient-to-b from-[#064B38] to-[#063A2D] px-6 py-20 lg:py-28 overflow-hidden">
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#D4AF37]/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white/5 rounded-full blur-3xl" />
+        </div>
+        <div className="relative mx-auto max-w-7xl">
+          <ScrollReveal variant={fadeUpSoft} amount={0.3} className="flex flex-col items-center gap-3 text-center mb-10">
+            <h2 className="text-4xl sm:text-5xl font-bold text-[#F5F7F5]">
+              Recent Results
+            </h2>
+            <p className="text-[#B5C2BC] max-w-2xl text-lg">Past matches and final scores</p>
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-8 rounded-full bg-[#D4AF37]" />
+              <div className="h-1 w-16 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />
+              <div className="h-1 w-8 rounded-full bg-[#064B38]" />
+            </div>
+          </ScrollReveal>
+
+          <div className="w-full">
+            <RecentResults groundId={ground.id} />
+          </div>
+        </div>
+      </section>
+
+      {/* BOOKING + LOCATION — DARK SECTION */}
+      <section id="booking" className="relative w-full bg-[#07110E] px-6 py-12 lg:py-16 overflow-hidden">
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute top-0 left-1/3 w-96 h-96 bg-[#064B38]/20 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/3 w-96 h-96 bg-[#D4AF37]/10 rounded-full blur-3xl" />
+        </div>
+        <div className="relative mx-auto max-w-7xl">
+          <div className="grid grid-cols-1 gap-0 lg:grid-cols-2 h-auto lg:h-fit">
+            {/* LEFT: BOOKING */}
+            <div className="flex flex-col justify-start lg:pr-6 pb-8 lg:pb-0">
+              <ScrollReveal variant={spotlightReveal} amount={0.3} className="space-y-6 h-full flex flex-col">
+                <div className="space-y-3">
+                  <h2 className="text-4xl sm:text-5xl font-bold text-[#F5F7F5]">
+                    Check Availability & Book
+                  </h2>
+                  <p className="text-[#B5C2BC] text-lg">
+                    Reserve your pitch, nets, or the entire ground for your next match
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#101B17] to-[#0a1410] p-5 space-y-3 shadow-lg shadow-[#064B38]/20 flex flex-col">
+                  <PublicAvailabilityPreview />
+                  <button
+                    type="button"
+                    onClick={() => setBookingOpen(true)}
+                    className="w-full rounded-full bg-gradient-to-r from-[#064B38] to-[#0a5f47] px-6 py-2.5 text-sm font-bold text-[#F5F7F5] uppercase tracking-wide shadow-lg shadow-[#D4AF37]/30 transition-all duration-300 hover:shadow-[#D4AF37]/50 hover:scale-105 active:scale-95"
+                  >
+                    Book {ground.name}
+                  </button>
+                </div>
+              </ScrollReveal>
+            </div>
+
+            {/* VERTICAL SEPARATOR */}
+            <div className="hidden lg:block absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-[#D4AF37]/40 to-transparent transform -translate-x-1/2" />
+
+            {/* RIGHT: LOCATION */}
+            <div className="flex flex-col justify-start lg:pl-6">
+              <ScrollReveal variant={spotlightReveal} amount={0.3} className="space-y-6 h-full flex flex-col">
+                <div className="space-y-3">
+                  <h2 className="text-4xl sm:text-5xl font-bold text-[#F5F7F5]">
+                    Location
+                  </h2>
+                  <p className="text-[#B5C2BC] text-lg">
+                    Find us and get directions
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#101B17] to-[#0a1410] p-5 shadow-lg shadow-[#064B38]/20 flex-1 flex flex-col">
+                  <LocationMap ground={ground} />
+                </div>
+              </ScrollReveal>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="relative w-full border-t border-[#D4AF37]/20 bg-gradient-to-b from-[#07110E] to-[#05090A] px-6 py-8 lg:px-10 overflow-hidden">
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-[#064B38]/20 rounded-full blur-3xl" />
+        </div>
+        <div className="relative mx-auto max-w-7xl">
+          <ScrollReveal
+            variant={settleFade}
+            amount={0.15}
+            className="flex w-full items-center justify-between gap-8"
+          >
+            <div className="flex items-center">
+              <img
+                src={logo}
+                alt="LOC - Lord Of Cricket"
+                className="h-12 w-auto drop-shadow-lg"
+                style={{ filter: 'drop-shadow(0 0 2px rgba(212,175,55,0.4)) drop-shadow(0 0 4px rgba(212,175,55,0.2))' }}
+              />
+            </div>
+
+            <div className="hidden sm:block h-6 w-px bg-gradient-to-b from-transparent via-[#D4AF37]/40 to-transparent" />
+
+            <div className="text-center sm:text-right space-y-1">
+              <p className="text-xs sm:text-sm text-[#B5C2BC] font-medium">
+                Experience cricket at {ground.name}
+              </p>
+              <p className="text-xs text-[#7E8C86]">
+                © {currentYear} {ground.name} — Powered by LOC
+              </p>
+            </div>
           </ScrollReveal>
         </div>
-      </div>
-
-      {/* Footer */}
-      <ScrollReveal
-        as="footer"
-        variant={settleFade}
-        amount={0.15}
-        className="relative border-t border-loc-gold/10 bg-loc-dark/60 px-6 py-10 lg:px-10"
-      >
-        <div className="flex w-full flex-col items-center justify-between gap-6 lg:flex-row">
-          <div className="flex items-center">
-            <img
-              src={logo}
-              alt="LOC - Lord Of Cricket"
-              className="h-16 w-auto"
-              style={{ filter: 'drop-shadow(0 0 1.2px rgba(243,241,231,0.9)) drop-shadow(0 0 1.2px rgba(243,241,231,0.9))' }}
-            />
-          </div>
-
-          <GroundContact ground={ground} />
-        </div>
-
-        <p className="mt-8 text-center text-xs text-loc-muted-dark">
-          © {currentYear} {ground.name} — Powered by LOC. All rights reserved.
-        </p>
-      </ScrollReveal>
+      </footer>
 
       <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
       <GalleryModal open={galleryOpen} onClose={() => setGalleryOpen(false)} photos={ground.photos} groundName={ground.name} />

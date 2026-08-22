@@ -41,8 +41,8 @@ function ErrorState({ message, onRetry }) {
 
 function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, onFacilitiesChange, grounds, isSearchMode, searchCoords, onBackToAll, radiusKm, onRadiusCommit }) {
   return (
-    <aside className="w-full lg:w-64 flex-shrink-0">
-      <div className="sticky top-32 space-y-6">
+    <aside className="w-full lg:w-80 lg:fixed lg:left-0 lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-loc-gold/20 flex-shrink-0">
+      <div className="sticky top-32 space-y-8 px-6 lg:px-10 pt-32 lg:pb-20">
         {/* Search & Nearby */}
         {!isSearchMode && (
           <div className="space-y-3">
@@ -173,23 +173,25 @@ export default function GroundsPage() {
   }
 
   return (
-    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
+    <div className="relative isolate flex flex-col min-h-screen overflow-x-hidden bg-loc-dark">
       <MouseParallaxProvider>
         <BackgroundSystem />
         <CursorGlow />
         <Navbar />
       </MouseParallaxProvider>
 
-      <main className="relative mx-auto w-full max-w-7xl px-6 pt-32 pb-20 lg:px-10">
+      <main className="relative w-full pt-32 pb-20 flex-1">
         {/* Page Title */}
-        <ScrollReveal variant={fadeUpSoft} amount={0.4} className="mb-10 flex w-full flex-col items-center gap-3 text-center">
-          <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
-            Every Ground Registered on LOC
-          </h1>
-        </ScrollReveal>
+        <div className="mx-auto w-full max-w-7xl px-6 lg:px-10 mb-10">
+          <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
+            <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+              Every Ground Registered on LOC
+            </h1>
+          </ScrollReveal>
+        </div>
 
         {/* Main Layout: Sidebar + Grid */}
-        <div className="flex flex-col gap-8 lg:flex-row">
+        <div className="flex flex-col lg:flex-row lg:ml-80">
           {/* Left Sidebar */}
           <LeftSidebar
             cities={cities}
@@ -206,7 +208,7 @@ export default function GroundsPage() {
           />
 
           {/* Main Content */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 mx-auto w-full max-w-7xl px-6 lg:px-10">
             <div className="flex w-full flex-col gap-6">
               {/* Results Header */}
               {active.grounds.length > 0 && (
