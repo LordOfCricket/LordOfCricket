@@ -475,26 +475,35 @@ test('requireCanteenStaffAccess: CANTEEN_STAFF membership is sufficient for orde
 test('IDOR: a canteen_id/canteenId/ground_id claimed in the order body is never consulted, while exactly one canteen exists', async () => {
   const server = await startTestApp()
   const user = await createUser('idor-order')
+  // Phase 17.1 — order items are now resolved server-side against a real
+  // menu item belonging to the (server-resolved) canteen; sampleItems()'s
+  // fake id is no longer accepted. This test is about the IDOR claim
+  // (canteen_id/ground_id in the body being ignored), not pricing — a real
+  // item on the real, server-resolved canteen exercises that exact claim.
+  const { rows: [item] } = await pool.query(
+    `INSERT INTO menu_items (name, category, price, canteen_id, is_active, default_stock) VALUES ('IDOR Test Item','Snacks',10,$1,true,50) RETURNING *`,
+    [realCanteen.id],
+  )
   try {
     const res = await fetch(`${server.baseUrl}/canteen/orders`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${user.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         seatId: 'A1',
-        items: sampleItems(),
-        total: 100,
+        items: [{ id: item.id, qty: 1 }],
         canteen_id: 999999999,
         canteenId: 999999999,
         ground_id: 999999999,
       }),
     })
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()))
     const body = await res.json()
 
     const { rows } = await pool.query('SELECT canteen_id FROM orders WHERE public_order_id = $1', [body.order.id])
     assert.equal(rows[0].canteen_id, realCanteen.id, 'the order must be created under the server-resolved real canteen, never a client-claimed (here, nonexistent) one')
   } finally {
     await pool.query('DELETE FROM orders WHERE user_id = $1', [user.id])
+    await pool.query('DELETE FROM menu_items WHERE id = $1', [item.id])
     await user.cleanup()
     await server.close()
   }

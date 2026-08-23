@@ -29,7 +29,17 @@ function buildCanteenOrderRouter({ attachContext, staffAccess }) {
   router.get('/active/:userId', requireAuth, attachContext, getActiveOrder)
   router.get('/history/:userId', requireAuth, attachContext, getOrderHistory)
   router.post('/', requireAuth, attachContext, createOrder)
-  router.get('/:id', requireAuth, orderStaffAccess, getOrder)
+  // CUSTOMER_CANTEEN_MIGRATION — this was orderStaffAccess-only (staff-only),
+  // meaning the order's OWNING CUSTOMER could never fetch their own order by
+  // id — a real, pre-existing gap discovered while migrating the customer
+  // order-status/history-detail pages onto this exact endpoint (neither the
+  // old nor the new route ever allowed it; no real staff UI calls this
+  // specific endpoint today — staff dashboards render order details from
+  // the list response instead, confirmed by inspection). Now matches
+  // getActiveOrder/getOrderHistory's own established self-or-staff pattern:
+  // attachContext resolves the canteen with no role gate, and the
+  // controller itself enforces "staff, or this order's own customer."
+  router.get('/:id', requireAuth, attachContext, getOrder)
   router.patch('/:id/status', requireAuth, orderStaffAccess, updateOrderStatus)
   return router
 }

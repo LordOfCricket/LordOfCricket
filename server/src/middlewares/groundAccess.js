@@ -190,7 +190,12 @@ function isLegacyStaffAllowed(user, legacyStaffRoles) {
 // GROUND_ADMIN/CANTEEN_STAFF memberships are never MFA-mandatory — only the
 // isSuperAdmin branch and the GROUND_OWNER membership branch are gated,
 // exactly the same two cases requireGroundRole/requireGroundPermission gate.
-async function authorizeResolvedCanteen(req, canteen, { legacyStaffRoles = [], groundRoles = [] }) {
+// Exported for canteenOrder.controller.js#getOrder (CUSTOMER_CANTEEN_MIGRATION)
+// — reused as a fallback check ("is this caller staff for this canteen?")
+// once the controller has already established the requester is NOT the
+// order's own customer, rather than re-deriving this same staff-membership
+// logic a second time.
+export async function authorizeResolvedCanteen(req, canteen, { legacyStaffRoles = [], groundRoles = [] }) {
   if (isSuperAdmin(req.user)) {
     if (!req.mfaVerified) return { allowed: false, mfaRequired: true }
     req.canteen = canteen

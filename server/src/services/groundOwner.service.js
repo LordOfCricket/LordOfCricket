@@ -24,6 +24,11 @@ import { getStaffDashboard } from './groundDashboard.service.js'
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
 import { groundTodayDateStr, groundLocalToUtc, addDaysToDateStr } from '../domain/booking/timezone.js'
 import { getDailyTimeline } from './groundTimeline.service.js'
+import { getDayAvailability } from './groundBooking.service.js'
+import { findCanteensByGroundId } from '../models/canteen.model.js'
+import { countOrdersByStatusForGround, sumCompletedRevenueForGround, topSellingItemsForGround } from '../models/canteenOrder.model.js'
+import { lowStockItemsForCanteen } from '../models/canteenTodayMenu.model.js'
+import { countStaffByRoleAndStatus } from '../models/groundUser.model.js'
 
 // A ground-level aggregate below this many reviews is displayed as "not
 // enough data" rather than a misleading average (Workstream J's own
@@ -514,16 +519,65 @@ export async function getGroundOwnerDashboard(groundId) {
   const dayEnd = groundLocalToUtc(today, 24, 0)
   const weekEnd = groundLocalToUtc(addDaysToDateStr(today, 7), 24, 0)
 
-  const [timeline, todayRows, todayMatches, upcomingBlocks, upcomingMatches] = await Promise.all([
+  const [timeline, todayRows, todayMatches, upcomingBlocks, upcomingMatches, availabilitySlots, canteens, staffCounts] = await Promise.all([
     getDailyTimeline(today),
     bookingRepo.listConfirmedInRange(dayStart, dayEnd, groundId),
     bookingRepo.listMatchEntriesInRange(today, addDaysToDateStr(today, 1), groundId),
     bookingRepo.listBlocksInRange(dayEnd, weekEnd, groundId),
     bookingRepo.listMatchEntriesInRange(addDaysToDateStr(today, 1), addDaysToDateStr(today, 7), groundId),
+    getDayAvailability(today, { isStaff: true, groundId }),
+    findCanteensByGroundId(groundId),
+    countStaffByRoleAndStatus(groundId),
   ])
 
   const todayBookings = todayRows.filter((r) => r.booking_type === 'CUSTOMER')
   const todayBlocks = todayRows.filter((r) => r.booking_type === 'STAFF_BLOCK')
+
+  // Phase 16 — current/next booking derived from the already-fetched
+  // today.bookings list (no new query) — "now" compared against each
+  // booking's own start/end.
+  const now = new Date()
+  const currentBooking = todayBookings.find((r) => new Date(r.start_time) <= now && now < new Date(r.end_time)) || null
+  const nextBooking = todayBookings
+    .filter((r) => new Date(r.start_time) > now)
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0] || null
+
+  // Phase 16 — canteen operational snapshot, summed across every canteen
+  // on this ground (a ground can have more than one — Step 18). Reuses the
+  // exact revenue/status/top-selling functions Phase 14/16 already built,
+  // never a second, divergent calculation.
+  let canteenSnapshot = { ordersByStatus: {}, revenue: 0, orderCount: 0, topItems: [], lowStockItems: [] }
+  if (canteens.length > 0) {
+    const [statusRows, revenueResult, topItems] = await Promise.all([
+      countOrdersByStatusForGround(groundId, dayStart, dayEnd),
+      sumCompletedRevenueForGround(groundId, dayStart, dayEnd),
+      topSellingItemsForGround(groundId, dayStart, dayEnd, 5),
+    ])
+    const ordersByStatus = {}
+    for (const row of statusRows) ordersByStatus[row.status] = row.count
+    const lowStockItems = []
+    for (const canteen of canteens) {
+      const items = await lowStockItemsForCanteen(canteen.id, 5)
+      for (const item of items) lowStockItems.push({ name: item.name, stock: item.stock })
+    }
+    canteenSnapshot = {
+      ordersByStatus,
+      revenue: revenueResult.revenue,
+      orderCount: revenueResult.orderCount,
+      topItems: topItems.map((r) => ({ name: r.item_name, quantitySold: r.quantity_sold })),
+      lowStockItems,
+    }
+  }
+
+  // Phase 16 — staff summary from the single GROUP BY countStaffByRoleAndStatus.
+  let activeStaff = 0
+  let inactiveStaff = 0
+  const roleBreakdown = {}
+  for (const row of staffCounts) {
+    if (row.is_active) activeStaff += row.count
+    else inactiveStaff += row.count
+    roleBreakdown[row.role] = (roleBreakdown[row.role] || 0) + row.count
+  }
 
   return {
     date: today,
@@ -543,6 +597,10 @@ export async function getGroundOwnerDashboard(groundId) {
         stage: m.stage,
       })),
       timeline: timeline.segments,
+      currentBooking: currentBooking && { publicBookingId: currentBooking.public_booking_id, startTime: currentBooking.start_time, endTime: currentBooking.end_time },
+      nextBooking: nextBooking && { publicBookingId: nextBooking.public_booking_id, startTime: nextBooking.start_time, endTime: nextBooking.end_time },
+      availableSlotsCount: availabilitySlots.filter((s) => s.status === 'AVAILABLE').length,
+      blockedSlotsCount: availabilitySlots.filter((s) => s.status !== 'AVAILABLE').length,
     },
     upcoming7Days: {
       blocks: upcomingBlocks.map((r) => ({ publicBookingId: r.public_booking_id, startTime: r.start_time, endTime: r.end_time, blockType: r.block_type })),
@@ -554,5 +612,7 @@ export async function getGroundOwnerDashboard(groundId) {
         tournamentName: m.tournament_name,
       })),
     },
+    canteen: canteenSnapshot,
+    staff: { active: activeStaff, inactive: inactiveStaff, roleBreakdown },
   }
 }

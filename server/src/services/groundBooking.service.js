@@ -1,6 +1,6 @@
 import { pool } from '../config/db.js'
 import { generatePublicId } from '../utils/publicId.js'
-import { findDefaultGround } from '../models/ground.model.js'
+import { findDefaultGround, findGroundById } from '../models/ground.model.js'
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
 import { computeDayAvailability } from '../domain/booking/availability.js'
 import { findNearbyAlternatives } from '../domain/booking/recommendations.js'
@@ -12,6 +12,7 @@ import * as googleCalendar from './googleCalendar.service.js'
 import * as auditLogService from './groundAuditLog.service.js'
 import * as notificationService from './groundNotification.service.js'
 import { publishBookingUpdate } from '../realtime/bookingRealtime.js'
+import { findActiveGroundOwnerUserIds } from '../models/groundUser.model.js'
 import { logger } from '../utils/logger.js'
 
 // Phase 14 Part 3 — orchestration. PostgreSQL is authoritative throughout;
@@ -129,7 +130,7 @@ function validateSlotAlignment(dateStr, hour, minute) {
  * friendly UX/fast-path only. A 23P01 exclusion-violation from the INSERT
  * itself is what proves correctness under real concurrent requests.
  */
-export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null, blockType = null, groundId: paramGroundId = null }) {
+export async function createBooking({ dateStr, hour, minute = 0, userId = null, customerName, contactPhone = null, contactEmail = null, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, bookingType = 'CUSTOMER', createdByStaffId = null, blockType = null, groundId: paramGroundId = null, io = null }) {
   assertBookableDate(dateStr)
   const { startTime, endTime } = validateSlotAlignment(dateStr, hour, minute)
   if (!customerName || !String(customerName).trim()) {
@@ -147,6 +148,21 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
   // Phase 6: groundId can be passed explicitly by ground-owner operations,
   // otherwise resolve default (backward compatible with Phase 14 single-ground flow)
   const groundId = paramGroundId || await resolveDefaultGroundId()
+
+  // Phase 17.2 — this walk-in/staff-block engine is the ONLY booking-
+  // creation path that never re-verified the ground's own status
+  // (bookingConflict.service.js's team/match engine already does this,
+  // see its own GROUND_CLOSED check). findDefaultGround has no status
+  // filter either, so this check applies uniformly whether groundId came
+  // from an explicit ground-owner call or the platform default — a
+  // suspended ground can never accept a new booking through ANY path,
+  // and a Ground Owner cannot bypass their own ground's suspension by
+  // using this endpoint instead of the team-booking one.
+  const ground = await findGroundById(groundId)
+  if (!ground || ground.status !== 'ACTIVE') {
+    logger.warn('Booking rejected — ground is not ACTIVE', { groundId, groundStatus: ground?.status || 'NOT_FOUND', bookingType })
+    throw new BookingError(BOOKING_ERROR_CODES.GROUND_CLOSED, 'This ground is not currently accepting bookings.')
+  }
 
   // Match-day pre-check: a friendly, fast rejection before even attempting
   // the INSERT (matches are rarely created in the same instant as a booking
@@ -216,6 +232,28 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     })
   }
 
+  // Phase 15 — Ground Owner notification, additive alongside the customer's
+  // own BOOKING_APPROVED above. Recipient is resolved server-side from the
+  // ground the booking actually belongs to (findActiveGroundOwnerUserIds),
+  // never from client input — an owner can never be notified about, or
+  // spoofed into, a ground they don't own.
+  if (bookingType === 'CUSTOMER') {
+    const ownerUserIds = await findActiveGroundOwnerUserIds(groundId)
+    await Promise.all(
+      ownerUserIds.map((ownerUserId) =>
+        notificationService.createNotification({
+          userId: ownerUserId,
+          type: 'GROUND_BOOKING_RECEIVED',
+          title: 'New booking received',
+          body: `${booking.customer_name} booked your ground (${booking.public_booking_id}).`,
+          relatedBookingId: booking.id,
+          groundId,
+          io,
+        }),
+      ),
+    )
+  }
+
   // Google Calendar sync — strictly AFTER commit, never allowed to affect
   // the booking's own success (Part 13/31). Idempotent by construction: this
   // is the only code path that ever calls createCalendarEvent for a booking,
@@ -241,7 +279,7 @@ export async function findBookingByPublicId(publicBookingId) {
   return bookingRepo.findByPublicId(publicBookingId)
 }
 
-export async function cancelBooking(publicBookingId, { actingUserId, isStaff }) {
+export async function cancelBooking(publicBookingId, { actingUserId, isStaff, io = null }) {
   const booking = await bookingRepo.findByPublicId(publicBookingId)
   if (!booking) throw new BookingError(BOOKING_ERROR_CODES.BOOKING_NOT_FOUND, 'Booking not found.')
   if (!isStaff && booking.user_id !== actingUserId) {
@@ -264,6 +302,25 @@ export async function cancelBooking(publicBookingId, { actingUserId, isStaff }) 
       body: `Your ground booking (${booking.public_booking_id}) has been cancelled.`,
       relatedBookingId: booking.id,
     })
+  }
+
+  // Phase 15 — Ground Owner notification, additive alongside the
+  // customer's own BOOKING_CANCELLED above.
+  if (booking.booking_type === 'CUSTOMER') {
+    const ownerUserIds = await findActiveGroundOwnerUserIds(booking.ground_id)
+    await Promise.all(
+      ownerUserIds.map((ownerUserId) =>
+        notificationService.createNotification({
+          userId: ownerUserId,
+          type: 'GROUND_BOOKING_CANCELLED',
+          title: 'Booking cancelled',
+          body: `${booking.customer_name}'s booking (${booking.public_booking_id}) was cancelled.`,
+          relatedBookingId: booking.id,
+          groundId: booking.ground_id,
+          io,
+        }),
+      ),
+    )
   }
 
   // Best-effort calendar cleanup — never blocks the cancellation itself.

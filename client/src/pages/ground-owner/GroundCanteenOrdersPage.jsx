@@ -45,7 +45,7 @@ export default function GroundCanteenOrdersPage() {
         setOrders(ordersData.orders || [])
       }
     } catch (err) {
-      setError(err.message || 'Failed to load orders')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load orders')
     } finally {
       setLoading(false)
     }
@@ -62,7 +62,7 @@ export default function GroundCanteenOrdersPage() {
       await loadData()
       setSelectedOrderId(null)
     } catch (err) {
-      setError(err.message || 'Failed to update order status')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to update order status')
     } finally {
       setSaving(false)
     }

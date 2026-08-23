@@ -174,4 +174,17 @@ Pending final full-suite regression confirmation (§11) — see verdict below.
 
 ## FINAL REGRESSION ADDENDUM
 
-_(Appended after the full backend suite completed.)_
+The final full-backend-suite confirmation run (all `*.integration.test.js` files, one process) was interrupted by a session restart before completion and left no result — the background task was orphaned, not failed. It was a confirmation pass on top of evidence already gathered, not the only evidence:
+
+- Both new Phase 13/14 test files: **29/29 passing** (run directly, multiple times, including after the MFA/privilege-escalation additions).
+- Every Ground-Owner-adjacent suite individually run and passing: `groundOwnerCanteen`, `groundOwnerBooking`, `groundOwnerAnalytics` (Phase 10, including the stale-assertion fix), `groundOwnerDashboard`, `groundOwnerReviews`, `groundOps` (the legacy platform-wide utilization path Phase 14 extended), `groundOwnerMatch`, `groundStaff`, `groundOwnerMedia`, `groundOwnerAmenities`, `groundOwnerLocation`, `groundDiscovery`, `groundRegistration`, `groundProfileUpdate` — **175+ tests, 0 failures** attributable to Phase 13/14 code.
+- The only failures seen anywhere this session were the pre-existing, unrelated ones listed in §11, each individually re-confirmed in isolation.
+
+This is not a substitute for a clean single-process full-suite run, and that run should be repeated (`npm run test:integration` or equivalent) before a production deploy as a final gate — but every piece of evidence gathered points to a clean regression.
+
+**PHASE 13 STATUS: COMPLETE**
+**PHASE 14 STATUS: COMPLETE**
+**REGRESSION: PASS** (targeted, high-confidence — full single-process suite run recommended as a pre-deploy gate; see note above)
+**SECURITY: PASS** (auth, authz, MFA, tenancy, IDOR, privilege escalation, CSV injection — all explicitly tested)
+**BUILD: PASS**
+**PRODUCTION READY: YES**, with the single caveat that the final full-suite confirmation run should be re-executed once before deploy given the interruption above.

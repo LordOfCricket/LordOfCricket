@@ -482,6 +482,297 @@ test('PATCH /grounds/:publicGroundId/canteens/:publicCanteenId/orders/:id/status
   }
 })
 
+// Phase 24 — Canteen activate/deactivate self-service. Reuses the exact
+// same ground/canteen tenancy resolution (requireGroundCanteenRole) every
+// other test above already exercises for menu/orders — these focus
+// specifically on the new status endpoint and its effect on the EXISTING,
+// unchanged order-creation guard (canteenOrder.controller.js's Phase 17.2
+// check), never a second parallel check.
+
+async function createMenuItemAndPublish(server, owner, ground, canteen) {
+  const createRes = await fetch(
+    `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/menu/master`,
+    {
+      method: 'POST',
+      headers: cauth(owner),
+      body: JSON.stringify({ name: 'Status Test Item', category: 'Test', price: 50, stock: 20, image: 'https://example.com/i.jpg' }),
+    },
+  )
+  const { item } = await createRes.json()
+  return item
+}
+
+async function placeRealOrder(server, customer, ground, canteen, menuItem) {
+  return fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/orders`, {
+    method: 'POST',
+    headers: cauth(customer),
+    body: JSON.stringify({ seatId: 'A1', items: [{ id: menuItem.id, qty: 1 }] }),
+  })
+}
+
+test('GET /grounds/:publicGroundId - canteen active status is visible on the ground profile (reused, not duplicated)', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}`)
+    assert.strictEqual(res.status, 200)
+    const data = await res.json()
+    const found = data.canteens.find((c) => c.publicCanteenId === canteen.public_canteen_id)
+    assert.ok(found)
+    assert.strictEqual(found.isActive, true)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH /grounds/:publicGroundId/canteens/:publicCanteenId/status - owner can deactivate and reactivate their canteen', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const deactivateRes = await fetch(
+      `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`,
+      { method: 'PATCH', headers: cauth(owner), body: JSON.stringify({ isActive: false }) },
+    )
+    assert.strictEqual(deactivateRes.status, 200)
+    assert.strictEqual((await deactivateRes.json()).canteen.isActive, false)
+
+    const { rows: [row1] } = await pool.query('SELECT is_active FROM canteens WHERE id = $1', [canteen.id])
+    assert.strictEqual(row1.is_active, false)
+
+    const reactivateRes = await fetch(
+      `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`,
+      { method: 'PATCH', headers: cauth(owner), body: JSON.stringify({ isActive: true }) },
+    )
+    assert.strictEqual(reactivateRes.status, 200)
+    assert.strictEqual((await reactivateRes.json()).canteen.isActive, true)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('deactivating the canteen blocks new orders (existing 409 CANTEEN_CLOSED path), reactivating allows them again', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    const customer = await createUser('Customer', { role: 'player' })
+    // A distinct second customer for the post-reactivation order — the
+    // first customer already has an active order from `beforeRes` below,
+    // and the existing one-active-order-per-user-per-canteen guarantee
+    // (unrelated to this phase, Phase 14/17) would otherwise 409 that
+    // second attempt for a completely different reason than what this test
+    // is actually verifying.
+    const customer2 = await createUser('Customer2', { role: 'player' })
+    await elevate(owner)
+    await elevate(customer)
+    await elevate(customer2)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+    const menuItem = await createMenuItemAndPublish(server, owner, ground, canteen)
+
+    const beforeRes = await placeRealOrder(server, customer, ground, canteen, menuItem)
+    assert.strictEqual(beforeRes.status, 200, 'order must succeed while the canteen is active')
+
+    await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ isActive: false }),
+    })
+
+    const duringRes = await placeRealOrder(server, customer, ground, canteen, menuItem)
+    assert.strictEqual(duringRes.status, 409)
+    const duringBody = await duringRes.json()
+    assert.strictEqual(duringBody.code, 'CANTEEN_CLOSED')
+
+    await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ isActive: true }),
+    })
+
+    const afterRes = await placeRealOrder(server, customer2, ground, canteen, menuItem)
+    assert.strictEqual(afterRes.status, 200, 'order must succeed again once reactivated')
+
+    // Orders reference these users via a FK — must be cleared before the
+    // users themselves are deleted.
+    await cleanupGround(ground.id)
+    await owner.cleanup()
+    await customer.cleanup()
+    await customer2.cleanup()
+  } finally {
+    await server.close()
+  }
+})
+
+test('deactivating the canteen does not delete/corrupt existing menu items or existing orders', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    const customer = await createUser('Customer', { role: 'player' })
+    await elevate(owner)
+    await elevate(customer)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+    const menuItem = await createMenuItemAndPublish(server, owner, ground, canteen)
+    const orderRes = await placeRealOrder(server, customer, ground, canteen, menuItem)
+    const { order } = await orderRes.json()
+
+    await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ isActive: false }),
+    })
+
+    const menuListRes = await fetch(
+      `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/menu/master`,
+      { headers: cauth(owner) },
+    )
+    const { items } = await menuListRes.json()
+    assert.ok(items.some((i) => i.id === menuItem.id), 'menu item must still exist after deactivation')
+
+    const orderGetRes = await fetch(
+      `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/orders/${order.id}`,
+      { headers: cauth(owner) },
+    )
+    assert.strictEqual(orderGetRes.status, 200, 'existing order must still be readable/manageable after deactivation')
+
+    // Staff can still progress an already-placed order after deactivation
+    // (Phase 17.2's own established rule — deactivation blocks NEW activity
+    // only, never wind-down of what already exists).
+    const statusUpdateRes = await fetch(
+      `${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/orders/${order.id}/status`,
+      { method: 'PATCH', headers: cauth(owner), body: JSON.stringify({ status: 'Accepted' }) },
+    )
+    assert.strictEqual(statusUpdateRes.status, 200)
+
+    // Orders reference these users via a FK — must be cleared before the
+    // users themselves are deleted.
+    await cleanupGround(ground.id)
+    await owner.cleanup()
+    await customer.cleanup()
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH .../status - non-owner (no membership) cannot toggle canteen status', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    const nonOwner = await createUser('NonOwner', { role: 'player' })
+    await elevate(owner)
+    await elevate(nonOwner)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(nonOwner),
+      body: JSON.stringify({ isActive: false }),
+    })
+    assert.strictEqual(res.status, 403)
+
+    const { rows: [row] } = await pool.query('SELECT is_active FROM canteens WHERE id = $1', [canteen.id])
+    assert.strictEqual(row.is_active, true, 'must not have been modified')
+
+    await owner.cleanup()
+    await nonOwner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH .../status - IDOR: owner A cannot toggle owner B canteen status via a guessed/known id', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag1 = uniqueTag()
+    const tag2 = uniqueTag()
+    const ownerA = await createUser('OwnerA', { role: 'player' })
+    const ownerB = await createUser('OwnerB', { role: 'player' })
+    await elevate(ownerA)
+    await elevate(ownerB)
+    const { ground: groundA } = await createOwnedGround(ownerA.id, 'Ground A', tag1)
+    const { ground: groundB, canteen: canteenB } = await createOwnedGround(ownerB.id, 'Ground B', tag2)
+
+    // Owner A's own ground URL, but Owner B's real canteen id — the
+    // combined ground+canteen resolution inside requireGroundCanteenRole
+    // must reject this as "not found," never trust the canteen id alone.
+    const res = await fetch(`${server.baseUrl}/grounds/${groundA.public_ground_id}/canteens/${canteenB.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(ownerA),
+      body: JSON.stringify({ isActive: false }),
+    })
+    assert.strictEqual(res.status, 404)
+
+    const { rows: [row] } = await pool.query('SELECT is_active FROM canteens WHERE id = $1', [canteenB.id])
+    assert.strictEqual(row.is_active, true, 'owner B canteen must be untouched')
+
+    await ownerA.cleanup()
+    await ownerB.cleanup()
+    await cleanupGround(groundA.id)
+    await cleanupGround(groundB.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH .../status - unauthenticated request rejected', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: false }),
+    })
+    assert.strictEqual(res.status, 401)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH .../status - a non-boolean isActive is rejected with 400', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const { ground, canteen } = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}/canteens/${canteen.public_canteen_id}/status`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ isActive: 'yes' }),
+    })
+    assert.strictEqual(res.status, 400)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
 // MFA Requirement Test
 test('POST /grounds/:publicGroundId/canteens/:publicCanteenId/menu/master - requires MFA verification', async (t) => {
   const server = await startTestApp()

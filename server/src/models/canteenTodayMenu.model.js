@@ -23,6 +23,23 @@ export async function getTodayMenu(canteenId) {
   return { ...menu, items }
 }
 
+// Phase 16 — dashboard low-stock widget. today_menu_items itself has no
+// item name (only menu_item_id) — this joins menu_items so the dashboard
+// can show a real name, not just a count, without the caller needing a
+// second lookup.
+export async function lowStockItemsForCanteen(canteenId, threshold) {
+  const { rows } = await pool.query(
+    `SELECT mi.name, tmi.stock
+     FROM today_menu tm
+     JOIN today_menu_items tmi ON tmi.today_menu_id = tm.id
+     JOIN menu_items mi ON mi.id = tmi.menu_item_id
+     WHERE tm.canteen_id = $1 AND tmi.available = true AND tmi.stock <= $2
+     ORDER BY tmi.stock ASC`,
+    [canteenId, threshold],
+  )
+  return rows
+}
+
 // Transactional replace-all (Step 12/16) — the live write path behind
 // `PATCH /canteen/menu/today`. Resolves each incoming item against the
 // real `menu_items` table (a real FK — see schema.sql's comment: an id

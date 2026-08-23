@@ -7,6 +7,7 @@ import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { StatsErrorState, StatsLoadingGrid } from '../../components/stats/StatsStates.jsx'
 import StatTile from '../../components/stats/StatTile.jsx'
 import { useGroundAnalytics } from '../../hooks/useGroundAnalytics.js'
+import { useGroundTrends } from '../../hooks/useGroundTrends.js'
 import { exportGroundAnalyticsCsv } from '../../services/groundOwnerApi.js'
 import { formatAmount } from '../../models/umpireEarnings.model.js'
 
@@ -30,10 +31,34 @@ function downloadCsv(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
+// Phase 16 — a small CSS-only bar chart (no charting library — reuses the
+// existing LOC design system per the brief's "do not introduce a new UI
+// library" instruction). `values` is an array of numbers; each bar's
+// height is relative to the max value in the series.
+function TrendBars({ days, valueKey, formatValue }) {
+  const max = Math.max(1, ...days.map((d) => d[valueKey]))
+  return (
+    <div className="flex h-24 items-end gap-1.5">
+      {days.map((d) => (
+        <div key={d.date} className="group relative flex-1">
+          <div
+            className="w-full rounded-t bg-green-600 transition-all group-hover:bg-green-500"
+            style={{ height: `${Math.max(2, (d[valueKey] / max) * 100)}%` }}
+          />
+          <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2 py-1 text-[10px] text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+            {new Date(d.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}: {formatValue(d[valueKey])}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function GroundAnalyticsPage() {
   const { publicGroundId } = useParams()
   const [range, setRange] = useState('TODAY')
   const { analytics, loading, error, refresh } = useGroundAnalytics(publicGroundId, range)
+  const { trends, loading: trendsLoading, error: trendsError, refresh: refreshTrends } = useGroundTrends(publicGroundId, range)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
 
@@ -142,6 +167,28 @@ export default function GroundAnalyticsPage() {
                 <StatTile label="Revenue" value={formatAmount(analytics.canteenRevenue.revenue)} emphasis />
                 <StatTile label="Orders" value={analytics.canteenRevenue.orderCount} />
                 <StatTile label="Avg. Order Value" value={formatAmount(analytics.canteenRevenue.averageOrderValue)} />
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h2 className="mb-3 text-lg font-bold text-white">Trends</h2>
+            {trendsLoading && <div className="h-24 animate-pulse rounded-2xl bg-white/5" />}
+            {!trendsLoading && trendsError && <StatsErrorState message={trendsError} onRetry={refreshTrends} />}
+            {!trendsLoading && !trendsError && trends && (
+              <div className="space-y-6">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Bookings per day</p>
+                  <TrendBars days={trends.days} valueKey="bookingCount" formatValue={(v) => `${v} booking${v === 1 ? '' : 's'}`} />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Canteen revenue per day</p>
+                  <TrendBars days={trends.days} valueKey="canteenRevenue" formatValue={(v) => formatAmount(v)} />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Utilization per day</p>
+                  <TrendBars days={trends.days} valueKey="utilizedPercentage" formatValue={(v) => `${v.toFixed(0)}%`} />
+                </div>
               </div>
             )}
           </section>

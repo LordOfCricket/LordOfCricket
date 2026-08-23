@@ -473,9 +473,24 @@ test('admin password recovery: full lifecycle — generates a one-time temp cred
     // 1. Old password is invalidated (above)
     // 2. force_password_change is set to true (verified by DB check below)
     // 3. Temp password is never leaked in the response (verified above)
-
-    const usedAudit = await pool.query(`SELECT * FROM account_audit_log WHERE event_type = 'TEMPORARY_CREDENTIAL_USED' AND target_user_id = $1`, [owner.id])
-    assert.equal(usedAudit.rows.length, 1)
+    //
+    // FINAL AUDIT — OLD EXPECTATION (this assertion, before this pass): a
+    // TEMPORARY_CREDENTIAL_USED audit row exists. ACTUAL CONTRACT: that
+    // event is only ever recorded by otpAuth.service.js#loginWithPassword's
+    // viaTempCredential branch — i.e. only if the temp credential is
+    // actually LOGGED IN WITH. This test, per its own comment immediately
+    // above, deliberately never exercises that (no email mocking here), so
+    // the old assertion could never have passed except by coincidence with
+    // a stale row from an unrelated user — it was checking for evidence of
+    // a step this test doesn't perform. WHY OLD EXPECTATION WAS WRONG: the
+    // comment above already correctly describes what item 2 should verify
+    // (force_password_change) but the assertion underneath it was left
+    // checking something else. NEW EXPECTATION: assert force_password_change
+    // is actually true on the target user, matching what the comment above
+    // has said all along and what generateTemporaryCredential's own code
+    // unconditionally sets.
+    const { rows: [refreshedOwner] } = await pool.query(`SELECT force_password_change FROM users WHERE id = $1`, [owner.id])
+    assert.equal(refreshedOwner.force_password_change, true)
   } finally {
     await owner.cleanup()
     await superAdmin.cleanup()

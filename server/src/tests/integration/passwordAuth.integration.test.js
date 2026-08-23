@@ -169,7 +169,18 @@ test('login-password: user enumeration protection — nonexistent identifier and
     })
     assert.equal(wrongPassword.status, noSuchAccount.status)
     const [bodyA, bodyB] = await Promise.all([wrongPassword.json(), noSuchAccount.json()])
-    assert.deepEqual(bodyA, bodyB)
+    // FINAL AUDIT — Phase 21.2 added a per-request `requestId` to every
+    // error response (for incident-log correlation); it's expected to
+    // differ between any two distinct requests by design and reveals
+    // nothing about account existence (it's the same random shape
+    // regardless of outcome), so it's excluded from the byte-identical
+    // comparison this test actually cares about — everything else (the
+    // part an attacker could actually observe to enumerate accounts) must
+    // still be identical.
+    const { requestId: requestIdA, ...restA } = bodyA
+    const { requestId: requestIdB, ...restB } = bodyB
+    assert.deepEqual(restA, restB)
+    assert.ok(requestIdA && requestIdB, 'both responses must still carry a requestId')
   } finally {
     await cleanupIdentifier(identifier)
     await app_.close()

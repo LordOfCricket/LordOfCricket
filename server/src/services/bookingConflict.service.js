@@ -2,7 +2,7 @@ import { pool } from '../config/db.js'
 import { generatePublicId } from '../utils/publicId.js'
 import { findTeamById } from '../models/team.model.js'
 import { findPlayerByUserId, findPlayersByIds } from '../models/player.model.js'
-import { findActiveMembershipForAnyRole } from '../models/groundUser.model.js'
+import { findActiveMembershipForAnyRole, findActiveGroundOwnerUserIds } from '../models/groundUser.model.js'
 import { hasActivePermission } from '../models/permission.model.js'
 import { isSuperAdminUser } from '../middlewares/auth.js'
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
@@ -355,7 +355,7 @@ export async function checkInBooking(publicBookingId, { actingStaffId, groundId 
 /** Staff/ground-scoped: records that nobody showed up for a CONFIRMED
  * booking whose slot has already passed. Terminal — releases the slot like
  * any other non-blocking transition. */
-export async function recordNoShow(publicBookingId, { actingStaffId, groundId }) {
+export async function recordNoShow(publicBookingId, { actingStaffId, groundId, io = null }) {
   const booking = await findTeamBookingByPublicId(publicBookingId, { groundId })
   if (booking.status !== 'CONFIRMED') {
     throw new BookingError(BOOKING_ERROR_CODES.NOT_CONFIRMED, 'Only a confirmed booking can be marked as a no-show.')
@@ -376,6 +376,23 @@ export async function recordNoShow(publicBookingId, { actingStaffId, groundId })
 
   await auditLogService.logEvent({ entityType: 'BOOKING', entityId: booking.id, action: 'NO_SHOW', actorUserId: actingStaffId, previousValue: booking, newValue: updated })
   logger.warn('Booking marked as no-show', { publicBookingId, bookingId: booking.id })
+
+  // Phase 15 — Ground Owner notification for this booking status change.
+  const ownerUserIds = await findActiveGroundOwnerUserIds(groundId)
+  await Promise.all(
+    ownerUserIds.map((ownerUserId) =>
+      notificationService.createNotification({
+        userId: ownerUserId,
+        type: 'GROUND_BOOKING_STATUS_CHANGED',
+        title: 'Booking marked as no-show',
+        body: `Booking ${publicBookingId} was recorded as a no-show.`,
+        relatedBookingId: booking.id,
+        groundId,
+        io,
+      }),
+    ),
+  )
+
   return updated
 }
 

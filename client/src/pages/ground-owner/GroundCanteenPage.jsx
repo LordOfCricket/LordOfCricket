@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
-import { fetchCanteenMenuItems, fetchCanteenOrders } from '../../services/groundOwnerApi.js'
+import { fetchCanteenMenuItems, fetchCanteenOrders, updateCanteenStatus } from '../../services/groundOwnerApi.js'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 
 export default function GroundCanteenPage() {
@@ -14,6 +14,30 @@ export default function GroundCanteenPage() {
   const [canteen, setCanteen] = useState(null)
   const [menuItemsCount, setMenuItemsCount] = useState(0)
   const [todaysOrdersCount, setTodaysOrdersCount] = useState(0)
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [statusError, setStatusError] = useState(null)
+  const [statusSuccess, setStatusSuccess] = useState(false)
+
+  // Phase 24 — Ground Owner self-service canteen activate/deactivate.
+  // Deactivating stops NEW customer orders (enforced server-side,
+  // unchanged Phase 17.2 check in canteenOrder.controller.js#createOrder)
+  // — existing menu items and existing orders are never touched by this.
+  async function handleToggleStatus() {
+    if (!canteen || statusUpdating) return
+    setStatusUpdating(true)
+    setStatusError(null)
+    setStatusSuccess(false)
+    try {
+      const updated = await updateCanteenStatus(publicGroundId, canteen.publicCanteenId, !canteen.isActive)
+      setCanteen((prev) => ({ ...prev, isActive: updated.isActive }))
+      setStatusSuccess(true)
+      setTimeout(() => setStatusSuccess(false), 4000)
+    } catch (err) {
+      setStatusError(err.response?.data?.error || 'Failed to update canteen status.')
+    } finally {
+      setStatusUpdating(false)
+    }
+  }
 
   useEffect(() => {
     loadData()
@@ -94,10 +118,43 @@ export default function GroundCanteenPage() {
           </div>
         )}
 
+        {statusSuccess && (
+          <div className="mt-6 p-3 bg-emerald-900/30 border border-emerald-500/50 rounded text-emerald-200 text-sm">
+            Canteen {canteen.isActive ? 'activated' : 'deactivated'} successfully.
+          </div>
+        )}
+
+        {statusError && (
+          <div className="mt-6 p-3 bg-red-900/30 border border-red-500/50 rounded text-red-200 text-sm">
+            {statusError}
+          </div>
+        )}
+
         <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">
-            {canteen.name} {canteen.isActive ? '(Active)' : '(Inactive)'}
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <h2 className="text-xl font-semibold">
+              {canteen.name}{' '}
+              <span className={canteen.isActive ? 'text-emerald-400' : 'text-amber-400'}>
+                ({canteen.isActive ? 'Active' : 'Inactive'})
+              </span>
+            </h2>
+            <button
+              onClick={handleToggleStatus}
+              disabled={statusUpdating}
+              className={`px-4 py-2 rounded font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                canteen.isActive
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                  : 'bg-green-600 hover:bg-green-500 text-white'
+              }`}
+            >
+              {statusUpdating ? 'Updating…' : canteen.isActive ? 'Deactivate Canteen' : 'Activate Canteen'}
+            </button>
+          </div>
+          {!canteen.isActive && (
+            <p className="mb-4 text-sm text-amber-300">
+              This canteen is not accepting new orders. Existing orders and menu data are unaffected.
+            </p>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             {/* Menu Items Stat */}

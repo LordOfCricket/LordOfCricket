@@ -50,7 +50,7 @@ export default function GroundCanteenMenuPage() {
         setMenuItems(items)
       }
     } catch (err) {
-      setError(err.message || 'Failed to load menu items')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load menu items')
     } finally {
       setLoading(false)
     }
@@ -106,7 +106,7 @@ export default function GroundCanteenMenuPage() {
       resetForm()
       setShowForm(false)
     } catch (err) {
-      setError(err.message || 'Failed to save menu item')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to save menu item')
     } finally {
       setSaving(false)
     }
@@ -124,7 +124,7 @@ export default function GroundCanteenMenuPage() {
       setSuccess('Menu item deleted successfully.')
       await loadData()
     } catch (err) {
-      setError(err.message || 'Failed to delete menu item')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to delete menu item')
     } finally {
       setSaving(false)
     }

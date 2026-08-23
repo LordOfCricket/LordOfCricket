@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url'
 import routes from './routes/index.js'
 import sitemapRoutes from './routes/sitemap.routes.js'
 import { notFound, errorHandler } from './middlewares/errorHandler.js'
+import { requestId } from './middlewares/requestId.js'
 import { allowedOrigins } from './config/corsOrigins.js'
 
 // Phase 3 — same fail-fast pattern as utils/jwt.js's JWT_SECRET check: a
@@ -35,6 +36,11 @@ const canteenUploadsDir = join(__dirname, '../uploads/canteen')
 if (!fs.existsSync(canteenUploadsDir)) {
   fs.mkdirSync(canteenUploadsDir, { recursive: true })
 }
+
+// Phase 21.2 — request-id correlation, first in the chain so every other
+// middleware (including error handling) and every log line for this request
+// can see req.id, no matter how early something else fails.
+app.use(requestId)
 
 // Standard security headers (HSTS, X-Content-Type-Options, X-Frame-Options,
 // etc). crossOriginResourcePolicy is relaxed to allow the client (a

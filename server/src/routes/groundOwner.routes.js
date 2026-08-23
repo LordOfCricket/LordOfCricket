@@ -27,7 +27,11 @@ import {
   getGroundDashboard,
   getGroundAnalytics,
   exportGroundAnalyticsCsv,
+  getGroundTrends,
   getGroundReviews,
+  getGroundNotifications,
+  markGroundNotificationRead,
+  markAllGroundNotificationsRead,
 } from '../controllers/groundOwner.controller.js'
 import { proposeUmpireForSlot, listMatchProposals, cancelMatchProposal } from '../controllers/umpireProposal.controller.js'
 
@@ -53,9 +57,16 @@ router.get('/grounds/:publicGroundId/analytics', requireAuth, requireGroundRole(
 // same requireGroundRole('GROUND_OWNER') as every Owner-only route above,
 // never delegated to staff permissions.
 router.get('/grounds/:publicGroundId/analytics/export', requireAuth, requireGroundRole('GROUND_OWNER'), exportGroundAnalyticsCsv)
+// Phase 16 — day-by-day trend series.
+router.get('/grounds/:publicGroundId/analytics/trends', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundTrends)
 // Phase 13 — Ground Owner Reviews. Owner-only (requireGroundRole), same
 // posture as Dashboard/Analytics above — not delegated to staff.
 router.get('/grounds/:publicGroundId/reviews', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundReviews)
+// Phase 15 — Ground Owner Notifications. Owner-only (requireGroundRole),
+// same posture as Reviews/Dashboard/Analytics above.
+router.get('/grounds/:publicGroundId/notifications', requireAuth, requireGroundRole('GROUND_OWNER'), getGroundNotifications)
+router.post('/grounds/:publicGroundId/notifications/:id/read', requireAuth, requireGroundRole('GROUND_OWNER'), markGroundNotificationRead)
+router.post('/grounds/:publicGroundId/notifications/read-all', requireAuth, requireGroundRole('GROUND_OWNER'), markAllGroundNotificationsRead)
 router.get('/grounds/:publicGroundId/matches', requireAuth, requireGroundPermission('MATCH_VIEW'), listGroundMatches)
 router.post('/grounds/:publicGroundId/matches', requireAuth, requireGroundPermission('MATCH_MANAGE'), createGroundMatch)
 router.get('/grounds/:publicGroundId/matches/:matchId/umpire-slots', requireAuth, requireGroundPermission('MATCH_VIEW'), getGroundMatchUmpireSlots)

@@ -96,11 +96,22 @@ export function getAccountLinks(user) {
   links.push(
     { label: 'Players', to: '/players', icon: Search },
     { label: 'Leaderboards', to: '/leaderboards', icon: Trophy },
-    { label: 'Canteen', to: '/canteen', icon: UtensilsCrossed },
     // Staff manage the ground's whole schedule (bookings +
     // blocks); everyone else only ever sees their own bookings.
     isStaff ? { label: 'Ground Bookings', to: '/bookings/staff', icon: CalendarClock } : { label: 'My Bookings', to: '/bookings', icon: CalendarClock },
   )
+
+  // CUSTOMER_CANTEEN_MIGRATION — a generic, ground-less "Canteen" link is
+  // only meaningful for canteen staff (-> /canteen/staff, their real
+  // workspace). For a player it used to route through CanteenEntryRedirect
+  // to getPostAuthPath, which sends a player to /player/dashboard — a dead
+  // link in practice. Customer ordering is ground-contextual now (a real
+  // "Order Food" entry point lives on each ground's own page), so this link
+  // stays staff-only rather than pointing somewhere that was never actually
+  // useful for a player.
+  if (isStaff) {
+    links.push({ label: 'Canteen', to: '/canteen', icon: UtensilsCrossed })
+  }
 
   if (!isStaff) {
     links.push({ label: 'Settings', to: '/profile/edit', icon: Settings })

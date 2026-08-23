@@ -25,6 +25,19 @@ export async function findCanteenById(id) {
   return rows[0] || null
 }
 
+// Phase 24 — Ground Owner self-service activate/deactivate. is_active was
+// only ever set once, at creation (createCanteen above) — nothing before
+// this phase could change it afterward. Touches only this one row; menu
+// items, today's menu, and existing orders are untouched (no cascade, no
+// FK to any of those tables references is_active).
+export async function updateCanteenActiveStatus(canteenId, isActive) {
+  const { rows } = await pool.query(
+    `UPDATE canteens SET is_active = $1 WHERE id = $2 RETURNING *`,
+    [isActive, canteenId],
+  )
+  return rows[0] || null
+}
+
 // Phase 9 — resolves a route's :publicCanteenId param to the real canteen
 // row so its ground_id can be authorized against, never taken from the
 // client (see groundAccess.js's requireCanteenRole).

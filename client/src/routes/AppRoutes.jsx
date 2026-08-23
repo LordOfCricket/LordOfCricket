@@ -116,9 +116,6 @@ const MatchesPage = lazy(() => import('../pages/matches/MatchesPage.jsx'))
 const TeamsPage = lazy(() => import('../pages/teams/TeamsPage.jsx'))
 const TeamProfilePage = lazy(() => import('../pages/teams/TeamProfilePage.jsx'))
 
-// Temporary testing feature
-const UmpireTestingPage = lazy(() => import('../pages/testing/UmpireTestingPage.jsx'))
-
 // Canteen (merged from the Canteen-Management repo)
 const CanteenMenuPage = lazy(() => import('../pages/canteen/menu/menu.jsx'))
 const CanteenOrderStatusPage = lazy(() => import('../pages/canteen/order-status/orderStatus.jsx'))
@@ -275,13 +272,15 @@ const router = createBrowserRouter([
       { path: '/matches/:matchId/setup', element: <RequireAuth>{withSuspense(<MatchRosterPage />)}</RequireAuth> },
       { path: '/matches/:matchId/score', element: <RequireAuth>{withSuspense(<RealScorerPage />)}</RequireAuth> },
 
-      // Temporary testing feature
-      { path: '/testing', element: withSuspense(<UmpireTestingPage />) },
-
-      // Canteen
+      // Canteen — customer ordering is ground/canteen-scoped (see
+      // CUSTOMER_CANTEEN_MIGRATION_INSPECTION.md); the old bare /canteen/menu
+      // and /canteen/order-status routes depended on a platform-wide "find
+      // the canteen" resolution that breaks once more than one canteen
+      // exists. /canteen and /canteen/staff are untouched — staff routing
+      // via CanteenEntryRedirect is a separate, unaffected concern.
       { path: '/canteen', element: <RequireAuth><CanteenEntryRedirect /></RequireAuth> },
-      { path: '/canteen/menu', element: <RequireAuth>{withSuspense(<CanteenMenuPage />)}</RequireAuth> },
-      { path: '/canteen/order-status', element: <RequireAuth>{withSuspense(<CanteenOrderStatusPage />)}</RequireAuth> },
+      { path: '/grounds/:publicGroundId/canteen/:publicCanteenId/menu', element: <RequireAuth>{withSuspense(<CanteenMenuPage />)}</RequireAuth> },
+      { path: '/grounds/:publicGroundId/canteen/:publicCanteenId/order-status', element: <RequireAuth>{withSuspense(<CanteenOrderStatusPage />)}</RequireAuth> },
       { path: '/canteen/staff', element: <RequireAuth>{withSuspense(<CanteenStaffDashboardPage />)}</RequireAuth> },
 
       // Ground booking

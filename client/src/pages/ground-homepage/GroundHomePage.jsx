@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Star } from 'lucide-react'
 import { useSeoMeta } from '../../hooks/useSeoMeta.js'
 import { useJsonLd } from '../../hooks/useJsonLd.js'
@@ -185,6 +185,43 @@ export default function GroundHomePage() {
           </div>
         </div>
       </section>
+
+      {/* CANTEEN — DARK SECTION (customer entry point — only rendered when
+          this ground actually has a canteen; see
+          CUSTOMER_CANTEEN_MIGRATION_INSPECTION.md) */}
+      {ground.canteens?.length > 0 && (
+        <section className="relative w-full bg-[#07110E] px-6 py-12 lg:py-16 overflow-hidden">
+          <div className="relative mx-auto max-w-4xl text-center">
+            <div className="mb-6 flex items-center justify-center gap-4">
+              <div className="h-px w-12 bg-gradient-to-r from-transparent to-[#D4AF37]" />
+              <span className="text-xs font-bold uppercase tracking-widest text-[#D4AF37]">Refreshments</span>
+              <div className="h-px w-12 bg-gradient-to-l from-transparent to-[#D4AF37]" />
+            </div>
+            <h2 className="mb-3 text-4xl font-black text-[#F5F7F5] sm:text-5xl">Canteen</h2>
+            <p className="mb-8 text-lg text-[#B5C2BC]">Order food and refreshments for pickup at the ground</p>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {ground.canteens.map((canteen) =>
+                canteen.isActive ? (
+                  <Link
+                    key={canteen.publicCanteenId}
+                    to={`/grounds/${ground.publicGroundId}/canteen/${canteen.publicCanteenId}/menu`}
+                    className="rounded-full bg-gradient-to-r from-[#064B38] to-[#0a5f47] px-8 py-3 text-sm font-bold uppercase tracking-wide text-[#F5F7F5] shadow-lg shadow-[#D4AF37]/30 transition-all duration-300 hover:scale-105 hover:shadow-[#D4AF37]/50"
+                  >
+                    {ground.canteens.length > 1 ? `Order from ${canteen.name}` : 'Order Food'}
+                  </Link>
+                ) : (
+                  <span
+                    key={canteen.publicCanteenId}
+                    className="rounded-full border border-white/15 px-8 py-3 text-sm font-semibold text-[#7E8C86]"
+                  >
+                    {canteen.name} — Currently closed
+                  </span>
+                ),
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* AMENITIES MARQUEE — GREEN SECTION */}
       <section className="relative w-full bg-gradient-to-b from-[#064B38] to-[#063A2D] py-12 lg:py-16 overflow-hidden">

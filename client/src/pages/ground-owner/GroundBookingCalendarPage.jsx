@@ -38,7 +38,7 @@ export default function GroundBookingCalendarPage() {
       const dayBookings = allBookings.filter(b => b.startTime.split('T')[0] === selectedDate)
       setBookings(dayBookings)
     } catch (err) {
-      setError(err.message || 'Failed to load calendar data')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load calendar data')
     } finally {
       setLoading(false)
     }
@@ -63,7 +63,7 @@ export default function GroundBookingCalendarPage() {
       setBlockFormData({ hour: '09', minute: '00', purpose: '', blockType: 'CLOSED' })
       await loadData()
     } catch (err) {
-      setError(err.message || 'Failed to create staff block')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to create staff block')
     } finally {
       setSaving(false)
     }
@@ -80,7 +80,7 @@ export default function GroundBookingCalendarPage() {
       setSuccess('Staff block removed successfully.')
       await loadData()
     } catch (err) {
-      setError(err.message || 'Failed to remove staff block')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to remove staff block')
     } finally {
       setSaving(false)
     }

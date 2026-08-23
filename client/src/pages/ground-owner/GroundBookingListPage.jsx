@@ -17,7 +17,7 @@ const BOOKING_TYPE_LABEL = {
 
 export default function GroundBookingListPage() {
   const { publicGroundId } = useParams()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -40,14 +40,25 @@ export default function GroundBookingListPage() {
       const allBookings = await fetchGroundBookings(publicGroundId)
       setBookings(allBookings)
     } catch (err) {
-      setError(err.message || 'Failed to load bookings')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load bookings')
     } finally {
       setLoading(false)
     }
   }
 
+  // "View Today" (GroundBookingPage.jsx) links here with ?date=YYYY-MM-DD —
+  // this page previously never read it, so the link silently showed every
+  // CONFIRMED booking instead of just today's.
+  const dateParam = searchParams.get('date')
+
   const filteredBookings = bookings
     .filter(b => statusFilter === 'ALL' || b.status === statusFilter)
+    .filter(b => {
+      if (!dateParam) return true
+      const d = new Date(b.startTime)
+      const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return localDateStr === dateParam
+    })
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
 
   const formatDateTime = (dateTimeStr) => {
@@ -93,6 +104,15 @@ export default function GroundBookingListPage() {
         {error && (
           <div className="mt-6 p-4 bg-red-900/30 border border-red-500/50 rounded text-red-200">
             {error}
+          </div>
+        )}
+
+        {dateParam && (
+          <div className="mt-6 flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-900/20 px-4 py-2 text-sm text-amber-200">
+            <span>Showing bookings for {dateParam}</span>
+            <button onClick={() => setSearchParams({})} className="underline hover:text-amber-100">
+              Clear filter
+            </button>
           </div>
         )}
 

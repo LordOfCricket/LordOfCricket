@@ -59,7 +59,7 @@ export default function GroundCanteenTodayPage() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to load today\'s menu')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load today\'s menu')
     } finally {
       setLoading(false)
     }
@@ -124,7 +124,7 @@ export default function GroundCanteenTodayPage() {
       setSuccess('Today\'s menu published successfully!')
       await loadData()
     } catch (err) {
-      setError(err.message || 'Failed to publish today\'s menu')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to publish today\'s menu')
     } finally {
       setSaving(false)
     }

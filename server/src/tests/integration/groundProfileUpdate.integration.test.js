@@ -300,3 +300,156 @@ test('PATCH /ground-owner/grounds/:publicGroundId - multiple owners isolated', a
     await server.close()
   }
 })
+
+// Phase 23 — operating hours (opening_hour/closing_hour). schema.sql has
+// carried these columns, with their own CHECK constraints, since Phase 14
+// Part 3, and domain/booking/teamBookingValidation.js#resolveGroundHours has
+// always read a per-ground override — but no write path existed until now.
+// Reuses the exact same PATCH /ground-owner/grounds/:publicGroundId
+// endpoint tested above; auth/ownership/IDOR are already covered by the
+// tests above and apply unchanged to these new fields.
+
+test('PATCH /ground-owner/grounds/:publicGroundId - owner can set operating hours, read back via public profile', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const ground = await createOwnedGround(owner.id, 'Hours Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ openingHour: 8, closingHour: 20 }),
+    })
+    assert.strictEqual(res.status, 200)
+    const data = await res.json()
+    assert.strictEqual(data.ground.openingHour, 8)
+    assert.strictEqual(data.ground.closingHour, 20)
+
+    const publicRes = await fetch(`${server.baseUrl}/grounds/${ground.public_ground_id}`)
+    const publicData = await publicRes.json()
+    assert.strictEqual(publicData.ground.openingHour, 8, 'the public profile (the same endpoint the owner edit page reads from) must reflect the saved hours')
+    assert.strictEqual(publicData.ground.closingHour, 20)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH /ground-owner/grounds/:publicGroundId - opening/closing hour out of range is rejected (mirrors the DB CHECK constraint)', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const ground = await createOwnedGround(owner.id, 'Hours Ground', tag)
+
+    const badOpening = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ openingHour: 24 }),
+    })
+    assert.strictEqual(badOpening.status, 400)
+
+    const badClosing = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ closingHour: 0 }),
+    })
+    assert.strictEqual(badClosing.status, 400)
+
+    const nonInteger = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ openingHour: 9.5 }),
+    })
+    assert.strictEqual(nonInteger.status, 400)
+
+    const { rows: [row] } = await pool.query('SELECT opening_hour, closing_hour FROM grounds WHERE id = $1', [ground.id])
+    assert.strictEqual(row.opening_hour, null, 'a rejected update must not partially persist')
+    assert.strictEqual(row.closing_hour, null)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH /ground-owner/grounds/:publicGroundId - closing hour must be later than opening hour when both are set together', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const ground = await createOwnedGround(owner.id, 'Hours Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ openingHour: 18, closingHour: 10 }),
+    })
+    assert.strictEqual(res.status, 400)
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH /ground-owner/grounds/:publicGroundId - setting only one of opening/closing hour is allowed (independent fallback)', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    await elevate(owner)
+    const ground = await createOwnedGround(owner.id, 'Hours Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(owner),
+      body: JSON.stringify({ openingHour: 5 }),
+    })
+    assert.strictEqual(res.status, 200)
+    const data = await res.json()
+    assert.strictEqual(data.ground.openingHour, 5)
+    assert.strictEqual(data.ground.closingHour, null, 'closingHour was never set — must stay null (platform default), not be forced')
+
+    await owner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PATCH /ground-owner/grounds/:publicGroundId - non-owner cannot set operating hours (reuses existing ownership check)', async (t) => {
+  const server = await startTestApp()
+  try {
+    const tag = uniqueTag()
+    const owner = await createUser('Owner', { role: 'player' })
+    const nonOwner = await createUser('Non-Owner', { role: 'player' })
+    await elevate(nonOwner)
+    const ground = await createOwnedGround(owner.id, 'Hours Ground', tag)
+
+    const res = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}`, {
+      method: 'PATCH',
+      headers: cauth(nonOwner),
+      body: JSON.stringify({ openingHour: 6, closingHour: 23 }),
+    })
+    assert.strictEqual(res.status, 403)
+
+    const { rows: [row] } = await pool.query('SELECT opening_hour, closing_hour FROM grounds WHERE id = $1', [ground.id])
+    assert.strictEqual(row.opening_hour, null)
+    assert.strictEqual(row.closing_hour, null)
+
+    await owner.cleanup()
+    await nonOwner.cleanup()
+    await cleanupGround(ground.id)
+  } finally {
+    await server.close()
+  }
+})

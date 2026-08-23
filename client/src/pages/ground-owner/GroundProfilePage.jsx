@@ -6,6 +6,20 @@ import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { updateGroundProfile, fetchMyGrounds } from '../../services/groundOwnerApi.js'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 
+// Phase 23 — the schema/domain layer has always supported an optional,
+// per-ground override of operating hours (opening_hour/closing_hour,
+// domain/booking/teamBookingValidation.js#resolveGroundHours falls back to
+// the platform default independently per field), but no Ground Owner UI
+// ever exposed it. '' means "not set" (uses the platform default), never 0.
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h)
+
+function formatHour(hour) {
+  const h = hour % 24
+  const period = h < 12 ? 'AM' : 'PM'
+  const display = h % 12 === 0 ? 12 : h % 12
+  return `${display}:00 ${period}`
+}
+
 function GroundProfileForm({ ground, onSave, saving, error }) {
   const [formData, setFormData] = useState({
     name: ground?.name || '',
@@ -13,6 +27,8 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
     phone: ground?.phone || '',
     email: ground?.email || '',
     website: ground?.website || '',
+    openingHour: ground?.openingHour ?? '',
+    closingHour: ground?.closingHour ?? '',
   })
   const [validationErrors, setValidationErrors] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
@@ -24,6 +40,8 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
       phone: ground?.phone || '',
       email: ground?.email || '',
       website: ground?.website || '',
+      openingHour: ground?.openingHour ?? '',
+      closingHour: ground?.closingHour ?? '',
     })
     setHasChanges(false)
   }, [ground?.id])
@@ -37,6 +55,9 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.email = 'Please enter a valid email address.'
     if (formData.website && formData.website.trim() && !/^https?:\/\/.+\..+/.test(formData.website)) {
       errors.website = 'Website must be a valid URL (starting with http:// or https://).'
+    }
+    if (formData.openingHour !== '' && formData.closingHour !== '' && Number(formData.closingHour) <= Number(formData.openingHour)) {
+      errors.closingHour = 'Closing time must be later than opening time.'
     }
     return errors
   }
@@ -73,6 +94,8 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
       phone: ground?.phone || '',
       email: ground?.email || '',
       website: ground?.website || '',
+      openingHour: ground?.openingHour ?? '',
+      closingHour: ground?.closingHour ?? '',
     })
     setHasChanges(false)
     setValidationErrors({})
@@ -198,6 +221,54 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
         </div>
       </div>
 
+      {/* OPERATING HOURS SECTION */}
+      <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
+        <h3 className="mb-1 text-lg font-semibold text-white">Operating Hours</h3>
+        <p className="mb-4 text-xs text-slate-400">
+          Leave either field blank to use the platform default (6:00 AM – 10:00 PM). Bookings are only
+          accepted within these hours.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-200">Opening Time</span>
+            <select
+              name="openingHour"
+              value={formData.openingHour}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white transition"
+            >
+              <option value="">Platform default (6:00 AM)</option>
+              {HOUR_OPTIONS.map((h) => (
+                <option key={h} value={h}>{formatHour(h)}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-200">Closing Time</span>
+            <select
+              name="closingHour"
+              value={formData.closingHour}
+              onChange={handleChange}
+              className={`w-full rounded-xl border px-4 py-3 text-sm text-white transition ${
+                validationErrors.closingHour
+                  ? 'border-red-400/50 bg-red-500/5'
+                  : 'border-white/15 bg-white/5'
+              }`}
+            >
+              <option value="">Platform default (10:00 PM)</option>
+              {HOUR_OPTIONS.map((h) => (
+                <option key={h + 1} value={h + 1}>{formatHour(h + 1)}</option>
+              ))}
+            </select>
+            {validationErrors.closingHour && (
+              <p className="mt-1 text-xs text-red-300">{validationErrors.closingHour}</p>
+            )}
+          </label>
+        </div>
+      </div>
+
       {/* ACTION BUTTONS */}
       <div className="flex gap-3">
         <button
@@ -255,6 +326,8 @@ export default function GroundProfilePage() {
         phone: formData.phone.trim() || null,
         email: formData.email.trim() || null,
         website: formData.website.trim() || null,
+        openingHour: formData.openingHour === '' ? null : Number(formData.openingHour),
+        closingHour: formData.closingHour === '' ? null : Number(formData.closingHour),
       })
       setGround(updated)
       setSuccess(true)

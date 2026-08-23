@@ -1,6 +1,7 @@
 import { pool } from '../config/db.js'
 import { findUserByIdentifier, createUserFromOtp } from '../models/user.model.js'
-import { createMembership, findMembershipsByGroundIdAndRoles, findMembershipById, setMembershipActive } from '../models/groundUser.model.js'
+import { createMembership, findMembershipsByGroundIdAndRoles, findMembershipById, setMembershipActive, findActiveGroundOwnerUserIds } from '../models/groundUser.model.js'
+import * as notificationService from './groundNotification.service.js'
 import {
   findPermissionByKey,
   listAllPermissions,
@@ -227,7 +228,7 @@ export async function revokeStaffPermission(ground, membershipId, permissionKey,
 // (findActiveMembershipForAnyRole/requireGroundPermission) but never
 // previously set to false by any controller. Takes effect immediately: no
 // session/JWT caches role or permission state.
-export async function disableStaffMembership(ground, membershipId, actorUserId, sessionId) {
+export async function disableStaffMembership(ground, membershipId, actorUserId, sessionId, io = null) {
   const membership = await resolveOwnedStaffMembership(ground, membershipId)
 
   const client = await pool.connect()
@@ -251,4 +252,22 @@ export async function disableStaffMembership(ground, membershipId, actorUserId, 
   } finally {
     client.release()
   }
+
+  // Phase 15 — Ground Owner notification, strictly AFTER commit (never
+  // allowed to affect the disable itself). Notifies every active owner of
+  // this ground (a multi-owner ground's co-owners stay in sync), not just
+  // the actor — same "notify every owner" posture as the booking triggers.
+  const ownerUserIds = await findActiveGroundOwnerUserIds(ground.id)
+  await Promise.all(
+    ownerUserIds.map((ownerUserId) =>
+      notificationService.createNotification({
+        userId: ownerUserId,
+        type: 'GROUND_STAFF_DEACTIVATED',
+        title: 'Staff member deactivated',
+        body: 'A staff member’s access to this ground was deactivated.',
+        groundId: ground.id,
+        io,
+      }),
+    ),
+  )
 }

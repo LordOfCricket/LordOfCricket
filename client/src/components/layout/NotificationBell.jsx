@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Calendar, XCircle, AlertTriangle, Clock, UserCheck, UserX, ClipboardCheck } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Bell, Calendar, XCircle, AlertTriangle, Clock, UserCheck, UserX, ClipboardCheck, ShoppingBag, PackageX, ClipboardX, UserPlus, UserMinus, MegaphoneIcon } from 'lucide-react'
 import { useNotifications } from '../../hooks/useNotifications.js'
 
 // Wired to the real, persisted, in-app notification
@@ -19,6 +20,35 @@ const TYPE_ICON = {
   UMPIRE_SLOT_ASSIGNED: UserCheck,
   UMPIRE_SLOT_CANCELLED: UserX,
   UMPIRE_REQUEST_DECIDED: ClipboardCheck,
+  // Phase 15 — Ground Owner notification types.
+  GROUND_BOOKING_RECEIVED: Calendar,
+  GROUND_BOOKING_CANCELLED: XCircle,
+  GROUND_BOOKING_STATUS_CHANGED: ClipboardCheck,
+  CANTEEN_ORDER_RECEIVED: ShoppingBag,
+  CANTEEN_ORDER_STATUS_CHANGED: ShoppingBag,
+  CANTEEN_LOW_STOCK: PackageX,
+  CANTEEN_MENU_NOT_PUBLISHED: ClipboardX,
+  GROUND_STAFF_ACTIVATED: UserPlus,
+  GROUND_STAFF_DEACTIVATED: UserMinus,
+  GROUND_OPERATIONAL_ALERT: MegaphoneIcon,
+}
+
+// Phase 15 — where a Ground-Owner-facing notification's "view" action goes.
+// Deliberately a section, not a deep link to the exact booking/order row:
+// the notification only carries the ground's public id (never an internal
+// booking/order id — see groundNotification.repository.js's own comment),
+// so this is the closest safe, correct destination.
+const TYPE_ROUTE_SUFFIX = {
+  GROUND_BOOKING_RECEIVED: '/bookings',
+  GROUND_BOOKING_CANCELLED: '/bookings',
+  GROUND_BOOKING_STATUS_CHANGED: '/bookings',
+  CANTEEN_ORDER_RECEIVED: '/canteen',
+  CANTEEN_ORDER_STATUS_CHANGED: '/canteen',
+  CANTEEN_LOW_STOCK: '/canteen',
+  CANTEEN_MENU_NOT_PUBLISHED: '/canteen',
+  GROUND_STAFF_ACTIVATED: '/staff',
+  GROUND_STAFF_DEACTIVATED: '/staff',
+  GROUND_OPERATIONAL_ALERT: '/operations',
 }
 
 function timeAgo(iso) {
@@ -34,7 +64,22 @@ function timeAgo(iso) {
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
-  const { notifications, unreadCount, loading, markRead, markAllRead } = useNotifications()
+  const navigate = useNavigate()
+  const { notifications, unreadCount, loading, error, markRead, markAllRead, reload } = useNotifications()
+
+  // Phase 15 — navigate to the ground section this notification is about
+  // (see TYPE_ROUTE_SUFFIX's own comment on why it's a section, not a deep
+  // link). Notifications with no ground_public_id (every pre-Phase-15
+  // type — umpire/match/customer-booking) keep their original mark-read-
+  // only behavior, unchanged.
+  const handleNotificationClick = (n) => {
+    if (!n.is_read) markRead(n.id)
+    const suffix = TYPE_ROUTE_SUFFIX[n.type]
+    if (suffix && n.ground_public_id) {
+      setOpen(false)
+      navigate(`/ground-owner/grounds/${n.ground_public_id}${suffix}`)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -81,15 +126,24 @@ export default function NotificationBell() {
           </div>
           <div className="max-h-80 overflow-y-auto">
             {loading && <div className="px-4 py-8 text-center text-sm text-emerald-100/60">Loading…</div>}
-            {!loading && notifications.length === 0 && <div className="px-4 py-8 text-center text-sm text-emerald-100/60">You're all caught up.</div>}
+            {!loading && error && (
+              <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                <p className="text-sm text-rose-300">{error}</p>
+                <button type="button" onClick={reload} className="text-xs font-semibold text-emerald-300 hover:text-emerald-200">
+                  Retry
+                </button>
+              </div>
+            )}
+            {!loading && !error && notifications.length === 0 && <div className="px-4 py-8 text-center text-sm text-emerald-100/60">You're all caught up.</div>}
             {!loading &&
+              !error &&
               notifications.map((n) => {
                 const Icon = TYPE_ICON[n.type] || Bell
                 return (
                   <button
                     key={n.id}
                     type="button"
-                    onClick={() => !n.is_read && markRead(n.id)}
+                    onClick={() => handleNotificationClick(n)}
                     className={`flex w-full items-start gap-3 border-b border-white/5 px-4 py-3 text-left transition-colors last:border-0 hover:bg-white/5 ${n.is_read ? 'opacity-60' : ''}`}
                   >
                     <Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />

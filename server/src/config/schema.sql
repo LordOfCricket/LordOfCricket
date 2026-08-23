@@ -1440,9 +1440,17 @@ BEGIN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
 END $$;
+-- Phase 15 fix — 'PROPOSAL_ACCEPTED' (added by a LATER widening below,
+-- Phase 25) is included in every intermediate widening from here on, not
+-- just the final one. Pre-existing bug found while adding Phase 15's own
+-- widening: migrate.js replays this file's full historical sequence of
+-- DROP+ADD CONSTRAINT on every run (not just once on a fresh DB), so any
+-- widening narrower than a value already live in the database breaks
+-- re-running migrate.js against a populated database — every earlier block
+-- below carries the same one-line fix, nothing else about them changed.
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED'));
+                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'PROPOSAL_ACCEPTED'));
 
 -- ============================================================================
 -- PHASE 22 (U6) — Feedback & Rating System
@@ -1532,10 +1540,11 @@ BEGIN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
 END $$;
+-- Phase 15 fix — see the identical note above block #1.
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
-                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED'));
+                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED', 'PROPOSAL_ACCEPTED'));
 
 -- ============================================================================
 -- PHASE 23 — Umpire Operations 2.0 (availability, assignment history,
@@ -1644,13 +1653,14 @@ BEGIN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
 END $$;
+-- Phase 15 fix — see the identical note above block #1.
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
                    'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
                    'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
                    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
-                   'MATCH_INCIDENT_REPORTED'));
+                   'MATCH_INCIDENT_REPORTED', 'PROPOSAL_ACCEPTED'));
 
 -- Dedup backstop for the reminder poller (server/src/services/
 -- reminderScheduler.service.js): a partial unique index, not just a
@@ -1706,13 +1716,14 @@ BEGIN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
 END $$;
+-- Phase 15 fix — see the identical note above block #1.
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
                    'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
                    'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
                    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
-                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE'));
+                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE', 'PROPOSAL_ACCEPTED'));
 
 -- Umpire fee — per-umpire (confirmed with the product owner; no existing
 -- precedent anywhere in LOC to infer this from). Nullable: no fee set yet
@@ -1828,6 +1839,7 @@ BEGIN
     ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
   END IF;
 END $$;
+-- Phase 15 fix — see the identical note above block #1.
 ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
   CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
                    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
@@ -1836,7 +1848,7 @@ ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
                    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
                    'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
                    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED',
-                   'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED'));
+                   'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED', 'PROPOSAL_ACCEPTED'));
 
 -- ============================================================================
 -- PHASE 3 — Unified OTP authentication (email OR phone, no password required)
@@ -2671,3 +2683,76 @@ ON CONFLICT (key) DO NOTHING;
 -- external scheduler has swept it yet. Partial (only rows that could ever
 -- match) and covers exactly the sweep's own WHERE clause.
 CREATE INDEX IF NOT EXISTS idx_ground_bookings_stale_holds ON ground_bookings(status, hold_expires_at) WHERE hold_expires_at IS NOT NULL;
+
+-- ============================================================================
+-- PHASE 15 — Ground Owner Notifications & Alerts
+-- ============================================================================
+--
+-- ground_notifications was, until now, only ever addressed to a CUSTOMER
+-- (BOOKING_APPROVED/CANCELLED) or an UMPIRE (UMPIRE_*) — never to a Ground
+-- Owner. Two new nullable FKs, mirroring exactly how related_match_id was
+-- added above (Phase 21) for match-related types:
+--
+--   ground_id        — required because 3 of the new types below (low
+--                       stock, menu not published, staff activated/
+--                       deactivated) have NO existing FK to derive a ground
+--                       from (related_booking_id/related_match_id are both
+--                       NULL for these) — without this column there is no
+--                       way to safely ground-scope or ground-isolate them.
+--   related_order_id  — mirrors related_match_id's own reasoning: canteen-
+--                       order notification types need something to
+--                       reference and orders has no existing FK slot here.
+--
+-- Both are nullable, additive, ON DELETE CASCADE (same as related_match_id)
+-- — every existing row, every existing insertNotification() caller, and
+-- every existing query keeps working completely unchanged.
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id) ON DELETE CASCADE;
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE;
+
+-- Ground-scoped read (GET /ground-owner/grounds/:id/notifications) needs
+-- (user_id, ground_id) — mirrors idx_ground_notifications_user's own shape.
+CREATE INDEX IF NOT EXISTS idx_ground_notifications_ground ON ground_notifications(user_id, ground_id, created_at DESC) WHERE ground_id IS NOT NULL;
+
+-- Widen ground_notifications_type_check for the 10 new Ground-Owner-facing
+-- types. Restates every value already live in this database (same caution
+-- as the Phase 24/U-phase widenings above — the live constraint is the
+-- source of truth, not just this file's own prior edit), plus:
+--   GROUND_BOOKING_RECEIVED       — new booking notification (owner's own,
+--                                   distinct from the customer's own
+--                                   BOOKING_APPROVED — different recipient,
+--                                   different meaning, same convention as
+--                                   UMPIRE_SLOT_ASSIGNED being distinct from
+--                                   a customer-facing type)
+--   GROUND_BOOKING_CANCELLED      — a customer cancelled; owner-facing
+--   GROUND_BOOKING_STATUS_CHANGED — any other booking status transition
+--                                   (e.g. no-show recorded) the owner
+--                                   should see, distinct from the two above
+--   CANTEEN_ORDER_RECEIVED        — new canteen order placed
+--   CANTEEN_ORDER_STATUS_CHANGED  — an order's status changed
+--   CANTEEN_LOW_STOCK             — a today_menu_items row is running low
+--   CANTEEN_MENU_NOT_PUBLISHED    — today's menu has not been published yet
+--   GROUND_STAFF_ACTIVATED        — a staff membership was (re)activated
+--   GROUND_STAFF_DEACTIVATED      — a staff membership was disabled
+--   GROUND_OPERATIONAL_ALERT      — general-purpose catch-all for future
+--                                   owner-facing operational alerts
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN (
+    'BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'UMPIRE_SLOTS_FULLY_STAFFED',
+    'MATCH_STARTING', 'MATCH_COMPLETED', 'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M', 'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
+    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED', 'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED',
+    'BOOKING_REJECTED', 'PROPOSAL_RECEIVED', 'PROPOSAL_ACCEPTED', 'PROPOSAL_EXPIRED', 'BOOKING_EXPIRING_SOON', 'NO_SHOW_RECORDED',
+    'GROUND_BOOKING_RECEIVED', 'GROUND_BOOKING_CANCELLED', 'GROUND_BOOKING_STATUS_CHANGED',
+    'CANTEEN_ORDER_RECEIVED', 'CANTEEN_ORDER_STATUS_CHANGED', 'CANTEEN_LOW_STOCK', 'CANTEEN_MENU_NOT_PUBLISHED',
+    'GROUND_STAFF_ACTIVATED', 'GROUND_STAFF_DEACTIVATED', 'GROUND_OPERATIONAL_ALERT'
+  ));

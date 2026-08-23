@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { io } from 'socket.io-client'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from './useAuth.js'
 import {
   fetchActiveOrder,
@@ -18,6 +18,7 @@ import {
 
 export function useMenu() {
   const navigate = useNavigate()
+  const { publicGroundId, publicCanteenId } = useParams()
   const { user } = useAuth()
   const userId = user?.id
 
@@ -30,13 +31,14 @@ export function useMenu() {
   const [detailsOrder, setDetailsOrder] = useState(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [error, setError] = useState('')
+  const [placing, setPlacing] = useState(false)
 
   const loadPlayerOrders = async () => {
     if (!userId) return
     try {
       const [currentOrder, history] = await Promise.all([
-        fetchActiveOrder(userId),
-        fetchOrderHistory(userId),
+        fetchActiveOrder(publicGroundId, publicCanteenId, userId),
+        fetchOrderHistory(publicGroundId, publicCanteenId, userId),
       ])
       setActiveOrder(currentOrder)
       setOrderHistory(history)
@@ -55,9 +57,15 @@ export function useMenu() {
 
     async function loadPage() {
       try {
-        const items = await fetchMenu()
+        const items = await fetchMenu(publicGroundId, publicCanteenId)
         setMenu(items)
       } catch (err) {
+        // Ground/canteen-scoped now (see CUSTOMER_CANTEEN_MIGRATION_INSPECTION.md)
+        // — a 404 here means a bad/unknown ground or canteen id, and a 409
+        // means the canteen or ground is closed (CANTEEN_CLOSED/GROUND_CLOSED),
+        // both real, already-server-verified conditions, never the old
+        // legacy "multiple canteens exist" ambiguity this page used to be
+        // vulnerable to.
         setError(err.response?.data?.error || 'Unable to load menu.')
       }
 
@@ -65,7 +73,7 @@ export function useMenu() {
     }
 
     loadPage()
-  }, [userId, navigate])
+  }, [userId, navigate, publicGroundId, publicCanteenId])
 
   useEffect(() => {
     if (!userId) return
@@ -74,7 +82,7 @@ export function useMenu() {
     let hasConnectedBefore = false
 
     const refreshMenu = async () => {
-      const items = await fetchMenu()
+      const items = await fetchMenu(publicGroundId, publicCanteenId)
       setMenu(items)
     }
 
@@ -112,7 +120,7 @@ export function useMenu() {
     socket.on('order-completed', updatePlayerOrder)
 
     return () => socket.disconnect()
-  }, [userId])
+  }, [userId, publicGroundId, publicCanteenId])
 
   const addItem = (item) => {
     if (activeOrder) {
@@ -173,9 +181,10 @@ export function useMenu() {
     }
 
     setError('')
+    setPlacing(true)
 
     try {
-      const order = await placeOrder({
+      const order = await placeOrder(publicGroundId, publicCanteenId, {
         items: cart.items,
         total: cart.total,
       })
@@ -192,25 +201,42 @@ export function useMenu() {
       setConfirmOpen(false)
       setCart(defaultCart)
 
-      navigate('/canteen/order-status', {
+      navigate(`/grounds/${publicGroundId}/canteen/${publicCanteenId}/order-status`, {
         state: {
           orderId: order.id,
         },
       })
     } catch (err) {
+      // Phase 22.4 — a 409 is not always "you already have an active
+      // order": the backend also uses 409 for a closed canteen
+      // (CANTEEN_CLOSED), a suspended ground (GROUND_CLOSED), an item that
+      // just sold out (INSUFFICIENT_STOCK), or one that just became
+      // unavailable (ITEM_UNAVAILABLE) — every one of those responses
+      // carries a `code` field and no `order` field, while the genuine
+      // "already have an active order" response carries `order` and no
+      // `code`. Only the latter should show the active-order message and
+      // populate activeOrder; every coded 409 shows its own real message.
       if (err.response?.status === 409) {
-        setActiveOrder(err.response.data.order)
-        setError('You already have an active order.')
+        const { code, error: message, order } = err.response.data || {}
+        if (!code && order) {
+          setActiveOrder(order)
+          setError('You already have an active order.')
+          setConfirmOpen(false)
+          return
+        }
+        setError(message || 'Unable to place order.')
         setConfirmOpen(false)
         return
       }
       setError(err.response?.data?.error || 'Unable to place order.')
+    } finally {
+      setPlacing(false)
     }
   }
 
   const handleTrackOrder = () => {
     if (!activeOrder) return
-    navigate('/canteen/order-status', {
+    navigate(`/grounds/${publicGroundId}/canteen/${publicCanteenId}/order-status`, {
       state: {
         orderId: activeOrder.id,
       },
@@ -221,7 +247,7 @@ export function useMenu() {
     setLoadingDetails(true)
     setError('')
     try {
-      const order = await fetchOrder(orderId)
+      const order = await fetchOrder(publicGroundId, publicCanteenId, orderId)
       setDetailsOrder(order)
     } catch (err) {
       setError(err.response?.data?.error || 'Unable to load order details.')
@@ -243,6 +269,7 @@ export function useMenu() {
     setDetailsOrder,
     loadingDetails,
     error,
+    placing,
     orderCount,
     groupedHistory,
     addItem,

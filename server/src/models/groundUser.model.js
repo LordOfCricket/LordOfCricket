@@ -91,6 +91,24 @@ export async function findMembershipsByGroundIdAndRoles(groundId, roles) {
 // GROUND_OWNER for a given ground (there is no uniqueness constraint on
 // ground_id alone in ground_users, so more than one legitimate co-owner is
 // already representable — this returns all of them, not just one).
+// Phase 16 — dashboard staff summary. Deliberately a NEW, separate
+// aggregate query rather than modifying findMembershipsByGroundIdAndRoles
+// above: that function's existing `is_active = true` filter is relied on
+// by the current Staff page (only ever shows active staff) — changing it
+// would be an unrelated behavior change. This one counts BOTH active and
+// inactive by role in a single GROUP BY, the only way to get an "inactive"
+// count at all (no existing query returns disabled memberships).
+export async function countStaffByRoleAndStatus(groundId) {
+  const { rows } = await pool.query(
+    `SELECT role, is_active, COUNT(*)::int AS count
+     FROM ground_users
+     WHERE ground_id = $1 AND role = ANY($2::varchar[])
+     GROUP BY role, is_active`,
+    [groundId, ['GROUND_ADMIN', 'CANTEEN_STAFF']],
+  )
+  return rows
+}
+
 export async function findActiveGroundOwnerUserIds(groundId) {
   const { rows } = await pool.query(
     `SELECT user_id FROM ground_users WHERE ground_id = $1 AND role = 'GROUND_OWNER' AND is_active = true`,

@@ -1,4 +1,7 @@
-import { fetchActiveOrder, fetchOrder } from '../services/canteenApi.js'
+// Migrated off the legacy platform-wide canteenApi.js — see
+// CUSTOMER_CANTEEN_MIGRATION_INSPECTION.md. Names kept identical to the old
+// exports; every call now takes publicGroundId/publicCanteenId first.
+import { fetchMyActiveOrder as fetchActiveOrder, fetchCanteenOrder as fetchOrder } from '../services/customerCanteenApi.js'
 import { socketUrl } from '../services/socket.js'
 
 export { fetchActiveOrder, fetchOrder, socketUrl }

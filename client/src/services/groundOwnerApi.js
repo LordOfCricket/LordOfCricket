@@ -264,6 +264,12 @@ export async function publishTodaysMenu(publicGroundId, publicCanteenId, payload
   return data
 }
 
+// Phase 24 — Ground Owner self-service canteen activate/deactivate.
+export async function updateCanteenStatus(publicGroundId, publicCanteenId, isActive) {
+  const { data } = await api.patch(`/grounds/${publicGroundId}/canteens/${publicCanteenId}/status`, { isActive })
+  return data.canteen
+}
+
 export async function fetchCanteenOrders(publicGroundId, publicCanteenId, { page = 1, limit = 20, status = null } = {}) {
   const params = { page, limit }
   if (status) params.status = status
@@ -300,6 +306,12 @@ export async function exportGroundAnalyticsCsv(publicGroundId, range = 'TODAY') 
     responseType: 'blob',
   })
   return response.data
+}
+
+// Phase 16 — day-by-day trend series.
+export async function fetchGroundTrends(publicGroundId, range = 'TODAY') {
+  const { data } = await api.get(`/ground-owner/grounds/${publicGroundId}/analytics/trends`, { params: { range } })
+  return data
 }
 
 // Phase 13 — Ground Owner Reviews. Surfaces existing match_feedback data

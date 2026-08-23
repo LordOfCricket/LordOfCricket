@@ -44,7 +44,7 @@ export default function GroundBookingPage() {
       setTodayCount(todayBookings.length)
       setUpcomingCount(upcoming.length)
     } catch (err) {
-      setError(err.message || 'Failed to load booking data')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load booking data')
     } finally {
       setLoading(false)
     }

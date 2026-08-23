@@ -224,6 +224,14 @@ export async function listOrdersPaginated({ canteenId, activeOnly, page, limit }
 // an ownership-enforced UPDATE, not a fetch-then-check: a request for a
 // real order id belonging to a different canteen updates zero rows and
 // returns null, identical to "order not found."
+//
+// Phase 21.4 — `AND status IS DISTINCT FROM $1` makes a repeat transition to
+// the SAME status (e.g. a staff double-click on "Mark Completed" before the
+// UI updates) a genuine no-op at the database level: zero rows match, so the
+// caller does not re-stamp completed_at/updated_at and — critically — does
+// not re-emit a socket event or re-notify the Ground Owner for a transition
+// that already happened. The controller distinguishes this no-op case from
+// a true "order not found" via a separate lookup (see canteenOrder.controller.js).
 export async function updateOrderStatusByPublicId(publicOrderId, canteenId, status) {
   const isFinished = FINISHED_STATUSES.includes(status)
   const { rows } = await pool.query(
@@ -232,7 +240,7 @@ export async function updateOrderStatusByPublicId(publicOrderId, canteenId, stat
        completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
        has_active_order_flag = CASE WHEN $2 THEN NULL ELSE has_active_order_flag END,
        updated_at = NOW()
-     WHERE public_order_id = $3 AND canteen_id = $4
+     WHERE public_order_id = $3 AND canteen_id = $4 AND status IS DISTINCT FROM $1
      RETURNING *`,
     [status, isFinished, publicOrderId, canteenId],
   )
@@ -315,4 +323,59 @@ export async function sumCompletedRevenueForGround(groundId, fromUtc, toUtc) {
     [groundId, fromUtc, toUtc],
   )
   return { revenue: Number(rows[0].revenue), orderCount: rows[0].order_count }
+}
+
+// Phase 16 — today's canteen order status distribution for the dashboard
+// (pending/preparing/ready/completed counts). Every PRESET_STATUS value is
+// counted, not just the "revenue" ones — this is an operational snapshot,
+// not a financial one. Same multi-canteen SUM-across-the-ground pattern as
+// sumCompletedRevenueForGround above.
+export async function countOrdersByStatusForGround(groundId, fromUtc, toUtc) {
+  const { rows } = await pool.query(
+    `SELECT o.status, COUNT(*)::int AS count
+     FROM orders o
+     JOIN canteens c ON c.id = o.canteen_id
+     WHERE c.ground_id = $1 AND o.ordered_at >= $2 AND o.ordered_at < $3
+     GROUP BY o.status`,
+    [groundId, fromUtc, toUtc],
+  )
+  return rows
+}
+
+// Phase 16 — top-selling items for the dashboard. Joins order_items (the
+// real per-line-item quantities, already written by insertOrder above) —
+// 'Completed' orders only, matching sumCompletedRevenueForGround's own
+// revenue-recognition rule (a cancelled order's items were never actually
+// sold). One query, no per-item follow-up lookups.
+export async function topSellingItemsForGround(groundId, fromUtc, toUtc, limit = 5) {
+  const { rows } = await pool.query(
+    `SELECT oi.item_name, SUM(oi.quantity)::int AS quantity_sold
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     JOIN canteens c ON c.id = o.canteen_id
+     WHERE c.ground_id = $1 AND o.status = 'Completed' AND o.ordered_at >= $2 AND o.ordered_at < $3
+     GROUP BY oi.item_name
+     ORDER BY quantity_sold DESC
+     LIMIT $4`,
+    [groundId, fromUtc, toUtc, limit],
+  )
+  return rows
+}
+
+// Phase 16 — canteen sales trend (day-by-day revenue), one GROUP BY query
+// for the whole range — never a per-day loop (N+1). date_trunc uses the
+// database session timezone; see groundOwnerAnalytics.service.js#getTrends
+// for why that's an accepted, documented approximation for a trend chart
+// (unlike a financial total, which stays ordered_at range-filtered exactly).
+export async function dailyRevenueForGround(groundId, fromUtc, toUtc) {
+  const { rows } = await pool.query(
+    `SELECT date_trunc('day', o.ordered_at)::date AS day, COALESCE(SUM(o.total), 0)::numeric(12,2) AS revenue
+     FROM orders o
+     JOIN canteens c ON c.id = o.canteen_id
+     WHERE c.ground_id = $1 AND o.status = 'Completed' AND o.ordered_at >= $2 AND o.ordered_at < $3
+     GROUP BY 1
+     ORDER BY 1`,
+    [groundId, fromUtc, toUtc],
+  )
+  return rows.map((r) => ({ day: r.day, revenue: Number(r.revenue) }))
 }

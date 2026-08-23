@@ -14,6 +14,7 @@ import groundOwnerRequestRoutes from './groundOwnerRequest.routes.js'
 import geocodeRoutes from './geocode.routes.js'
 import canteenMenuRoutes, { groundScopedRouter as groundScopedCanteenMenuRoutes } from './canteenMenu.routes.js'
 import canteenOrderRoutes, { groundScopedRouter as groundScopedCanteenOrderRoutes } from './canteenOrder.routes.js'
+import canteenStatusRoutes from './canteenStatus.routes.js'
 import authRoutes from './auth.routes.js'
 import mfaRoutes from './mfa.routes.js'
 import umpireRequestRoutes from './umpireRequest.routes.js'
@@ -146,6 +147,8 @@ router.get('/canteen/health', (req, res) => {
 // is provably real and testable ahead of the frontend's own migration.
 router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/menu', groundScopedCanteenMenuRoutes)
 router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/orders', groundScopedCanteenOrderRoutes)
+// Phase 24 — Ground Owner self-service canteen activate/deactivate.
+router.use('/grounds/:publicGroundId/canteens/:publicCanteenId/status', canteenStatusRoutes)
 
 // Phase 24 — MATCH/PRACTICE team bookings, multi-ground/team/player
 // conflict engine. Distinct from the legacy single-ground walk-in flow

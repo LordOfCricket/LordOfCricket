@@ -1,6 +1,7 @@
 import * as groundOwnerService from '../services/groundOwner.service.js'
 import * as groundOwnerAnalyticsService from '../services/groundOwnerAnalytics.service.js'
 import * as groundOwnerReviewsService from '../services/groundOwnerReviews.service.js'
+import * as notificationService from '../services/groundNotification.service.js'
 import { recommendUmpiresForMatch } from '../services/umpireRecommendation.service.js'
 import { updateGroundProfile as updateGroundProfileModel } from '../models/ground.model.js'
 import {
@@ -29,7 +30,7 @@ export async function listMyGrounds(req, res, next) {
 // owned by req.user).
 export async function updateGroundProfile(req, res, next) {
   try {
-    const allowed = ['name', 'description', 'phone', 'email', 'website', 'addressLine', 'city', 'state', 'postalCode', 'latitude', 'longitude']
+    const allowed = ['name', 'description', 'phone', 'email', 'website', 'addressLine', 'city', 'state', 'postalCode', 'latitude', 'longitude', 'openingHour', 'closingHour']
     const updates = {}
     const errors = []
 
@@ -76,7 +77,41 @@ export async function updateGroundProfile(req, res, next) {
             updates[field] = lng
           }
         }
+        // Phase 23 — schema.sql's own CHECK constraints already enforce
+        // opening_hour 0-23 / closing_hour 1-24 at the database level; these
+        // mirror that here so a bad value gets a clear message instead of a
+        // raw constraint-violation error. Null clears the override (falls
+        // back to the platform-wide default — domain/booking/policy.js),
+        // matching resolveGroundHours' own per-field ?? fallback.
+        if (field === 'openingHour' && updates[field] !== null && updates[field] !== undefined) {
+          const hour = Number(updates[field])
+          if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+            errors.push('Opening hour must be a whole number between 0 and 23.')
+          } else {
+            updates[field] = hour
+          }
+        }
+        if (field === 'closingHour' && updates[field] !== null && updates[field] !== undefined) {
+          const hour = Number(updates[field])
+          if (!Number.isInteger(hour) || hour < 1 || hour > 24) {
+            errors.push('Closing hour must be a whole number between 1 and 24.')
+          } else {
+            updates[field] = hour
+          }
+        }
       }
+    }
+
+    // Cross-field check only when BOTH are being set to a real value in
+    // this request — resolveGroundHours supports either being set alone
+    // (falls back to the platform default independently per field), so a
+    // request that only touches one of the two is never blocked here.
+    if (
+      typeof updates.openingHour === 'number' &&
+      typeof updates.closingHour === 'number' &&
+      updates.closingHour <= updates.openingHour
+    ) {
+      errors.push('Closing hour must be later than opening hour.')
     }
 
     if (errors.length > 0) {
@@ -98,9 +133,13 @@ export async function updateGroundProfile(req, res, next) {
       postalCode: updated.postal_code,
       latitude: updated.latitude !== null && updated.latitude !== undefined ? Number(updated.latitude) : null,
       longitude: updated.longitude !== null && updated.longitude !== undefined ? Number(updated.longitude) : null,
+      openingHour: updated.opening_hour !== null && updated.opening_hour !== undefined ? Number(updated.opening_hour) : null,
+      closingHour: updated.closing_hour !== null && updated.closing_hour !== undefined ? Number(updated.closing_hour) : null,
     }
     delete formatted.address_line
     delete formatted.postal_code
+    delete formatted.opening_hour
+    delete formatted.closing_hour
 
     res.json({ ground: formatted })
   } catch (err) {
@@ -326,7 +365,7 @@ export async function revokeStaffPermissionHandler(req, res, next) {
 
 export async function disableStaffMembershipHandler(req, res, next) {
   try {
-    await disableStaffMembership(req.ground, Number(req.params.membershipId), req.user.id, req.session?.id)
+    await disableStaffMembership(req.ground, Number(req.params.membershipId), req.user.id, req.session?.id, req.io)
     res.json({ disabled: true })
   } catch (err) {
     next(err)
@@ -339,6 +378,11 @@ export async function disableStaffMembershipHandler(req, res, next) {
 export async function getGroundDashboard(req, res, next) {
   try {
     const dashboard = await groundOwnerService.getGroundOwnerDashboard(req.ground.id)
+    // Phase 15 — best-effort, on-demand low-stock/menu-not-published check
+    // (see groundNotification.service.js#checkOperationalAlerts's own
+    // comment for why this runs here rather than a new scheduler). Never
+    // throws, so it can never turn a successful dashboard load into an error.
+    await notificationService.checkOperationalAlerts(req.ground.id, req.io)
     res.json(dashboard)
   } catch (err) {
     next(err)
@@ -420,6 +464,20 @@ export async function exportGroundAnalyticsCsv(req, res, next) {
   }
 }
 
+// Phase 16 — day-by-day trend series, a sibling of /analytics (not merged
+// into it — a series is a different response shape than a snapshot, and
+// keeping them separate means a caller that only needs the snapshot never
+// pays for the trend queries).
+export async function getGroundTrends(req, res, next) {
+  try {
+    const range = ALLOWED_ANALYTICS_RANGES.includes(req.query.range) ? req.query.range : 'TODAY'
+    const trends = await groundOwnerAnalyticsService.getTrends(req.ground.id, range)
+    res.json(trends)
+  } catch (err) {
+    next(err)
+  }
+}
+
 // Phase 13 — Ground Owner Reviews. req.ground is resolved+authorized by
 // requireGroundRole('GROUND_OWNER') before this ever runs; req.params.publicGroundId
 // is only ever used to look up WHICH ground, never trusted for authorization.
@@ -432,6 +490,51 @@ export async function getGroundReviews(req, res, next) {
       limit: req.query.limit,
     })
     res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Phase 15 — Ground Owner Notifications, ground-scoped. Same posture as
+// Reviews/Dashboard/Analytics above — req.ground.id (server-resolved,
+// never client-supplied) and req.user.id together are the only scope any
+// query here ever uses; a notification's ground_id/user_id must BOTH match
+// (see groundNotification.repository.js#listForGround's own comment).
+const MAX_NOTIFICATIONS_LIMIT = 50
+
+export async function getGroundNotifications(req, res, next) {
+  try {
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 20, MAX_NOTIFICATIONS_LIMIT))
+    const offset = Math.max(0, Number(req.query.offset) || 0)
+    const result = await notificationService.listGroundNotifications(req.user.id, req.ground.id, { limit, offset })
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// markRead is user_id-scoped exactly like the existing global GET
+// /ground/notifications endpoint (its own WHERE clause already requires
+// id AND user_id to match — Owner A can never mark Owner B's notification
+// read merely by guessing/enumerating its id). Reused verbatim — marking
+// ONE specific notification read can't leak across grounds since the id
+// itself already pins it to one row.
+export async function markGroundNotificationRead(req, res, next) {
+  try {
+    const notification = await notificationService.markRead(Number(req.params.id), req.user.id)
+    res.json({ notification })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// "Mark all read" is NOT reused from the global endpoint — see
+// markAllReadForGround's own comment: it must only affect req.ground.id,
+// never every ground this owner has.
+export async function markAllGroundNotificationsRead(req, res, next) {
+  try {
+    await notificationService.markAllReadForGround(req.user.id, req.ground.id)
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

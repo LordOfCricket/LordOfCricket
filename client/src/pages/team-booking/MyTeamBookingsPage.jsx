@@ -4,6 +4,7 @@ import { CalendarDays, Clock, Plus } from 'lucide-react'
 import BackButton from '../../components/common/BackButton.jsx'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useTeamBooking } from '../../hooks/useTeamBooking.js'
+import { fetchMyTeamBookings } from '../../services/teamBookingApi.js'
 import { formatBookingDate, formatSlotTime } from '../../models/booking.model.js'
 import Button from '../../components/ui/Button.jsx'
 
@@ -84,12 +85,10 @@ export default function MyTeamBookingsPage() {
 
       setLoading(true)
       try {
-        const response = await fetch('/api/team-bookings/my')
-        if (!response.ok) throw new Error('Failed to load bookings')
-        const data = await response.json()
-        setBookings(data.bookings || [])
+        const myBookings = await fetchMyTeamBookings()
+        setBookings(myBookings)
       } catch (err) {
-        setError(err.message || 'Unable to load bookings.')
+        setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load bookings.')
       } finally {
         setLoading(false)
       }

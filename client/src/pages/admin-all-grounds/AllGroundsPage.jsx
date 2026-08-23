@@ -14,7 +14,7 @@ const STATUS_STYLE = {
 // admin-only visibility of a pending/suspended ground never leaks it
 // publicly, since findAllGroundsForAdmin is a distinct, admin-gated query.
 export default function AllGroundsPage() {
-  const { grounds, loading, error, handleSuspend, handleReactivate } = useAdminAllGrounds()
+  const { grounds, loading, error, actioningId, handleSuspend, handleReactivate } = useAdminAllGrounds()
 
   return (
     <AdminLayout title="All Grounds" subtitle="Every ground registered on LOC, regardless of status.">
@@ -55,13 +55,21 @@ export default function AllGroundsPage() {
                           View
                         </Link>
                         {g.status === 'ACTIVE' && (
-                          <Button className="h-auto bg-red-600 px-3 py-1.5 text-xs" onClick={() => handleSuspend(g)}>
-                            Suspend
+                          <Button
+                            className="h-auto bg-red-600 px-3 py-1.5 text-xs"
+                            disabled={actioningId === g.publicGroundId}
+                            onClick={() => handleSuspend(g)}
+                          >
+                            {actioningId === g.publicGroundId ? 'Suspending…' : 'Suspend'}
                           </Button>
                         )}
                         {g.status === 'SUSPENDED' && (
-                          <Button className="h-auto px-3 py-1.5 text-xs" onClick={() => handleReactivate(g)}>
-                            Reactivate
+                          <Button
+                            className="h-auto px-3 py-1.5 text-xs"
+                            disabled={actioningId === g.publicGroundId}
+                            onClick={() => handleReactivate(g)}
+                          >
+                            {actioningId === g.publicGroundId ? 'Reactivating…' : 'Reactivate'}
                           </Button>
                         )}
                       </div>

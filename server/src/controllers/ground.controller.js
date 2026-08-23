@@ -241,6 +241,12 @@ export async function getGroundProfile(req, res, next) {
         phone: ground.phone,
         email: ground.email,
         website: ground.website,
+        // Phase 23 — non-sensitive (a business's hours are public
+        // information, same category as its address/phone above); null
+        // means "not configured, platform default applies" (docs/
+        // ARCHITECTURE.md domain/booking/policy.js), not "closed."
+        openingHour: ground.opening_hour !== null && ground.opening_hour !== undefined ? Number(ground.opening_hour) : null,
+        closingHour: ground.closing_hour !== null && ground.closing_hour !== undefined ? Number(ground.closing_hour) : null,
         // Phase 13 — same honest-absence convention as serializeGroundCard:
         // NULL ratingAvg + ratingCount=0 for a ground with no reviews yet.
         ratingAvg: ground.rating_avg !== null && ground.rating_avg !== undefined ? Number(ground.rating_avg) : null,

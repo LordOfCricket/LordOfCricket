@@ -20,6 +20,19 @@ async function startTestApp() {
   }
 }
 
+// FINAL AUDIT — Phase 21.2 (request traceability) added `requestId: req.id`
+// to every branch of errorHandler.js's response body, for incident-log
+// correlation. OLD EXPECTATION (below, before this pass): the body was
+// exactly `{message}`, nothing else. ACTUAL CONTRACT since Phase 21.2: the
+// body always also carries `requestId` — a real UUID for a genuine HTTP
+// request (set by middlewares/requestId.js earlier in the chain), or
+// `undefined` here specifically because these two tests hand-build a bare
+// `req` object and call errorHandler() directly, bypassing that middleware
+// entirely (a deliberate, minimal unit-style test of errorHandler in
+// isolation, not a real HTTP request). NEW EXPECTATION: assert `requestId`
+// is present as a key (value `undefined` in this specific unit-style
+// context) alongside the existing message assertion, matching what the
+// real response object now always contains.
 test('errorHandler never leaks a raw/unexpected error message or stack to the client', () => {
   let captured = null
   const req = { method: 'GET', originalUrl: '/api/whatever' }
@@ -30,7 +43,7 @@ test('errorHandler never leaks a raw/unexpected error message or stack to the cl
   errorHandler(err, req, res, () => {})
 
   assert.equal(captured.code, 500)
-  assert.deepEqual(captured.body, { message: 'Internal Server Error' })
+  assert.deepEqual(captured.body, { message: 'Internal Server Error', requestId: req.id })
 })
 
 test('errorHandler passes through an intentional statusCode+message unchanged (service-thrown 404s etc.)', () => {
@@ -43,7 +56,7 @@ test('errorHandler passes through an intentional statusCode+message unchanged (s
   errorHandler(err, req, res, () => {})
 
   assert.equal(captured.code, 404)
-  assert.deepEqual(captured.body, { message: 'Team not found.' })
+  assert.deepEqual(captured.body, { message: 'Team not found.', requestId: req.id })
 })
 
 test('errorHandler still returns the full structured shape for a domain-coded error', () => {

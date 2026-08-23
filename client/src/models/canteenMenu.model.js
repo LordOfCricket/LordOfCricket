@@ -1,10 +1,16 @@
+// Migrated off the legacy platform-wide canteenApi.js (broke once more than
+// one canteen exists — see CUSTOMER_CANTEEN_MIGRATION_INSPECTION.md) to the
+// real ground/canteen-scoped routes. Names kept identical to the old
+// exports so useCanteenMenu.js's own logic didn't need to change, only
+// which functions it imports and that every call now takes
+// publicGroundId/publicCanteenId first.
 import {
-  fetchActiveOrder,
-  fetchMenu,
-  fetchOrder,
-  fetchOrderHistory,
-  placeOrder,
-} from '../services/canteenApi.js'
+  fetchMyActiveOrder as fetchActiveOrder,
+  fetchCanteenMenu as fetchMenu,
+  fetchCanteenOrder as fetchOrder,
+  fetchMyOrderHistory as fetchOrderHistory,
+  placeCanteenOrder as placeOrder,
+} from '../services/customerCanteenApi.js'
 
 export { fetchActiveOrder, fetchMenu, fetchOrder, fetchOrderHistory, placeOrder }
 

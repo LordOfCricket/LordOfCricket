@@ -333,3 +333,34 @@ export async function sumOccupiedHoursByType(fromUtc, toUtc, groundId = null) {
   )
   return rows
 }
+
+// Phase 16 — day-by-day booking trend, one GROUP BY query for the whole
+// range (never a per-day loop). booking_type + day so the caller can
+// separate CUSTOMER bookings from STAFF_BLOCK, same distinction
+// sumOccupiedHoursByType already makes for the snapshot version.
+export async function dailyBookingCountsForGround(groundId, fromUtc, toUtc) {
+  const { rows } = await pool.query(
+    `SELECT date_trunc('day', start_time)::date AS day, booking_type, COUNT(*)::int AS count
+     FROM ground_bookings
+     WHERE status = 'CONFIRMED' AND start_time >= $1 AND start_time < $2 AND ground_id = $3
+     GROUP BY 1, 2
+     ORDER BY 1`,
+    [fromUtc, toUtc, groundId],
+  )
+  return rows
+}
+
+// Phase 16 — day-by-day occupied hours for the utilization trend, same
+// single-query-for-the-whole-range shape as dailyBookingCountsForGround.
+export async function dailyOccupiedHoursForGround(groundId, fromUtc, toUtc) {
+  const { rows } = await pool.query(
+    `SELECT date_trunc('day', start_time)::date AS day, booking_type,
+            COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time)) / 3600), 0)::float AS hours
+     FROM ground_bookings
+     WHERE status = 'CONFIRMED' AND start_time >= $1 AND start_time < $2 AND ground_id = $3
+     GROUP BY 1, 2
+     ORDER BY 1`,
+    [fromUtc, toUtc, groundId],
+  )
+  return rows
+}

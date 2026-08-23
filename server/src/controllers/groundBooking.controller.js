@@ -73,6 +73,7 @@ export async function createBooking(req, res, next) {
       expectedPlayers: expectedPlayers != null ? Number(expectedPlayers) : null,
       notes: notes || null,
       clientActionId: clientActionId || null,
+      io: req.io,
     })
     if (!idempotentReplay) bookingService.notifyBookingDateChanged(req.io, dateStr)
     res.status(201).json({ booking: serializeBooking(booking) })
@@ -93,7 +94,7 @@ export async function listMyBookings(req, res, next) {
 export async function cancelBooking(req, res, next) {
   try {
     const isStaff = req.user.role === 'staff'
-    const booking = await bookingService.cancelBooking(req.params.publicBookingId, { actingUserId: req.user.id, isStaff })
+    const booking = await bookingService.cancelBooking(req.params.publicBookingId, { actingUserId: req.user.id, isStaff, io: req.io })
     bookingService.notifyBookingDateChanged(req.io, new Date(booking.start_time).toISOString().slice(0, 10))
     res.json({ booking: serializeBooking(booking) })
   } catch (err) {

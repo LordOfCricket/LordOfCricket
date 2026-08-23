@@ -185,7 +185,22 @@ export async function loginWithPassword({ identifier: rawIdentifier, password, i
   const passwordMatches = await bcrypt.compare(typeof password === 'string' ? password : '', hashToCompare)
   const viaTempCredential = !passwordMatches && (await tempCredentialMatches(user, password))
 
-  if (!user || !user.password_hash || (!passwordMatches && !viaTempCredential)) {
+  // FINAL AUDIT — adminPasswordRecovery.service.js#generateTemporaryCredential
+  // ("compromised account" remediation, PRODUCTION_RECOVERY_RUNBOOK.md
+  // §6.1) has always revoked every existing SESSION but never actually
+  // touched password_hash, so the account's original password kept working
+  // for a brand-new login the whole time a temp credential was pending —
+  // the runbook's own claim ("the account cannot be used again until the
+  // new temporary credential is exercised") was not actually true. Fixed by
+  // rejecting a correct OLD password specifically while a real, unexpired
+  // temp credential is outstanding — the temp-credential path above already
+  // works and already forces a real password change on use, this just
+  // closes the other door while that's the only door meant to be open.
+  const hasPendingTempCredential = Boolean(
+    user?.temp_password_hash && user.temp_password_expires_at && new Date(user.temp_password_expires_at).getTime() > Date.now(),
+  )
+
+  if (!user || !user.password_hash || (!passwordMatches && !viaTempCredential) || (passwordMatches && hasPendingTempCredential)) {
     logger.warn('Password login failed', { identifier: maskIdentifier(identifier, identifierType), identifierType })
     throw new OtpAuthError(CODES.INVALID_CREDENTIALS, 'Incorrect email/phone or password.')
   }

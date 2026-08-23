@@ -121,7 +121,7 @@ export async function findPublicActiveGroundByPublicId(publicGroundId) {
   const { rows } = await pool.query(
     `SELECT public_ground_id, slug, name, description, address_line, city, state,
             country, postal_code, latitude, longitude, phone, email, website, id,
-            rating_avg, rating_count
+            rating_avg, rating_count, opening_hour, closing_hour
      FROM grounds
      WHERE public_ground_id = $1 AND status = 'ACTIVE'`,
     [publicGroundId],
@@ -456,6 +456,11 @@ export async function updateGroundProfile(groundId, fields) {
   if ('postalCode' in fields) whitelisted.postalCode = fields.postalCode
   if ('latitude' in fields) whitelisted.latitude = fields.latitude
   if ('longitude' in fields) whitelisted.longitude = fields.longitude
+  // Phase 23 — operating hours. schema.sql has carried opening_hour/
+  // closing_hour columns (with their own CHECK constraints) since Phase 14
+  // Part 3; nothing before this phase ever exposed a write path for them.
+  if ('openingHour' in fields) whitelisted.openingHour = fields.openingHour
+  if ('closingHour' in fields) whitelisted.closingHour = fields.closingHour
 
   if (Object.keys(whitelisted).length === 0) {
     return findGroundById(groundId)
@@ -467,6 +472,8 @@ export async function updateGroundProfile(groundId, fields) {
     const dbFieldName =
       key === 'addressLine' ? 'address_line' :
       key === 'postalCode' ? 'postal_code' :
+      key === 'openingHour' ? 'opening_hour' :
+      key === 'closingHour' ? 'closing_hour' :
       key
     return `${dbFieldName} = $${i + 2}`
   }).join(', ')

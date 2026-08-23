@@ -216,19 +216,28 @@ test('IDOR: body.canteen_id / body.ground_id / query.canteenId claiming a DIFFER
   const fxA = await createGroundCanteenFixture('idor-a')
   const fxB = await createGroundCanteenFixture('idor-b')
   const userA = await createUser('idor-user-a', { role: 'player' })
+  // Phase 17.1 — order items are now resolved server-side against a real
+  // menu item belonging to the URL-resolved canteen; the old fake id: '1'
+  // fixture is correctly rejected by that new validation. This test is
+  // about the IDOR claim (body/query canteen/ground ids being ignored),
+  // not pricing — a real item on canteen A (the URL-resolved one) exercises
+  // that exact claim.
+  const { rows: [itemA] } = await pool.query(
+    `INSERT INTO menu_items (name, category, price, canteen_id, is_active, default_stock) VALUES ('Pizza','Food',100,$1,true,50) RETURNING *`,
+    [fxA.canteen.id],
+  )
   try {
     const res = await fetch(`${ordersUrl(server.baseUrl, fxA.ground, fxA.canteen)}?canteenId=${fxB.canteen.id}`, {
       method: 'POST',
       headers: authHeader(userA.token),
       body: JSON.stringify({
         seatId: 'A1',
-        items: [{ id: '1', foodId: '1', name: 'Pizza', price: 100, qty: 1 }],
-        total: 100,
+        items: [{ id: itemA.id, qty: 1 }],
         canteen_id: fxB.canteen.id,
         ground_id: fxB.ground.id,
       }),
     })
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()))
     const body = await res.json()
 
     const { rows } = await pool.query('SELECT canteen_id FROM orders WHERE public_order_id = $1', [body.order.id])
@@ -249,13 +258,20 @@ test('IDOR: an order id from Canteen B is 404 when fetched/updated through Cante
   const staffA = await createUser('idor-order-staff-a', { role: 'staff' })
   const membershipA = await createMembership({ groundId: fxA.ground.id, userId: staffA.id, role: 'CANTEEN_STAFF' })
   const playerB = await createUser('idor-order-player-b', { role: 'player' })
+  // Phase 17.1 — see the previous test's identical comment: a real menu
+  // item (on canteen B, where this order is actually placed) replaces the
+  // old fake-id fixture.
+  const { rows: [itemB] } = await pool.query(
+    `INSERT INTO menu_items (name, category, price, canteen_id, is_active, default_stock) VALUES ('Pizza','Food',100,$1,true,50) RETURNING *`,
+    [fxB.canteen.id],
+  )
   try {
     const placed = await fetch(ordersUrl(server.baseUrl, fxB.ground, fxB.canteen), {
       method: 'POST',
       headers: authHeader(playerB.token),
-      body: JSON.stringify({ seatId: 'B1', items: [{ id: '1', foodId: '1', name: 'Pizza', price: 100, qty: 1 }], total: 100 }),
+      body: JSON.stringify({ seatId: 'B1', items: [{ id: itemB.id, qty: 1 }] }),
     })
-    assert.equal(placed.status, 200)
+    assert.equal(placed.status, 200, JSON.stringify(await placed.clone().json()))
     const orderId = (await placed.json()).order.id
 
     const fetchFromA = await fetch(`${ordersUrl(server.baseUrl, fxA.ground, fxA.canteen)}/${orderId}`, { headers: authHeader(staffA.token) })

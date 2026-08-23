@@ -9,7 +9,7 @@ import { MFA_ERROR_HTTP_STATUS } from '../domain/mfa/errors.js'
 import { logger } from '../utils/logger.js'
 
 export function notFound(req, res, next) {
-  res.status(404).json({ message: `Route not found: ${req.originalUrl}` })
+  res.status(404).json({ message: `Route not found: ${req.originalUrl}`, requestId: req.id })
 }
 
 // Domain error classes that carry a structured `code` (see
@@ -52,13 +52,13 @@ export function errorHandler(err, req, res, next) {
     if (status === 500) {
       logger.error('Unhandled Prisma error', { method: req.method, path: req.originalUrl, prismaCode: err.code, error: err.message })
     }
-    return res.status(status).json({ success: false, message })
+    return res.status(status).json({ success: false, message, requestId: req.id })
   }
 
   if (err.code) {
     for (const statusMap of DOMAIN_ERROR_HTTP_STATUS_MAPS) {
       if (statusMap[err.code]) {
-        return res.status(statusMap[err.code]).json({ code: err.code, message: err.message, details: err.details })
+        return res.status(statusMap[err.code]).json({ code: err.code, message: err.message, details: err.details, requestId: req.id })
       }
     }
   }
@@ -68,17 +68,19 @@ export function errorHandler(err, req, res, next) {
     // domain errors already expose, e.g. startMatch's understaffed-warning
     // slot counts. Omitted entirely when absent, matching the previous
     // response shape exactly for every existing caller.
-    return res.status(err.statusCode).json({ message: err.message, ...(err.details ? { details: err.details } : {}) })
+    return res.status(err.statusCode).json({ message: err.message, ...(err.details ? { details: err.details } : {}), requestId: req.id })
   }
 
   // Unexpected error (programming bug, raw DB/driver error, etc.) — never
   // leak internal details (message, stack, driver hints) to the client.
-  // Full detail goes to the server log only.
+  // Full detail goes to the server log only. requestId IS safe to return
+  // here — it's an opaque correlation token, not internal detail — and is
+  // exactly what support needs to look up this specific failure in the logs.
   logger.error('Unhandled request error', {
     method: req.method,
     path: req.originalUrl,
     error: err.message,
     stack: err.stack,
   })
-  res.status(500).json({ message: 'Internal Server Error' })
+  res.status(500).json({ message: 'Internal Server Error', requestId: req.id })
 }

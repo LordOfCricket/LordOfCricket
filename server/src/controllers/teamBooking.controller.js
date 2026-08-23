@@ -106,7 +106,7 @@ export async function checkInTeamBooking(req, res, next) {
 
 export async function recordTeamBookingNoShow(req, res, next) {
   try {
-    const updated = await engine.recordNoShow(req.params.publicBookingId, { actingStaffId: req.user.id, groundId: req.ground.id })
+    const updated = await engine.recordNoShow(req.params.publicBookingId, { actingStaffId: req.user.id, groundId: req.ground.id, io: req.io })
     res.json({ booking: serializeBooking(updated) })
   } catch (err) {
     next(err)

@@ -124,6 +124,15 @@ extended integration tests (unauthenticated-listing fix, upload-limit fix, concu
 race). See the Phase 7 report for the exact final counts and a line-by-line diff against the Phase 6
 failure list confirming zero new, unexplained failures.
 
+## Security incident response
+
+Phase 21.7 — step-by-step response procedures (compromised account, compromised staff/ground-owner,
+suspected data breach, forensic audit-trail review) live in `PRODUCTION_RECOVERY_RUNBOOK.md`'s
+"Security Incident Response" section, not duplicated here — that document is the operational
+playbook; this document stays the persistent architectural reference. Every procedure there uses only
+mechanisms already covered above (session revocation, MFA/step-up, `account_audit_log`) — no new
+security surface was introduced to support it.
+
 ## Known limitations / residual risk (carried forward)
 
 - The 16 pre-existing integration failures (stale scorer fixture, multi-ground dev-DB assumption) remain

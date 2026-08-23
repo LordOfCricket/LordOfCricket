@@ -1,11 +1,12 @@
 import { useParams } from 'react-router-dom'
-import { CalendarClock, Ban, Trophy } from 'lucide-react'
+import { CalendarClock, Ban, Trophy, PackageX } from 'lucide-react'
 import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { StatsErrorState, StatsLoadingGrid } from '../../components/stats/StatsStates.jsx'
 import StatTile from '../../components/stats/StatTile.jsx'
 import { useGroundDashboard } from '../../hooks/useGroundDashboard.js'
+import { formatAmount } from '../../models/umpireEarnings.model.js'
 
 const STATUS_LABELS = {
   MATCH_DAY: 'Match Day',
@@ -105,6 +106,92 @@ function UpcomingList({ dashboard }) {
   )
 }
 
+// Phase 16 — current/next booking, derived server-side from today.bookings
+// (no separate fetch); a simple highlight pair rather than a new widget
+// framework.
+function CurrentNextBooking({ dashboard }) {
+  const { currentBooking, nextBooking } = dashboard.today
+  if (!currentBooking && !nextBooking) return null
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {currentBooking && (
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Current Booking</p>
+          <p className="mt-1 text-sm font-semibold text-white">{formatTime(currentBooking.startTime)} – {formatTime(currentBooking.endTime)}</p>
+        </div>
+      )}
+      {nextBooking && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Next Booking</p>
+          <p className="mt-1 text-sm font-semibold text-white">{formatTime(nextBooking.startTime)} – {formatTime(nextBooking.endTime)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Phase 16 — canteen operational snapshot for today.
+function CanteenSection({ canteen }) {
+  const statusEntries = Object.entries(canteen.ordersByStatus || {})
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-bold text-white">Canteen Today</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Revenue" value={formatAmount(canteen.revenue)} emphasis />
+        <StatTile label="Orders" value={canteen.orderCount} />
+        {statusEntries.map(([status, count]) => (
+          <StatTile key={status} label={status} value={count} />
+        ))}
+      </div>
+
+      {canteen.lowStockItems.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/5 px-4 py-3">
+          <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-300">
+            <PackageX size={16} /> Low Stock
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {canteen.lowStockItems.map((item) => (
+              <span key={item.name} className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-200">
+                {item.name} — {item.stock} left
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {canteen.topItems.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-semibold text-slate-300">Top Selling</p>
+          <div className="flex flex-wrap gap-2">
+            {canteen.topItems.map((item) => (
+              <span key={item.name} className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-200">
+                {item.name} × {item.quantitySold}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// Phase 16 — staff summary composed from existing membership data.
+function StaffSection({ staff }) {
+  const roleEntries = Object.entries(staff.roleBreakdown || {})
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-bold text-white">Staff</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Active" value={staff.active} emphasis />
+        <StatTile label="Inactive" value={staff.inactive} />
+        {roleEntries.map(([role, count]) => (
+          <StatTile key={role} label={role.replace('_', ' ')} value={count} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function GroundOperationsPage() {
   const { publicGroundId } = useParams()
   const { dashboard, loading, error, refresh } = useGroundDashboard(publicGroundId)
@@ -131,11 +218,15 @@ export default function GroundOperationsPage() {
 
       {!loading && !error && dashboard && (
         <div className="space-y-8">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="Bookings Today" value={dashboard.today.bookingsCount} />
             <StatTile label="Staff Blocks Today" value={dashboard.today.blocksCount} />
             <StatTile label="Matches Today" value={dashboard.today.matchesCount} emphasis={dashboard.today.matchesCount > 0} />
+            <StatTile label="Available Slots" value={dashboard.today.availableSlotsCount} />
+            <StatTile label="Blocked Slots" value={dashboard.today.blockedSlotsCount} />
           </div>
+
+          <CurrentNextBooking dashboard={dashboard} />
 
           <section>
             <h2 className="mb-3 text-lg font-bold text-white">Today's Schedule</h2>
@@ -146,6 +237,9 @@ export default function GroundOperationsPage() {
             <h2 className="mb-3 text-lg font-bold text-white">Next 7 Days</h2>
             <UpcomingList dashboard={dashboard} />
           </section>
+
+          <CanteenSection canteen={dashboard.canteen} />
+          <StaffSection staff={dashboard.staff} />
         </div>
       )}
     </GroundOwnerLayout>

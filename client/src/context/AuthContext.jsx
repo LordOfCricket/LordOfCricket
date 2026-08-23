@@ -46,6 +46,24 @@ export function AuthProvider({ children }) {
       })
   }, [refreshPlayer])
 
+  // Phase 22.1 — services/api.js's response interceptor dispatches this the
+  // moment any authenticated request 401s mid-session (expired/revoked
+  // cookie). Resetting state here (the same fields logout() resets, minus
+  // the redundant POST /auth/logout — the server has already invalidated
+  // this session by definition) flips `status` to 'unauthenticated', which
+  // RequireAuth.jsx already turns into a redirect to /login on its own —
+  // reusing that existing guard rather than adding a second redirect path.
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null)
+      setPlayer(null)
+      setMfa(DEFAULT_MFA)
+      setStatus('unauthenticated')
+    }
+    window.addEventListener('loc:session-expired', handleSessionExpired)
+    return () => window.removeEventListener('loc:session-expired', handleSessionExpired)
+  }, [])
+
   // Re-fetches only the mfa key — used after enrollment/disable/verify so
   // the UI (RequireMfaVerified, Security Settings) reflects the server's
   // current view without a full page reload.

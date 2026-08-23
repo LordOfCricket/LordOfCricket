@@ -7,10 +7,10 @@
 // uses it, just ground-scoped) and canteen revenue.
 
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
-import { sumCompletedRevenueForGround } from '../models/canteenOrder.model.js'
+import { sumCompletedRevenueForGround, dailyRevenueForGround } from '../models/canteenOrder.model.js'
 import { computeUtilization } from '../domain/booking/utilization.js'
 import { GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR } from '../domain/booking/policy.js'
-import { groundLocalToUtc, groundTodayDateStr, addDaysToDateStr } from '../domain/booking/timezone.js'
+import { groundLocalToUtc, groundTodayDateStr, addDaysToDateStr, groundDateStr } from '../domain/booking/timezone.js'
 
 // Predefined date ranges for analytics
 const ANALYTICS_RANGES = {
@@ -151,6 +151,60 @@ export async function getFullAnalytics(groundId, dateRange = ANALYTICS_RANGES.TO
     getCanteenRevenue(groundId, dateRange),
   ])
   return { ...booking, utilization, canteenRevenue }
+}
+
+// Phase 16 — day-by-day trend series for the date range: booking counts,
+// canteen revenue ("revenue trend" — the only real revenue this schema
+// tracks; ground_bookings itself has no price/amount column, so this is
+// never a fabricated booking-revenue figure), and utilization %.
+//
+// PERFORMANCE: exactly 3 queries total for the whole range (booking
+// counts, occupied hours, canteen revenue — each already a single
+// GROUP BY query, never one query per day) plus the existing single-query
+// listMatchDatesInRange. computeUtilization itself runs once per day, but
+// that's pure in-memory arithmetic on already-fetched data, not a DB
+// round-trip — never confuse "loop that computes" with "loop that queries."
+export async function getTrends(groundId, dateRange = ANALYTICS_RANGES.TODAY) {
+  const range = getDateRangeFromPredefined(dateRange)
+  const hoursPerDay = GROUND_CLOSING_HOUR - GROUND_OPENING_HOUR
+
+  const [bookingRows, hoursRows, revenueRows, matchDates] = await Promise.all([
+    bookingRepo.dailyBookingCountsForGround(groundId, range.fromUtc, range.toUtc),
+    bookingRepo.dailyOccupiedHoursForGround(groundId, range.fromUtc, range.toUtc),
+    dailyRevenueForGround(groundId, range.fromUtc, range.toUtc),
+    bookingRepo.listMatchDatesInRange(range.fromDate, addDaysToDateStr(range.toDate, 1), groundId),
+  ])
+
+  const matchDateSet = new Set(matchDates)
+  const bookingsByDay = new Map()
+  const blockedByDay = new Map()
+  for (const row of bookingRows) {
+    const day = groundDateStr(new Date(row.day))
+    if (row.booking_type === 'CUSTOMER') bookingsByDay.set(day, row.count)
+  }
+  const bookedHoursByDay = new Map()
+  for (const row of hoursRows) {
+    const day = groundDateStr(new Date(row.day))
+    if (row.booking_type === 'CUSTOMER') bookedHoursByDay.set(day, row.hours)
+    if (row.booking_type === 'STAFF_BLOCK') blockedByDay.set(day, row.hours)
+  }
+  const revenueByDay = new Map(revenueRows.map((r) => [groundDateStr(new Date(r.day)), r.revenue]))
+
+  const days = []
+  for (let d = range.fromDate; d <= range.toDate; d = addDaysToDateStr(d, 1)) {
+    const bookedHours = bookedHoursByDay.get(d) || 0
+    const blockedHours = blockedByDay.get(d) || 0
+    const matchHours = matchDateSet.has(d) ? hoursPerDay : 0
+    const utilization = computeUtilization({ totalHours: hoursPerDay, bookedHours, blockedHours, matchHours })
+    days.push({
+      date: d,
+      bookingCount: bookingsByDay.get(d) || 0,
+      canteenRevenue: revenueByDay.get(d) || 0,
+      utilizedPercentage: utilization.utilizedPercentage,
+    })
+  }
+
+  return { dateRange: range.label, days }
 }
 
 export { ANALYTICS_RANGES }
