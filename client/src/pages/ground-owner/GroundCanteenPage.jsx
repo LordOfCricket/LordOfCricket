@@ -94,10 +94,14 @@ export default function GroundCanteenPage() {
           <h1 className="text-3xl font-bold mb-2">Canteen Management</h1>
           <p className="text-slate-400 mb-6">Manage your cricket ground's food & refreshments</p>
 
+          <div className="lg:flex lg:items-start lg:gap-6">
           <GroundNavTabs />
 
+          <div className="min-w-0 flex-1">
           <div className="mt-6 p-6 bg-amber-900/30 border border-amber-500/50 rounded text-amber-200">
             No canteen found for this ground. Please contact support.
+          </div>
+          </div>
           </div>
         </div>
       </div>
@@ -110,7 +114,10 @@ export default function GroundCanteenPage() {
         <h1 className="text-3xl font-bold mb-2">Canteen Management</h1>
         <p className="text-slate-400 mb-6">Manage your cricket ground's food & refreshments</p>
 
+        <div className="lg:flex lg:items-start lg:gap-6">
         <GroundNavTabs />
+
+        <div className="min-w-0 flex-1">
 
         {error && (
           <div className="mt-6 p-4 bg-red-900/30 border border-red-500/50 rounded text-red-200">
@@ -203,6 +210,8 @@ export default function GroundCanteenPage() {
               <p>✓ Manage order status from Pending to Completed</p>
             </div>
           </div>
+        </div>
+        </div>
         </div>
       </div>
     </div>

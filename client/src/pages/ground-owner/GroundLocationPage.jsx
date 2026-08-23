@@ -146,7 +146,10 @@ export default function GroundLocationPage() {
         <h1 className="text-3xl font-bold mb-2">Ground Location & Address</h1>
         <p className="text-slate-400 mb-6">Manage your cricket ground's location information</p>
 
+        <div className="lg:flex lg:items-start lg:gap-6">
         <GroundNavTabs />
+
+        <div className="min-w-0 flex-1">
 
         {error && (
           <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded text-red-200">
@@ -292,6 +295,8 @@ export default function GroundLocationPage() {
           >
             {saving ? 'Saving...' : 'Save Location'}
           </button>
+        </div>
+        </div>
         </div>
       </div>
     </div>

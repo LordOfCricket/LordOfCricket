@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { updateGroundProfile, fetchMyGrounds } from '../../services/groundOwnerApi.js'
@@ -343,9 +342,10 @@ export default function GroundProfilePage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton fallback="/ground-owner/dashboard" className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-white">Ground Profile</h1>
         <p className="mt-2 text-slate-400">Manage the information displayed on your public ground page.</p>
@@ -377,6 +377,8 @@ export default function GroundProfilePage() {
           error={saveError}
         />
       )}
+        </div>
+      </div>
     </GroundOwnerLayout>
   )
 }

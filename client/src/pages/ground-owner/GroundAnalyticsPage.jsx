@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Download } from 'lucide-react'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { StatsErrorState, StatsLoadingGrid } from '../../components/stats/StatsStates.jsx'
@@ -77,9 +76,10 @@ export default function GroundAnalyticsPage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton fallback="/ground-owner/dashboard" className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-white">Analytics</h1>
         <p className="mt-2 text-slate-400">Booking trends, utilization, and canteen revenue for this ground.</p>
@@ -194,6 +194,8 @@ export default function GroundAnalyticsPage() {
           </section>
         </div>
       )}
+        </div>
+      </div>
     </GroundOwnerLayout>
   )
 }

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import {
@@ -332,9 +331,10 @@ export default function GroundMediaPage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton fallback="/ground-owner/dashboard" className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-white">Photos & Gallery</h1>
         <p className="mt-2 text-slate-400">Manage your ground's photo gallery, set a featured image, and reorder photos.</p>
@@ -361,6 +361,8 @@ export default function GroundMediaPage() {
           loading={loading}
           deleteInProgress={deleteInProgress}
         />
+      </div>
+        </div>
       </div>
     </GroundOwnerLayout>
   )

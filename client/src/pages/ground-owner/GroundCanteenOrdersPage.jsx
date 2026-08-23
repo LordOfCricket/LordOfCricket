@@ -107,7 +107,10 @@ export default function GroundCanteenOrdersPage() {
         <h1 className="text-3xl font-bold mb-2">Order Management</h1>
         <p className="text-slate-400 mb-6">Track and manage customer orders</p>
 
+        <div className="lg:flex lg:items-start lg:gap-6">
         <GroundNavTabs />
+
+        <div className="min-w-0 flex-1">
 
         {error && (
           <div className="mt-6 p-4 bg-red-900/30 border border-red-500/50 rounded text-red-200">
@@ -238,6 +241,8 @@ export default function GroundCanteenOrdersPage() {
               ))}
             </div>
           )}
+        </div>
+        </div>
         </div>
       </div>
     </div>

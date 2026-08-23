@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import AmenityPicker from '../../components/ground-registration/AmenityPicker.jsx'
@@ -86,9 +85,10 @@ export default function GroundAmenitiesPage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton fallback="/ground-owner/dashboard" className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-white">Amenities</h1>
         <p className="mt-2 text-slate-400">Manage the amenities displayed on your public ground page.</p>
@@ -184,6 +184,8 @@ export default function GroundAmenitiesPage() {
           )}
         </div>
       )}
+        </div>
+      </div>
     </GroundOwnerLayout>
   )
 }

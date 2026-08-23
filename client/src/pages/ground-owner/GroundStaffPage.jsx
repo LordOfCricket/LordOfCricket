@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { UserPlus, UserX } from 'lucide-react'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -163,9 +162,10 @@ export default function GroundStaffPage() {
 
   return (
     <GroundOwnerLayout title="Staff" subtitle="Add Ground Admins and Canteen Staff, and control what each of them can do.">
-      <BackButton fallback={`/ground-owner/grounds/${publicGroundId}`} className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs backLabel="Back" backFallback={`/ground-owner/grounds/${publicGroundId}`} />
 
+        <div className="min-w-0 flex-1">
       <div className="flex flex-col gap-6">
         <CreateStaffForm onCreate={create} creating={creating} createError={createError} />
 
@@ -190,6 +190,8 @@ export default function GroundStaffPage() {
       </div>
 
       <StepUpModal pending={stepUpModal} onSubmit={submitStepUp} onCancel={cancelStepUp} />
+        </div>
+      </div>
     </GroundOwnerLayout>
   )
 }

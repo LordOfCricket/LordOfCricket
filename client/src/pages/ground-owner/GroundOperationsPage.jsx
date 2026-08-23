@@ -1,6 +1,5 @@
 import { useParams } from 'react-router-dom'
 import { CalendarClock, Ban, Trophy, PackageX } from 'lucide-react'
-import BackButton from '../../components/common/BackButton.jsx'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 import { StatsErrorState, StatsLoadingGrid } from '../../components/stats/StatsStates.jsx'
@@ -198,9 +197,10 @@ export default function GroundOperationsPage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton fallback="/ground-owner/dashboard" className="mb-4" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-white">Operations</h1>
@@ -242,6 +242,8 @@ export default function GroundOperationsPage() {
           <StaffSection staff={dashboard.staff} />
         </div>
       )}
+        </div>
+      </div>
     </GroundOwnerLayout>
   )
 }

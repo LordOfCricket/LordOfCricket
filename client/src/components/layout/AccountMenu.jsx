@@ -3,17 +3,27 @@ import { Link } from 'react-router-dom'
 import { ChevronDown, LandPlot, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
-import { getAccountLinks, getUmpireAccountLinks, isUmpireMode } from '../../models/navLinks.model.js'
+import { getAccountLinks, getUmpireAccountLinks, getGroundOwnerAccountLinks, isUmpireMode, isStaffMode } from '../../models/navLinks.model.js'
 import { useIsGroundOwner } from '../../hooks/useIsGroundOwner.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
   const umpireMode = isUmpireMode(user)
-  const MENU_LINKS = umpireMode ? getUmpireAccountLinks() : getAccountLinks(user)
   // Not part of getAccountLinks (that function is synchronous — user.role/
   // player_type only; ground ownership has no such signal on the user
   // object) — U5's own self-check, same "fetch quietly in the navbar"
   // posture NotificationBell already has.
   const isGroundOwner = useIsGroundOwner(Boolean(user))
+  // Ground Owner Menu Cleanup — a plain ground owner (not also staff or an
+  // approved umpire) gets the dedicated, cut-down menu instead of the full
+  // player menu. Staff/umpire accounts that also own a ground keep their
+  // existing role menu unchanged, with Ground Owner Dashboard still added
+  // on below (see the block after MENU_LINKS).
+  const groundOwnerMode = isGroundOwner && !umpireMode && !isStaffMode(user)
+  const MENU_LINKS = groundOwnerMode
+    ? getGroundOwnerAccountLinks()
+    : umpireMode
+      ? getUmpireAccountLinks()
+      : getAccountLinks(user)
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -84,7 +94,7 @@ export default function AccountMenu({ user, player, onLogout }) {
             })}
           </div>
 
-          {isGroundOwner && (
+          {isGroundOwner && !groundOwnerMode && (
             <div className="border-t border-white/10 py-2">
               <Link
                 to="/ground-owner/dashboard"

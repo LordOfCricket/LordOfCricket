@@ -73,7 +73,10 @@ export default function GroundBookingPage() {
         <h1 className="text-3xl font-bold mb-2">Booking Management</h1>
         <p className="text-slate-400 mb-6">Manage your ground's bookings and availability</p>
 
+        <div className="lg:flex lg:items-start lg:gap-6">
         <GroundNavTabs />
+
+        <div className="min-w-0 flex-1">
 
         {error && (
           <div className="mt-6 p-4 bg-red-900/30 border border-red-500/50 rounded text-red-200">
@@ -132,6 +135,8 @@ export default function GroundBookingPage() {
               <p>✓ Track booking history and status</p>
             </div>
           </div>
+        </div>
+        </div>
         </div>
       </div>
     </div>

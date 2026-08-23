@@ -15,6 +15,7 @@ import {
   MapPinned,
   Wallet,
   Gift,
+  LandPlot,
 } from 'lucide-react'
 
 // Dedicated Umpire Workspace — the login mode ("Player Login" vs "Umpire
@@ -26,6 +27,13 @@ import {
 // branch can never drift from what the backend would actually authorize.
 export function isUmpireMode(user) {
   return user?.role === 'player' && user?.player_type === 'umpire'
+}
+
+// Mirrors the isStaff check in getAccountLinks below — exported so
+// AccountMenu.jsx can decide the ground-owner-vs-staff menu branch without
+// duplicating the literal role check.
+export function isStaffMode(user) {
+  return user?.role === 'staff'
 }
 
 // The primary Navbar's own nav-links row (Grounds/Matches/Players/Teams/
@@ -62,6 +70,17 @@ export function getUmpireAccountLinks() {
     // assignment until accepted).
     { label: 'Proposals', to: '/umpire/proposals', icon: Gift },
   ]
+}
+
+// Ground Owner Menu Cleanup — a ground owner's account menu was previously
+// the full player menu (My Teams/My Matches/My Statistics/Players/
+// Leaderboards/My Bookings/Settings) with "Ground Owner Dashboard" bolted on
+// at the end. All ground management (grounds, staff, bookings, canteen,
+// analytics) lives inside the dashboard itself (see AppRoutes.jsx
+// /ground-owner/*), so the profile menu only needs to get them there —
+// Logout is rendered separately in AccountMenu.jsx for every mode.
+export function getGroundOwnerAccountLinks() {
+  return [{ label: 'Ground Owner Dashboard', to: '/ground-owner/dashboard', icon: LandPlot }]
 }
 
 // The account nav was previously one static list for every

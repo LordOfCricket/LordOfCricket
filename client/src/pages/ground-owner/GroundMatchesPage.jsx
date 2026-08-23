@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { CalendarDays, ChevronDown, ChevronUp, Trophy, MessageCircle } from 'lucide-react'
-import BackButton from '../../components/common/BackButton.jsx'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import { useGroundMatches } from '../../hooks/useGroundMatches.js'
 import { useMatchUmpireSlots } from '../../hooks/useMatchUmpireSlots.js'
@@ -508,9 +507,10 @@ export default function GroundMatchesPage() {
 
   return (
     <GroundOwnerLayout>
-      <BackButton label="Back to Dashboard" fallback="/ground-owner/dashboard" />
-      <GroundNavTabs />
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <GroundNavTabs />
 
+        <div className="min-w-0 flex-1">
       <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">{groundsLoading ? 'Loading…' : ground?.name || 'Ground'}</h1>
 
       <UmpireOperationsSummaryPanel publicGroundId={publicGroundId} />
@@ -558,6 +558,8 @@ export default function GroundMatchesPage() {
             ))}
           </div>
         )}
+      </div>
+        </div>
       </div>
     </GroundOwnerLayout>
   )
