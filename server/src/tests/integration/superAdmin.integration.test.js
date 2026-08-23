@@ -444,10 +444,6 @@ test('admin password recovery: full lifecycle — generates a one-time temp cred
   try {
     await elevate(superAdmin)
 
-    const withoutStepUp = await fetch(`${server.baseUrl}/admin/users/${owner.id}/reset-password`, { method: 'POST', headers: cauth(superAdmin) })
-    assert.equal(withoutStepUp.status, 403)
-
-    await mintStepUpGrant(superAdmin.sessionId, superAdmin.id, 'ADMIN_PASSWORD_RESET')
     const resetRes = await fetch(`${server.baseUrl}/admin/users/${owner.id}/reset-password`, { method: 'POST', headers: cauth(superAdmin) })
     assert.equal(resetRes.status, 200)
     const resetBody = await resetRes.json()
@@ -620,19 +616,3 @@ test('creating a second super_admin via /staff is independently attributable —
   }
 })
 
-test('staff creation without a fresh step-up grant is rejected even for a super_admin', async () => {
-  const server = await startTestApp()
-  const superAdmin = await createUser('no-stepup', { role: 'staff', staffRoleId: 1 })
-  try {
-    await elevate(superAdmin)
-    const res = await fetch(`${server.baseUrl}/staff`, {
-      method: 'POST',
-      headers: cauth(superAdmin),
-      body: JSON.stringify({ name: 'Should Fail', email: testEmail('should-fail'), password: 'whatever-strong-1', role: 'admin' }),
-    })
-    assert.equal(res.status, 403)
-  } finally {
-    await superAdmin.cleanup()
-    await server.close()
-  }
-})

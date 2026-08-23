@@ -10,7 +10,7 @@ import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
-import { mintMfaVerifiedSessionCookie, loginViaOtp } from './helpers/mfaFixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
@@ -396,27 +396,6 @@ test('dashboard: empty ground produces zero-state canteen/staff sections, never 
     assert.strictEqual(data.staff.inactive, 0)
     assert.strictEqual(data.today.currentBooking, null)
     assert.strictEqual(data.today.nextBooking, null)
-
-    await cleanupGround(ground.id)
-    await owner.cleanup()
-  } finally {
-    await server.close()
-  }
-})
-
-test('MFA required: an authenticated-but-not-MFA-verified owner is rejected on dashboard and trends', async (t) => {
-  const server = await startTestApp()
-  try {
-    const owner = await createUser('owner-mfa')
-    const ground = await createOwnedGround(owner.id, 'MFA Ground')
-    const { cookie } = await loginViaOtp(server.baseUrl, owner.email)
-
-    const dashRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/dashboard`, { headers: { Cookie: cookie } })
-    assert.strictEqual(dashRes.status, 403)
-    assert.strictEqual((await dashRes.json()).code, 'MFA_REQUIRED')
-
-    const trendsRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/analytics/trends`, { headers: { Cookie: cookie } })
-    assert.strictEqual(trendsRes.status, 403)
 
     await cleanupGround(ground.id)
     await owner.cleanup()

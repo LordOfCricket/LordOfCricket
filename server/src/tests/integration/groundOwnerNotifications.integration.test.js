@@ -12,7 +12,7 @@ import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
-import { mintMfaVerifiedSessionCookie, loginViaOtp, mintStepUpGrant } from './helpers/mfaFixtures.js'
+import { mintMfaVerifiedSessionCookie, mintStepUpGrant } from './helpers/mfaFixtures.js'
 
 function stubIo() {
   const emitted = []
@@ -437,7 +437,7 @@ test('9 — unauthenticated request rejected on all three notification endpoints
   }
 })
 
-test('10 — non-owner and MFA-unverified owner rejected', async (t) => {
+test('10 — non-owner rejected', async (t) => {
   const server = await startTestApp()
   try {
     const owner = await createUser('owner10')
@@ -449,17 +449,9 @@ test('10 — non-owner and MFA-unverified owner rejected', async (t) => {
     const strangerRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/notifications`, { headers: cauth(stranger) })
     assert.strictEqual(strangerRes.status, 403)
 
-    const unverified = await createUser('unverified10')
-    const { cookie } = await loginViaOtp(server.baseUrl, unverified.email)
-    await pool.query(`INSERT INTO ground_users (user_id, ground_id, role, is_active) VALUES ($1,$2,'GROUND_OWNER',true)`, [unverified.id, ground.id])
-    const mfaRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/notifications`, { headers: { Cookie: cookie } })
-    assert.strictEqual(mfaRes.status, 403)
-    assert.strictEqual((await mfaRes.json()).code, 'MFA_REQUIRED')
-
     await cleanupGround(ground.id)
     await owner.cleanup()
     await stranger.cleanup()
-    await unverified.cleanup()
   } finally {
     await server.close()
   }

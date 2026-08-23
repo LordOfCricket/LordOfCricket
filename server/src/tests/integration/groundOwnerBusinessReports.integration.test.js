@@ -10,7 +10,7 @@ import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
-import { mintMfaVerifiedSessionCookie, loginViaOtp } from './helpers/mfaFixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
@@ -454,26 +454,6 @@ test('malformed range falls back safely to TODAY, never a 500', async (t) => {
   }
 })
 
-test('MFA required: an authenticated-but-not-MFA-verified owner is rejected on both analytics and export', async (t) => {
-  const server = await startTestApp()
-  try {
-    const owner = await createUser('owner-mfa')
-    const ground = await createOwnedGround(owner.id, 'MFA Ground')
-    const { cookie } = await loginViaOtp(server.baseUrl, owner.email)
-
-    const res1 = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/analytics`, { headers: { Cookie: cookie } })
-    assert.strictEqual(res1.status, 403)
-    assert.strictEqual((await res1.json()).code, 'MFA_REQUIRED')
-
-    const res2 = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/analytics/export`, { headers: { Cookie: cookie } })
-    assert.strictEqual(res2.status, 403)
-
-    await cleanupGround(ground.id)
-    await owner.cleanup()
-  } finally {
-    await server.close()
-  }
-})
 
 test('privilege escalation: a fully-permissioned GROUND_ADMIN staff member still cannot read revenue/utilization or export', async (t) => {
   const server = await startTestApp()

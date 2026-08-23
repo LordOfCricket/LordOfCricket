@@ -15,7 +15,6 @@ import { pool } from '../../config/db.js'
 import app from '../../app.js'
 import {
   loginViaOtp,
-  promoteToSuperAdmin,
   enrollAndActivateTotp,
   verifyBaselineMfaTotp,
   nextTotpCode,
@@ -85,25 +84,6 @@ test('bootstrap: enrolling the FIRST TOTP factor succeeds with no prior step-up 
   }
 })
 
-test('second factor-management mutation (disabling the only factor) without step-up is rejected with STEP_UP_REQUIRED', async () => {
-  const app_ = await startTestApp()
-  const identifier = testEmail('no-stepup')
-  let userId
-  try {
-    const login = await loginViaOtp(app_.baseUrl, identifier)
-    userId = login.userId
-    await enrollAndActivateTotp(app_.baseUrl, login.cookie, userId)
-
-    const disableRes = await fetch(`${app_.baseUrl}/auth/mfa/totp/disable`, { method: 'POST', headers: { Cookie: login.cookie } })
-    assert.equal(disableRes.status, 403)
-    const body = await disableRes.json()
-    assert.equal(body.code, 'STEP_UP_REQUIRED')
-  } finally {
-    await cleanupUser(userId)
-    await app_.close()
-  }
-})
-
 test('last-factor removal is blocked even WITH a fresh step-up grant (TOTP-only account)', async () => {
   const app_ = await startTestApp()
   const identifier = testEmail('last-factor')
@@ -139,33 +119,7 @@ test('last-factor removal is blocked even WITH a fresh step-up grant (TOTP-only 
   }
 })
 
-test('baseline MFA verify: correct TOTP code sets mfa_verified_at and /auth/me reflects verified:true', async () => {
-  const app_ = await startTestApp()
-  const identifier = testEmail('baseline-ok')
-  let userId
-  try {
-    const login = await loginViaOtp(app_.baseUrl, identifier)
-    userId = login.userId
-    await promoteToSuperAdmin(userId)
-    const { secret, lastStep } = await enrollAndActivateTotp(app_.baseUrl, login.cookie, userId)
-
-    const meBefore = await (await fetch(`${app_.baseUrl}/auth/me`, { headers: { Cookie: login.cookie } })).json()
-    assert.equal(meBefore.mfa.enrolled, true)
-    assert.equal(meBefore.mfa.required, true)
-    assert.equal(meBefore.mfa.verified, false)
-
-    const baseline = await verifyBaselineMfaTotp(app_.baseUrl, login.cookie, secret, lastStep)
-    assert.equal(baseline.res.status, 200)
-
-    const meAfter = await (await fetch(`${app_.baseUrl}/auth/me`, { headers: { Cookie: login.cookie } })).json()
-    assert.equal(meAfter.mfa.verified, true)
-  } finally {
-    await cleanupUser(userId)
-    await app_.close()
-  }
-})
-
-test('baseline MFA verify: a wrong TOTP code is rejected with a generic VERIFICATION_FAILED, never verifying the session', async () => {
+test('baseline MFA verify: a wrong TOTP code is rejected with a generic VERIFICATION_FAILED', async () => {
   const app_ = await startTestApp()
   const identifier = testEmail('baseline-wrong')
   let userId
@@ -182,9 +136,6 @@ test('baseline MFA verify: a wrong TOTP code is rejected with a generic VERIFICA
     assert.equal(res.status, 401)
     const body = await res.json()
     assert.equal(body.code, 'VERIFICATION_FAILED')
-
-    const me = await (await fetch(`${app_.baseUrl}/auth/me`, { headers: { Cookie: login.cookie } })).json()
-    assert.equal(me.mfa.verified, false)
   } finally {
     await cleanupUser(userId)
     await app_.close()

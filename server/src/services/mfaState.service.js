@@ -1,7 +1,6 @@
 import { countActiveCredentialsForUser } from '../models/webauthnCredential.model.js'
 import { findActiveByUserId as findActiveTotp } from '../models/totpCredential.model.js'
 import { markMfaVerified } from '../repositories/prisma/session.prisma-repository.js'
-import { isMfaVerificationFresh } from '../domain/mfa/verificationFreshness.js'
 
 const DEFAULT_MFA_VERIFIED_TTL_MINUTES = 15
 
@@ -23,12 +22,14 @@ export async function hasAnyActiveFactor(userId) {
   return webauthnCount > 0 || Boolean(totp)
 }
 
-// The TTL check applied to a session's mfa_verified_at on every request —
-// factored out so requireAuth (which sets req.mfaVerified once per request)
-// and any future call site never reimplement the Date.now() arithmetic
-// differently.
-export function computeMfaVerified(session) {
-  return isMfaVerificationFresh(session?.mfa_verified_at, getMfaVerifiedTtlMs())
+// MFA enforcement removed at the request of the project owner — this is now
+// the single point that makes every gate in groundAccess.js/auth.js that
+// checks req.mfaVerified permanently pass. isMfaVerificationFresh/
+// getMfaVerifiedTtlMs are kept (still exported, still used by
+// markSessionMfaVerified's callers and /auth/me's status display) — only
+// the enforcement decision itself was removed.
+export function computeMfaVerified() {
+  return true
 }
 
 export async function markSessionMfaVerified(sessionId) {

@@ -1,5 +1,15 @@
 # Privileged Account MFA & Step-Up Security (Phase 6)
 
+> **STATUS (2026-08-24): Enforcement disabled at the project owner's explicit request.**
+> `mfaState.service.js#computeMfaVerified` now unconditionally returns `true`, and
+> `stepUp.service.js#consumeStepUpGrant` now unconditionally returns a truthy grant — every
+> `403 MFA_REQUIRED`/`403 STEP_UP_REQUIRED` gate described below is currently a no-op, in
+> production as well as locally. The enrollment/verification UI, TOTP/WebAuthn services, and
+> schema below are all still intact and functionally correct — only the two enforcement decision
+> points were changed, so re-enabling is a two-line revert of those two functions if this is ever
+> reversed. Everything else in this document describes the *designed* behavior, not the current
+> runtime behavior.
+
 ## Overview
 
 Phase 3 (`docs/AUTH.md`) gave every role the same single-factor OTP login. Phase 5 (`docs/AUTHORIZATION.md`)

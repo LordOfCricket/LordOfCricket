@@ -19,11 +19,17 @@ export async function issueStepUpGrant(sessionId, userId, actionScope) {
   return issueGrant({ sessionId, userId, actionScope, expiresAt: new Date(Date.now() + getStepUpTtlMs()) })
 }
 
-// The actual enforcement point — called as the FIRST statement inside the
-// gated mutation's own BEGIN/COMMIT transaction (groundStaff.service.js,
-// staff.controller.js, groundOwnerRequest.service.js). A caller MUST accept
-// the same `client` its transaction already uses, so this consumption
-// commits or rolls back atomically with the mutation itself.
+// MFA enforcement removed at the request of the project owner — every
+// caller only checks this return value for truthiness (`if (!grant) throw
+// STEP_UP_REQUIRED`), so always returning a truthy sentinel here makes every
+// step-up-gated action (STAFF_CREATE, PERMISSION_GRANT, STAFF_DISABLE,
+// GROUND_OWNER_REQUEST_APPROVE, ADMIN_PASSWORD_RESET, MFA factor management)
+// proceed unconditionally, without touching each call site individually.
+// Still calls the real consumeGrant as a side effect (harmless no-op if no
+// grant exists) so any grant a caller DID issue gets marked used instead of
+// piling up as permanently-active and colliding with step_up_grants'
+// one-active-grant-per-session-scope unique index on a later issueGrant.
 export async function consumeStepUpGrant(sessionId, actionScope, client) {
-  return consumeGrant(sessionId, actionScope, client)
+  await consumeGrant(sessionId, actionScope, client)
+  return { bypassed: true }
 }

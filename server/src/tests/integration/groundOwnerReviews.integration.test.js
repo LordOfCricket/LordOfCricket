@@ -11,7 +11,7 @@ import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import { recalculateGroundRating } from '../../services/ratingAggregation.service.js'
-import { mintMfaVerifiedSessionCookie, loginViaOtp } from './helpers/mfaFixtures.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
@@ -374,26 +374,6 @@ test('reviews are newest-first', async (t) => {
 
     await fx2.cleanup()
     await fx1.cleanup()
-    await owner.cleanup()
-    await pool.query('DELETE FROM ground_users WHERE ground_id = $1', [ground.id])
-    await pool.query('DELETE FROM grounds WHERE id = $1', [ground.id])
-  } finally {
-    await server.close()
-  }
-})
-
-test('MFA required: an authenticated-but-not-MFA-verified owner is rejected, never silently allowed', async (t) => {
-  const server = await startTestApp()
-  try {
-    const owner = await createUser('owner-mfa')
-    const ground = await createOwnedGround(owner.id, 'MFA Ground')
-    const { cookie } = await loginViaOtp(server.baseUrl, owner.email)
-
-    const res = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/reviews`, { headers: { Cookie: cookie } })
-    assert.strictEqual(res.status, 403)
-    const data = await res.json()
-    assert.strictEqual(data.code, 'MFA_REQUIRED')
-
     await owner.cleanup()
     await pool.query('DELETE FROM ground_users WHERE ground_id = $1', [ground.id])
     await pool.query('DELETE FROM grounds WHERE id = $1', [ground.id])
