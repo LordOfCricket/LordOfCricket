@@ -41,6 +41,7 @@ import tournamentRoutes from './tournament.routes.js'
 import { matchAIInsightRoutes, playerAIInsightRoutes, teamAIInsightRoutes } from './aiInsight.routes.js'
 import { playerAnalyticsRoutes, teamAnalyticsRoutes, matchAnalyticsRoutes, tournamentAnalyticsRoutes } from './analytics.routes.js'
 import adminRoutes from './admin.routes.js'
+import adminAmenityCatalogRoutes from './adminAmenityCatalog.routes.js'
 
 const router = Router()
 
@@ -129,6 +130,10 @@ router.use('/me', meRoutes)
 // Center's own API surface (dashboard stats, all grounds, ground owners,
 // players, umpires, admin-initiated password recovery, audit log).
 router.use('/admin', adminRoutes)
+// Amenities Master — Super Admin CRUD for the shared amenity_catalog table
+// (previously seed-data-only; Ground Owner's own read-only access to this
+// same table, GET /ground-owner-requests/amenity-catalog, is untouched).
+router.use('/admin/amenity-catalog', adminAmenityCatalogRoutes)
 
 // Canteen (merged into the main LOC API, namespaced under /canteen)
 // TRANSITIONAL — Phase 10/11: single-canteen-resolving, kept for the

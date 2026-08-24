@@ -43,9 +43,10 @@ export async function fetchAdminUmpires() {
   return data.umpires
 }
 
-// Admin-initiated password recovery (§13) — returns a one-time plaintext
-// temporary credential the caller must relay out-of-band; never persisted
-// client-side beyond the confirmation UI's own local state.
+// Admin-initiated password recovery / "Send Temporary Password" (§13) — the
+// server generates, hashes, and emails the temporary credential directly to
+// the target account's registered address; the plaintext never leaves the
+// server. This just returns { success, emailSent, expiresAt, targetUser, message }.
 export async function resetUserPassword(userId) {
   const { data } = await api.post(`/admin/users/${userId}/reset-password`)
   return data

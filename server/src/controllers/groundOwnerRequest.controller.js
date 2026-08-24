@@ -274,7 +274,7 @@ export async function getDetail(req, res, next) {
 
 export async function approve(req, res, next) {
   try {
-    const { request, ground } = await groundOwnerRequestService.approveRequest(req.params.publicRequestId, req.user.id, req.session?.id)
+    const { request, ground } = await groundOwnerRequestService.approveRequest(req.params.publicRequestId, req.user.id)
     res.json({ request: serializeRequestAdmin(request), ground: { publicGroundId: ground.public_ground_id, slug: ground.slug, name: ground.name, status: ground.status } })
   } catch (err) {
     next(err)

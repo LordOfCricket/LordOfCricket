@@ -55,7 +55,8 @@ export function useAdminGroundOwners() {
   }
 
   const triggerPasswordRecovery = async (owner) => {
-    if (!window.confirm(`Generate a one-time temporary password for ${owner.name}? Their current password will stop working immediately.`)) return
+    if (!window.confirm(`A new temporary password will be generated for ${owner.name} and sent to their registered email address. Their current password will be invalidated immediately. Continue?`))
+      return
     setActionError('')
     setResetting(owner.userId)
     try {

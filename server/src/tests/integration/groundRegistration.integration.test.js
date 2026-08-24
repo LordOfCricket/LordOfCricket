@@ -352,6 +352,66 @@ test('GET /ground-owner-requests: rejects a non-super_admin staff member', async
   }
 })
 
+// Ground Approval MFA removal (2026-08-24) — authorization for approve must
+// stay fully enforced even though step-up was intentionally removed from
+// this action. These three tests are the direct regression coverage for
+// that: role authorization is untouched (unauthenticated / non-super-admin
+// still rejected), and a super_admin can approve with NO step-up grant
+// minted at all (distinct from the full-flow test above, which happens to
+// mint one for other historical reasons and so wouldn't catch a silent
+// re-introduction of the requirement).
+test('POST /ground-owner-requests/:id/approve: rejects an unauthenticated request', async () => {
+  const server = await startTestApp()
+  const owner = await createUser('approve-auth-owner')
+  let publicRequestId
+  try {
+    publicRequestId = await createPendingRequest(owner, 'approve-auth')
+    const res = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST' })
+    assert.equal(res.status, 401)
+  } finally {
+    await cleanupRequestByPublicId(publicRequestId)
+    await owner.cleanup()
+    await server.close()
+  }
+})
+
+test('POST /ground-owner-requests/:id/approve: rejects a non-super_admin staff member', async () => {
+  const server = await startTestApp()
+  const owner = await createUser('approve-nonadmin-owner')
+  const admin = await createUser('approve-nonadmin-admin', { role: 'staff', staffRoleId: 2 }) // 2 = 'admin', not 'super_admin'
+  let publicRequestId
+  try {
+    publicRequestId = await createPendingRequest(owner, 'approve-nonadmin')
+    const res = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST', headers: authHeader(admin.token) })
+    assert.equal(res.status, 403)
+  } finally {
+    await cleanupRequestByPublicId(publicRequestId)
+    await admin.cleanup()
+    await owner.cleanup()
+    await server.close()
+  }
+})
+
+test('POST /ground-owner-requests/:id/approve: a super_admin can approve with NO step-up grant at all', async () => {
+  const server = await startTestApp()
+  const owner = await createUser('approve-no-stepup-owner')
+  const superAdmin = await createUser('approve-no-stepup-admin', { role: 'staff', staffRoleId: 1 })
+  const { cookie: superAdminCookie } = await mintMfaVerifiedSessionCookie(superAdmin.id)
+  let publicRequestId
+  try {
+    publicRequestId = await createPendingRequest(owner, 'approve-no-stepup')
+    const res = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST', headers: cookieHeader(superAdminCookie) })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.request.status, 'APPROVED')
+  } finally {
+    await cleanupRequestByPublicId(publicRequestId)
+    await superAdmin.cleanup()
+    await owner.cleanup()
+    await server.close()
+  }
+})
+
 test('GET /ground-owner-requests/status/:publicRequestId: unknown reference id 404s, never enumerable', async () => {
   const server = await startTestApp()
   try {
@@ -589,11 +649,12 @@ test('ground-owner-requests: deciding an already-decided request is rejected (no
     const firstDecision = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST', headers: cookieHeader(superAdminCookie) })
     assert.equal(firstDecision.status, 200)
 
-    // A fresh grant is minted again so the second decision fails on
-    // "already decided" (409 REQUEST_NOT_ELIGIBLE) specifically, not on a
-    // missing step-up grant (403) — step-up single-use enforcement itself
-    // is covered separately in stepUp.integration.test.js.
-    await mintStepUpGrant(superAdminSessionId, superAdmin.id, 'GROUND_OWNER_REQUEST_APPROVE')
+    // Ground Approval MFA removal (2026-08-24) — approve no longer consumes
+    // a step-up grant at all, so minting a second one here would just
+    // collide with the still-active first grant on idx_step_up_grants_active
+    // (session_id, action_scope) unique-while-unused index. The second
+    // decision fails on "already decided" (409 REQUEST_NOT_ELIGIBLE) purely
+    // from the request's own status, independent of step-up.
     const secondDecision = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST', headers: cookieHeader(superAdminCookie) })
     assert.equal(secondDecision.status, 409, 'a request that is no longer PENDING/UNDER_REVIEW cannot be approved again')
 

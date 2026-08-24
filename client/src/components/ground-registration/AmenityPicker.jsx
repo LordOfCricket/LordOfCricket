@@ -1,16 +1,5 @@
-import * as icons from 'lucide-react'
 import { Plus, X } from 'lucide-react'
-
-// Renders a catalog entry's `icon` string (e.g. "Wifi") as the real
-// lucide-react component — resolved dynamically since the catalog is data,
-// not a hardcoded per-amenity component list. Falls back to a generic dot
-// if an icon name in the DB doesn't match a real export (defensive, should
-// never actually happen since amenity_catalog is LOC-seeded, not user data).
-function AmenityIcon({ name, className }) {
-  const Icon = icons[name]
-  if (!Icon) return <span className={className} />
-  return <Icon className={className} aria-hidden="true" />
-}
+import AmenityIcon from '../common/AmenityIcon.jsx'
 
 // Catalog-driven multi-select (§7/§8/§33) — the Ground Owner picks from
 // LOC's predefined list, never uploads/names their own amenity. `catalog`

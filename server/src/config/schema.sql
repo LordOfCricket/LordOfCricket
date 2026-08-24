@@ -1431,26 +1431,13 @@ ALTER TABLE grounds ADD COLUMN IF NOT EXISTS rating_count INTEGER NOT NULL DEFAU
 -- type CHECK is widened the same idempotent drop-then-add way the
 -- ground_audit_log FK was fixed earlier in this file.
 ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_match_id INTEGER REFERENCES matches(id) ON DELETE CASCADE;
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
--- Phase 15 fix — 'PROPOSAL_ACCEPTED' (added by a LATER widening below,
--- Phase 25) is included in every intermediate widening from here on, not
--- just the final one. Pre-existing bug found while adding Phase 15's own
--- widening: migrate.js replays this file's full historical sequence of
--- DROP+ADD CONSTRAINT on every run (not just once on a fresh DB), so any
--- widening narrower than a value already live in the database breaks
--- re-running migrate.js against a populated database — every earlier block
--- below carries the same one-line fix, nothing else about them changed.
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'PROPOSAL_ACCEPTED'));
+-- ground_notifications_type_check: this phase's widening (previously its
+-- own DROP+ADD block here) is now part of ONE consolidated block near the
+-- end of this file — search "Consolidated ground_notifications_type_check".
+-- Keeping N separate historical DROP+ADD blocks broke `db:migrate` on any
+-- re-run against a populated DB: migrate.js replays the WHOLE file every
+-- time (not just once on a fresh DB), so an earlier, narrower block would
+-- fail the moment the live data contained a type only a LATER block allowed.
 
 -- ============================================================================
 -- PHASE 22 (U6) — Feedback & Rating System
@@ -1531,20 +1518,8 @@ CREATE INDEX IF NOT EXISTS idx_match_feedback_umpire_ratings_umpire ON match_fee
 -- fully-staffed, not on every assignment), MATCH_STARTING and
 -- MATCH_COMPLETED (a Ground-Owner-controlled lifecycle action notifying the
 -- assigned umpire — no existing type covers either).
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
--- Phase 15 fix — see the identical note above block #1.
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
-                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED', 'PROPOSAL_ACCEPTED'));
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
 
 -- ============================================================================
 -- PHASE 23 — Umpire Operations 2.0 (availability, assignment history,
@@ -1644,23 +1619,8 @@ ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS check_in_longitude NUMER
 -- BOOKING_REMINDER (existing, still unused) is a ground-booking-domain type
 -- and is deliberately not repurposed for umpire assignment reminders — a
 -- different domain sharing one string would make dedup/filtering ambiguous.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
--- Phase 15 fix — see the identical note above block #1.
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
-                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
-                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
-                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
-                   'MATCH_INCIDENT_REPORTED', 'PROPOSAL_ACCEPTED'));
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
 
 -- Dedup backstop for the reminder poller (server/src/services/
 -- reminderScheduler.service.js): a partial unique index, not just a
@@ -1707,23 +1667,8 @@ CREATE INDEX IF NOT EXISTS idx_match_messages_match ON match_messages(match_id, 
 
 -- One new notification type for match messages — same idempotent
 -- drop-then-add widening used 3 times already above.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
--- Phase 15 fix — see the identical note above block #1.
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
-                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
-                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
-                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
-                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE', 'PROPOSAL_ACCEPTED'));
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
 
 -- Umpire fee — per-umpire (confirmed with the product owner; no existing
 -- precedent anywhere in LOC to infer this from). Nullable: no fee set yet
@@ -1830,25 +1775,8 @@ CREATE INDEX IF NOT EXISTS idx_umpire_proposals_slot ON umpire_proposals(match_u
 
 -- 5 new notification types — same idempotent drop-then-add widening used
 -- repeatedly above.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
--- Phase 15 fix — see the identical note above block #1.
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN ('BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-                   'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED',
-                   'UMPIRE_SLOTS_FULLY_STAFFED', 'MATCH_STARTING', 'MATCH_COMPLETED',
-                   'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
-                   'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M',
-                   'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
-                   'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED',
-                   'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED', 'PROPOSAL_ACCEPTED'));
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
 
 -- ============================================================================
 -- PHASE 3 — Unified OTP authentication (email OR phone, no password required)
@@ -2634,28 +2562,10 @@ ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
   ));
 
 -- --- ground_notifications: widen for the booking-engine's new lifecycle ----
--- events. Must restate every value already live in this database (the
--- Umpire Operations phases widened this CHECK long after schema.sql's own
--- inline definition was last edited), not just schema.sql's original list —
--- verified directly against the live constraint before writing this.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
-  ) THEN
-    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
-  END IF;
-END $$;
-ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
-  CHECK (type IN (
-    'BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
-    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'UMPIRE_SLOTS_FULLY_STAFFED',
-    'MATCH_STARTING', 'MATCH_COMPLETED', 'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
-    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M', 'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
-    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED', 'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED',
-    'BOOKING_REJECTED', 'PROPOSAL_RECEIVED', 'PROPOSAL_ACCEPTED', 'PROPOSAL_EXPIRED', 'BOOKING_EXPIRING_SOON', 'NO_SHOW_RECORDED'
-  ));
+-- events (BOOKING_REJECTED, PROPOSAL_RECEIVED, PROPOSAL_ACCEPTED,
+-- PROPOSAL_EXPIRED, BOOKING_EXPIRING_SOON, NO_SHOW_RECORDED).
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
 
 -- --- permissions: booking delegation for GROUND_ADMIN staff ----------------
 INSERT INTO permissions (key, description) VALUES
@@ -2713,10 +2623,18 @@ ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_order_id INTEG
 -- (user_id, ground_id) — mirrors idx_ground_notifications_user's own shape.
 CREATE INDEX IF NOT EXISTS idx_ground_notifications_ground ON ground_notifications(user_id, ground_id, created_at DESC) WHERE ground_id IS NOT NULL;
 
--- Widen ground_notifications_type_check for the 10 new Ground-Owner-facing
--- types. Restates every value already live in this database (same caution
--- as the Phase 24/U-phase widenings above — the live constraint is the
--- source of truth, not just this file's own prior edit), plus:
+-- Consolidated ground_notifications_type_check — this used to be 7 separate
+-- historical DROP+ADD blocks scattered through this file (one per phase
+-- that added new types), each carrying only ITS OWN incremental value list.
+-- Since migrate.js replays this entire file on every run (not just once on
+-- a fresh DB — see migrate.js), any of those older/narrower blocks broke
+-- the moment the live database already contained a type value only a LATER
+-- block accounted for — `db:migrate` was unable to be re-run against a
+-- populated DB. Consolidated into this single, complete, sole block (2026;
+-- the removed blocks are marked with a pointer comment at their old
+-- locations) — the full set below is every type ever added by any phase,
+-- restating every value already live in this database, plus the 10 new
+-- Ground-Owner-facing ones added at the same time as this consolidation:
 --   GROUND_BOOKING_RECEIVED       — new booking notification (owner's own,
 --                                   distinct from the customer's own
 --                                   BOOKING_APPROVED — different recipient,
@@ -2755,4 +2673,51 @@ ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
     'GROUND_BOOKING_RECEIVED', 'GROUND_BOOKING_CANCELLED', 'GROUND_BOOKING_STATUS_CHANGED',
     'CANTEEN_ORDER_RECEIVED', 'CANTEEN_ORDER_STATUS_CHANGED', 'CANTEEN_LOW_STOCK', 'CANTEEN_MENU_NOT_PUBLISHED',
     'GROUND_STAFF_ACTIVATED', 'GROUND_STAFF_DEACTIVATED', 'GROUND_OPERATIONAL_ALERT'
+  ));
+
+-- Sponsors + Amenities Master (Super Admin) — Sponsors reuses the existing
+-- `partners` table/CRUD (see partner.model.js) rather than a new table;
+-- these are the only columns it was missing: an about/description shown on
+-- the public homepage, an active/visible toggle (deactivate without
+-- deleting), and updated_at for edit tracking.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Amenities Master needs no schema change — amenity_catalog (key, name,
+-- icon, display_order, is_active) already has every field; it previously
+-- had zero admin CRUD (seed data only), which is what this feature adds.
+
+-- Widen account_audit_log_event_type_check for Sponsors + Amenities Master
+-- admin actions. Restates every value already live (same caution as every
+-- prior widening in this file — the live constraint is the source of
+-- truth, not just this file's own prior edit), plus 8 new ones.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
+  ) THEN
+    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
+  END IF;
+END $$;
+ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
+  CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
+    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
+    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
+    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
+    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
+    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
+    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED',
+    -- SUPER_ADMIN Identity & Secure Provisioning feature.
+    'SUPER_ADMIN_BOOTSTRAPPED', 'ADMIN_LOGIN', 'PASSWORD_CHANGED',
+    'GROUND_SUSPENDED', 'GROUND_REACTIVATED', 'ACCOUNT_STATUS_CHANGED',
+    'PASSWORD_RESET_INITIATED_BY_ADMIN', 'TEMPORARY_CREDENTIAL_GENERATED', 'TEMPORARY_CREDENTIAL_USED',
+    -- Sponsors + Amenities Master (Super Admin CMS).
+    'SPONSOR_CREATED', 'SPONSOR_UPDATED', 'SPONSOR_DEACTIVATED', 'SPONSOR_DELETED',
+    'AMENITY_CREATED', 'AMENITY_UPDATED', 'AMENITY_DEACTIVATED', 'AMENITY_DELETED'
   ));

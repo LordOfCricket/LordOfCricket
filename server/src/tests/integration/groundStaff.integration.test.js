@@ -89,7 +89,10 @@ async function createOwnedGround(owner, superAdmin, server, tag) {
   })
   const publicRequestId = (await submitRes.json()).request.publicRequestId
   if (!superAdmin.cookie) await elevate(superAdmin)
-  await mintStepUpGrant(superAdmin.sessionId, superAdmin.id, 'GROUND_OWNER_REQUEST_APPROVE')
+  // Ground Approval MFA removal (2026-08-24) — approve no longer requires a
+  // step-up grant, so this helper no longer mints one (also avoids
+  // idx_step_up_grants_active collisions when called more than once per
+  // superAdmin session in one test).
   const approveRes = await fetch(`${server.baseUrl}/ground-owner-requests/${publicRequestId}/approve`, { method: 'POST', headers: cauth(superAdmin) })
   const approveBody = await approveRes.json()
   return approveBody.ground

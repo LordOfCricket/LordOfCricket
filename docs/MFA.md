@@ -198,13 +198,19 @@ privilege-granting or hard-to-reverse mutation, not a hypothetical worst case:
 | `RECOVERY_CODES_REGENERATE` | Regenerate recovery codes | ″ |
 | `MFA_DISABLE` | Disable MFA entirely (Ground Owner only, see below) | ″ |
 | `STAFF_CREATE` | `POST /staff` (Super Admin) | Creates a brand-new privileged platform account |
-| `GROUND_OWNER_REQUEST_APPROVE` | `POST /ground-owner-requests/:id/approve` (Super Admin) | Creates a real Ground + grants a brand-new GROUND_OWNER — at least as high-leverage as staff creation |
 | `PERMISSION_GRANT` | Grant a staff permission (Ground Owner) | Escalates a staff member's capability |
 | `STAFF_DISABLE` | Disable a staff membership (Ground Owner) | Locks a person out |
 
 **Deliberately NOT gated** (negative space, verified by dedicated regression tests): permission *revoke*,
 `createGroundStaff` (creating a brand-new, zero-permission staff account), `reject`/`request-information` on
 ground-owner-requests — every one of these reduces or stalls privilege rather than granting it.
+
+**`GROUND_OWNER_REQUEST_APPROVE` (2026-08-24, project owner's explicit request)** — `POST
+/ground-owner-requests/:id/approve` (`groundOwnerRequest.service.js#approveRequest`) is intentionally exempt
+from step-up, permanently, independent of the global enforcement bypass above. `requireStaffRole('super_admin')`
+on the route (`groundOwnerRequest.routes.js`) remains the authorization boundary. `'GROUND_OWNER_REQUEST_APPROVE'`
+is still a recognized value in `domain/mfa/actionScopes.js#STEP_UP_ACTION_SCOPES` (harmless — nothing requests a
+grant for it anymore); the enforcement was removed at its one call site, not from the scope registry.
 
 ### Mechanics
 
@@ -334,8 +340,9 @@ and after migration and were identical.
   bootstrap enrollment succeeds with no step-up; a second factor-management mutation without step-up is
   rejected; last-factor removal is blocked even with a valid step-up grant; baseline verify sets/rejects
   correctly; legacy-JWT Super Admin hitting an MFA-gated route gets a clean `403 MFA_REQUIRED`, never a crash;
-  each of the four non-universal step-up scopes (`STAFF_CREATE`, `GROUND_OWNER_REQUEST_APPROVE`,
-  `PERMISSION_GRANT`, `STAFF_DISABLE`) is gated independently of the others; concurrent double-consumption of
+  each of the non-universal step-up scopes (`STAFF_CREATE`, `PERMISSION_GRANT`, `STAFF_DISABLE`) is gated
+  independently of the others (`GROUND_OWNER_REQUEST_APPROVE` was removed from this set 2026-08-24 — see above);
+  concurrent double-consumption of
   one step-up grant resolves to exactly one success; the negative-space guarantees (revoke, plain staff
   creation) genuinely require no step-up.
 - **Regression fixture note**: every pre-existing (pre-Phase-6) integration test that authenticates as a

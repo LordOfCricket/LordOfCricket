@@ -8,13 +8,8 @@ import {
   addGroundAmenity,
   removeGroundAmenity,
 } from '../../services/groundOwnerApi.js'
-import * as icons from 'lucide-react'
-
-function AmenityIcon({ name, className }) {
-  const Icon = icons[name]
-  if (!Icon) return <span className={className} />
-  return <Icon className={className} aria-hidden="true" />
-}
+import { fetchAmenityCatalog } from '../../services/groundRegistrationApi.js'
+import AmenityIcon from '../../components/common/AmenityIcon.jsx'
 
 export default function GroundAmenitiesPage() {
   const { publicGroundId } = useParams()
@@ -34,14 +29,11 @@ export default function GroundAmenitiesPage() {
       // Fetch both amenities and catalog in parallel
       const [amenitiesData, catalogData] = await Promise.all([
         fetchGroundAmenities(publicGroundId),
-        fetch('/api/ground-owner-requests/amenity-catalog').then(r => {
-          if (!r.ok) throw new Error('Failed to load amenity catalog')
-          return r.json()
-        }),
+        fetchAmenityCatalog(),
       ])
 
       setAmenities(amenitiesData || [])
-      setCatalog(catalogData.catalog || [])
+      setCatalog(catalogData || [])
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Couldn't load amenities.")
     } finally {

@@ -11,11 +11,9 @@ import { findUserByIdentifier, createUserFromOtp, updateUser } from '../models/u
 import { insertMany as insertGroundPhotos } from '../models/groundPhoto.model.js'
 import { insertMany as insertGroundAmenities } from '../models/groundAmenity.model.js'
 import { recordEvent, ACCOUNT_AUDIT_EVENTS } from './accountAudit.service.js'
-import { consumeStepUpGrant } from './stepUp.service.js'
 import { sendGroundApprovalEmail } from './emailService.js'
 import { requiredText, optionalText, validateEmail, validatePhone, isValidHttpUrl } from '../domain/accountCreation/validation.js'
 import { AccountCreationError, ACCOUNT_CREATION_ERROR_CODES as CODES } from '../domain/accountCreation/errors.js'
-import { MfaError, MFA_ERROR_CODES } from '../domain/mfa/errors.js'
 import { generatePublicId } from '../utils/publicId.js'
 import { slugify } from '../utils/slug.js'
 import { logger } from '../utils/logger.js'
@@ -280,21 +278,15 @@ async function ensureUniqueSlug(name, client) {
 // UPDATE fails, everything rolls back and the request is left exactly as it
 // was — never "owner created but ground missing" or "approved but nothing
 // else happened".
-export async function approveRequest(publicRequestId, actorUserId, sessionId) {
+export async function approveRequest(publicRequestId, actorUserId) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
-    // Phase 6 — approving a request creates a real Ground + grants a brand
-    // new GROUND_OWNER membership, at least as high-leverage as platform
-    // staff creation, so it's step-up-gated the same way. Consumed FIRST,
-    // inside this same transaction, so a step-up failure rolls back
-    // everything below with it.
-    const grant = await consumeStepUpGrant(sessionId, 'GROUND_OWNER_REQUEST_APPROVE', client)
-    if (!grant) {
-      throw new MfaError(MFA_ERROR_CODES.STEP_UP_REQUIRED, 'This action requires a fresh step-up verification.')
-    }
-
+    // Intentionally NOT step-up-gated (see docs/MFA.md) — Ground Approval
+    // is exempt by design; requireStaffRole('super_admin') on the route
+    // (groundOwnerRequest.routes.js) is the authorization boundary here.
+    //
     // This UPDATE's own WHERE clause is the concurrency guard (brief §22):
     // a second simultaneous/duplicate approve attempt matches zero rows and
     // gets REQUEST_NOT_ELIGIBLE, never a second ground/owner.

@@ -54,18 +54,20 @@ export default function SponsorsSection() {
           as="div"
           variant={staggerContainer(0.06)}
           amount={0.2}
-          className="flex w-full max-w-4xl flex-wrap items-center justify-center gap-8"
+          className="flex w-full max-w-5xl flex-wrap items-start justify-center gap-8"
         >
           {partners.map((partner) => {
             const Wrapper = partner.website_url ? 'a' : 'div'
             return (
-              <motion.div key={partner.id} variants={staggerItemScale}>
+              <motion.div key={partner.id} variants={staggerItemScale} className="flex w-36 flex-col items-center gap-2 text-center">
                 <Wrapper
                   {...(partner.website_url ? { href: partner.website_url, target: '_blank', rel: 'noreferrer' } : {})}
                   className="flex h-16 w-32 items-center justify-center opacity-70 grayscale transition-all duration-300 hover:opacity-100 hover:grayscale-0"
                 >
                   <img src={partner.logo_url} alt={partner.name} className="max-h-full max-w-full object-contain" />
                 </Wrapper>
+                <p className="text-sm font-semibold text-emerald-50">{partner.name}</p>
+                {partner.description && <p className="text-xs text-emerald-100/50">{partner.description}</p>}
               </motion.div>
             )
           })}

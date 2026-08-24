@@ -8,7 +8,6 @@ import Navbar from '../../components/home/Navbar.jsx'
 import Hero from '../../components/home/Hero.jsx'
 import MatchActivitySection from '../../components/homepage/MatchActivitySection.jsx'
 import AmenityCatalogGrid from '../../components/common/AmenityCatalogGrid.jsx'
-import AmenitiesGrid from '../../components/common/AmenitiesGrid.jsx'
 import BookingModal from '../../components/booking/BookingModal.jsx'
 import PublicAvailabilityPreview from '../../components/booking/PublicAvailabilityPreview.jsx'
 import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
@@ -19,7 +18,6 @@ import GroundAbout from '../../components/ground/GroundAbout.jsx'
 import LocationMap from '../../components/ground/LocationMap.jsx'
 import GroundNotFound from '../../components/ground/GroundNotFound.jsx'
 import GalleryModal from '../../components/ground/GalleryModal.jsx'
-import AmenitiesMarquee from '../../components/homepage/AmenitiesMarquee.jsx'
 import UpcomingFixtures from '../../components/homepage/UpcomingFixtures.jsx'
 import RecentResults from '../../components/homepage/RecentResults.jsx'
 import { useGround } from '../../hooks/useGround.js'
@@ -247,9 +245,15 @@ export default function GroundHomePage() {
           </div>
         </div>
 
-        {/* Amenities Marquee - Full Width */}
-        <div className="w-full overflow-hidden py-6">
-          <AmenitiesMarquee amenities={ground.amenityCatalog?.length > 0 ? ground.amenityCatalog : ground.amenities} />
+        {/* Amenities — icon + name cards, dynamically loaded from the
+            ground's own catalog selections (falls back to the legacy
+            owner-uploaded-photo list only if it has no catalog entries). */}
+        <div className="relative flex justify-center px-6">
+          {ground.amenityCatalog?.length > 0 || ground.amenities?.length > 0 ? (
+            <AmenityCatalogGrid amenities={ground.amenityCatalog?.length > 0 ? ground.amenityCatalog : ground.amenities} />
+          ) : (
+            <p className="text-[#B5C2BC]">No amenities added yet</p>
+          )}
         </div>
       </section>
 

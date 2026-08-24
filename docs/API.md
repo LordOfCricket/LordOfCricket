@@ -90,7 +90,7 @@ session user as the applicant.
 | `GET /status/:publicRequestId` | Public | `{ status, rejectionReason?, moreInfoNotes? }` only — never `reviewedBy` or any internal id |
 | `GET /` | Super Admin | `?status=` filter |
 | `GET /:publicRequestId` | Super Admin | Full detail; auto-transitions `PENDING` → `UNDER_REVIEW` on first view |
-| `POST /:publicRequestId/approve` | Super Admin | Creates the ground (`ACTIVE`) + `GROUND_OWNER` membership, atomically. `409` if already decided. Step-up-gated (`GROUND_OWNER_REQUEST_APPROVE`, Phase 6) — see `docs/MFA.md`. |
+| `POST /:publicRequestId/approve` | Super Admin | Creates the ground (`ACTIVE`) + `GROUND_OWNER` membership, atomically. `409` if already decided. NOT step-up-gated (intentional exemption, 2026-08-24) — see `docs/MFA.md`. |
 | `POST /:publicRequestId/reject` | Super Admin | `{ reason }` required |
 | `POST /:publicRequestId/request-information` | Super Admin | `{ notes }` required, sets `MORE_INFORMATION_REQUIRED` |
 

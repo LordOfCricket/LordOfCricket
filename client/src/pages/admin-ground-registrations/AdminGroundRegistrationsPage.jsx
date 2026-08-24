@@ -1,6 +1,5 @@
 import AdminLayout from '../../components/admin/AdminLayout.jsx'
 import Button from '../../components/ui/Button.jsx'
-import StepUpModal from '../../components/security/StepUpModal.jsx'
 import AmenityCatalogGrid from '../../components/common/AmenityCatalogGrid.jsx'
 import { useAdminGroundRegistrations } from '../../hooks/useAdminGroundRegistrations.js'
 
@@ -108,9 +107,6 @@ export default function AdminGroundRegistrationsPage() {
     handleApprove,
     handleReject,
     handleRequestInformation,
-    stepUpModal,
-    submitStepUp,
-    cancelStepUp,
   } = useAdminGroundRegistrations()
 
   return (
@@ -173,8 +169,6 @@ export default function AdminGroundRegistrationsPage() {
 
         {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
       </div>
-
-      <StepUpModal pending={stepUpModal} onSubmit={submitStepUp} onCancel={cancelStepUp} />
     </AdminLayout>
   )
 }

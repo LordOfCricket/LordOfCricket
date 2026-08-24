@@ -31,7 +31,8 @@ const GroundRegistrationWizardPage = lazy(() => import('../pages/register-ground
 const CheckGroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/CheckGroundRegistrationStatusPage.jsx'))
 const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/GroundRegistrationStatusPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
-const AdminPartnersPage = lazy(() => import('../pages/admin-partners/AdminPartnersPage.jsx'))
+const AdminSponsorsPage = lazy(() => import('../pages/admin-sponsors/AdminSponsorsPage.jsx'))
+const AdminAmenityCatalogPage = lazy(() => import('../pages/admin-amenities/AdminAmenityCatalogPage.jsx'))
 
 // Super Admin Staff Dashboard
 const AdminDashboardPage = lazy(() => import('../pages/admin-dashboard/AdminDashboardPage.jsx'))
@@ -166,7 +167,8 @@ const router = createBrowserRouter([
       { path: '/register-ground/check', element: withSuspense(<CheckGroundRegistrationStatusPage />) },
       { path: '/register-ground/status/:publicRequestId', element: withSuspense(<GroundRegistrationStatusPage />) },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
-      { path: '/admin/partners', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminPartnersPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/sponsors', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminSponsorsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminAmenityCatalogPage />)}</RequireMfaVerified></RequireStaffRole> },
 
       // Super Admin Staff Dashboard — RequireMfaVerified is a no-op for a
       // plain 'admin' staff member (mfa.required only ever reflects

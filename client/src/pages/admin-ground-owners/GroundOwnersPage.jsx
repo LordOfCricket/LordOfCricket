@@ -1,44 +1,27 @@
-import { useState } from 'react'
-import { Copy, Check, KeyRound } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import AdminLayout from '../../components/admin/AdminLayout.jsx'
 import StepUpModal from '../../components/security/StepUpModal.jsx'
 import { useAdminGroundOwners } from '../../hooks/useAdminGroundOwners.js'
 
-function RevealedCredentialModal({ credential, onDismiss }) {
-  const [copied, setCopied] = useState(false)
+// Success confirmation only — the plaintext temporary password is never
+// returned by the API (server generates/hashes/emails it and responds with
+// only { expiresAt, targetUser, ... }), so there is nothing to reveal or
+// copy here. The registered email address is the sole delivery channel, by
+// design (see adminPasswordRecovery.service.js).
+function PasswordSentModal({ credential, onDismiss }) {
   if (!credential) return null
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(credential.temporaryPassword)
-      setCopied(true)
-    } catch {
-      setCopied(false)
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-md rounded-[28px] border border-white/15 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-2xl">
-        <h2 className="text-lg font-bold text-white">Temporary password generated</h2>
-        <p className="mt-1 text-sm text-slate-300">
-          For {credential.ownerName}. Share this through a secure, out-of-band channel — it will not be shown again.
+        <h2 className="text-lg font-bold text-white">Temporary password sent</h2>
+        <p className="mt-2 text-sm text-slate-300">
+          A new temporary password was generated for <span className="font-semibold text-white">{credential.ownerName}</span> and emailed to their
+          registered address ({credential.targetUser?.email}). Their previous password has been invalidated.
         </p>
 
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3">
-          <code className="flex-1 select-all break-all font-mono text-sm text-amber-200">{credential.temporaryPassword}</code>
-          <button
-            type="button"
-            onClick={copy}
-            className="shrink-0 rounded-xl border border-white/15 p-2 text-slate-200 hover:bg-white/10"
-            title="Copy to clipboard"
-          >
-            {copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
-          </button>
-        </div>
-
         <p className="mt-3 text-xs text-slate-400">
-          Expires {new Date(credential.expiresAt).toLocaleString()} · one-time use · the account will be required to set a new password on first login.
+          Expires {new Date(credential.expiresAt).toLocaleString()} · one-time use · they'll be required to set a new password on first login.
         </p>
 
         <button
@@ -55,8 +38,10 @@ function RevealedCredentialModal({ credential, onDismiss }) {
 
 // SUPER_ADMIN Identity & Secure Provisioning feature — §12. Never displays
 // or retrieves an owner's real password (impossible — only bcrypt hashes
-// are ever stored); "Reset Password" only ever produces a fresh one-time
-// temporary credential via the step-up-gated admin recovery flow.
+// are ever stored); "Send Temporary Password" only ever produces a fresh
+// one-time temporary credential via the step-up-gated admin recovery flow,
+// delivered solely by email. Available for the lifetime of the account —
+// not tied to the original ground-approval event.
 export default function GroundOwnersPage() {
   const {
     owners,
@@ -113,7 +98,7 @@ export default function GroundOwnersPage() {
                       className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/30 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <KeyRound className="h-3.5 w-3.5" />
-                      {resetting === owner.userId ? 'Generating…' : 'Reset Password'}
+                      {resetting === owner.userId ? 'Sending…' : 'Send Temporary Password'}
                     </button>
                   </div>
                 </div>
@@ -145,7 +130,7 @@ export default function GroundOwnersPage() {
       </div>
 
       <StepUpModal pending={stepUpModal} onSubmit={submitStepUp} onCancel={cancelStepUp} />
-      <RevealedCredentialModal credential={revealedCredential} onDismiss={dismissRevealedCredential} />
+      <PasswordSentModal credential={revealedCredential} onDismiss={dismissRevealedCredential} />
     </AdminLayout>
   )
 }
