@@ -5,6 +5,7 @@ import RequireAuth from './RequireAuth.jsx'
 import RequireStaffRole from './RequireStaffRole.jsx'
 import RequireApprovedUmpire from './RequireApprovedUmpire.jsx'
 import RequireGroundOwner from './RequireGroundOwner.jsx'
+import RequireGroundStaff from './RequireGroundStaff.jsx'
 import RequireMfaVerified from './RequireMfaVerified.jsx'
 import RequirePrivilegedAccount from './RequirePrivilegedAccount.jsx'
 import CanteenEntryRedirect from './CanteenEntryRedirect.jsx'
@@ -89,6 +90,11 @@ const GroundCanteenMenuPage = lazy(() => import('../pages/ground-owner/GroundCan
 const GroundCanteenTodayPage = lazy(() => import('../pages/ground-owner/GroundCanteenTodayPage.jsx'))
 const GroundCanteenOrdersPage = lazy(() => import('../pages/ground-owner/GroundCanteenOrdersPage.jsx'))
 const BrowseUmpiresPage = lazy(() => import('../pages/ground-owner/BrowseUmpiresPage.jsx'))
+
+// Ground-Level Staff Dashboard — reuses GroundMatchesPage/GroundBookingPage*/
+// GroundCanteenPage* above (already lazy-imported for the Owner routes) under
+// a separate /staff/grounds/... path tree; only the dashboard itself is new.
+const StaffDashboardPage = lazy(() => import('../pages/staff-dashboard/StaffDashboardPage.jsx'))
 const UmpireProposalsPage = lazy(() => import('../pages/umpire/UmpireProposalsPage.jsx'))
 
 // Real, backend-authoritative match scoring
@@ -246,6 +252,23 @@ const router = createBrowserRouter([
       { path: '/ground-owner/grounds/:publicGroundId/canteen/menu', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenMenuPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/canteen/today', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenTodayPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/canteen/orders', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenOrdersPage />)}</RequireMfaVerified></RequireGroundOwner> },
+
+      // Ground-Level Staff Dashboard — reuses the same Matches/Bookings/Canteen
+      // page components as the Owner routes above (GroundNavTabs/
+      // GroundOwnerLayout self-detect the /staff/ prefix and adjust nav/back-
+      // links accordingly, see those files). No RequireMfaVerified: MFA is
+      // never mandatory for GROUND_ADMIN/CANTEEN_STAFF (groundAccess.js),
+      // matching the backend exactly. Matches has no /matches suffix to match
+      // GroundNavTabs' own generated href (tab.path is '' for Matches).
+      { path: '/staff/dashboard', element: <RequireGroundStaff>{withSuspense(<StaffDashboardPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId', element: <RequireGroundStaff>{withSuspense(<GroundMatchesPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/bookings', element: <RequireGroundStaff>{withSuspense(<GroundBookingPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/bookings/calendar', element: <RequireGroundStaff>{withSuspense(<GroundBookingCalendarPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/bookings/list', element: <RequireGroundStaff>{withSuspense(<GroundBookingListPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/canteen', element: <RequireGroundStaff>{withSuspense(<GroundCanteenPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/canteen/menu', element: <RequireGroundStaff>{withSuspense(<GroundCanteenMenuPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/canteen/today', element: <RequireGroundStaff>{withSuspense(<GroundCanteenTodayPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/canteen/orders', element: <RequireGroundStaff>{withSuspense(<GroundCanteenOrdersPage />)}</RequireGroundStaff> },
 
       // Player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: withSuspense(<PlayersDiscoveryPage />) },

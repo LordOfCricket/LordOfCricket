@@ -74,3 +74,12 @@ test('getPostAuthPath is unchanged: still returns role-specific dashboards, not 
   assert.equal(getPostAuthPath({ role: 'user' }), '/role-select')
   assert.equal(getPostAuthPath(null), '/login')
 })
+
+// Ground-Level Staff Dashboard — a ground_users staff account (GROUND_ADMIN/
+// CANTEEN_STAFF) is created with role='staff', staff_role=null. It used to
+// fall into the same branch as legacy platform canteen_staff and land on
+// /canteen/staff — a single-canteen dashboard unrelated to ground_users.
+test('getPostAuthPath: a ground-scoped staff account (staff_role null) goes to /staff/dashboard, never /canteen/staff', () => {
+  assert.equal(getPostAuthPath({ role: 'staff', staff_role: null }), '/staff/dashboard')
+  assert.equal(getPostAuthPath({ role: 'staff' }), '/staff/dashboard')
+})

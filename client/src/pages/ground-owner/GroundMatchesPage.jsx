@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { CalendarDays, ChevronDown, ChevronUp, Trophy, MessageCircle } from 'lucide-react'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import { useGroundMatches } from '../../hooks/useGroundMatches.js'
 import { useMatchUmpireSlots } from '../../hooks/useMatchUmpireSlots.js'
 import { useUmpireOperationsSummary } from '../../hooks/useUmpireOperationsSummary.js'
+import { useMyGroundStaffMemberships } from '../../hooks/useMyGroundStaffMemberships.js'
+import { hasStaffPermission } from '../../models/groundStaffNav.model.js'
 import { fetchTeams } from '../../services/playerApi.js'
 import { formatMatchDate, formatMatchTime, statusLabel, formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 import { slotStatusInfo, describeSlot } from '../../models/groundOwnerDashboard.model.js'
@@ -118,7 +120,7 @@ function CreateMatchForm({ onCreate, creating, createError, onDone }) {
   )
 }
 
-function PaymentStatusControl({ matchId, slot, slotsHook }) {
+function PaymentStatusControl({ matchId, slot, slotsHook, canManage }) {
   const busy = slotsHook.actionBusyId === slot.id
   if (!slot.earning) return null
   return (
@@ -126,24 +128,26 @@ function PaymentStatusControl({ matchId, slot, slotsHook }) {
       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${paymentStatusClasses(slot.earning.status)}`}>
         {formatAmount(slot.earning.amount, slot.earning.currency)} · {paymentStatusLabel(slot.earning.status)}
       </span>
-      <select
-        disabled={busy}
-        value=""
-        onChange={(e) => {
-          if (e.target.value) slotsHook.updatePaymentStatus(matchId, slot.id, e.target.value)
-          e.target.value = ''
-        }}
-        className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300 disabled:opacity-50"
-      >
-        <option value="" className="bg-slate-900">
-          Change status…
-        </option>
-        {PAYMENT_STATUSES.filter((s) => s !== slot.earning.status).map((s) => (
-          <option key={s} value={s} className="bg-slate-900">
-            {paymentStatusLabel(s)}
+      {canManage && (
+        <select
+          disabled={busy}
+          value=""
+          onChange={(e) => {
+            if (e.target.value) slotsHook.updatePaymentStatus(matchId, slot.id, e.target.value)
+            e.target.value = ''
+          }}
+          className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-slate-300 disabled:opacity-50"
+        >
+          <option value="" className="bg-slate-900">
+            Change status…
           </option>
-        ))}
-      </select>
+          {PAYMENT_STATUSES.filter((s) => s !== slot.earning.status).map((s) => (
+            <option key={s} value={s} className="bg-slate-900">
+              {paymentStatusLabel(s)}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   )
 }
@@ -176,7 +180,7 @@ function PendingProposalsForSlot({ matchId, slotId, proposals, slotsHook }) {
   )
 }
 
-function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook, proposals }) {
+function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook, proposals, canManage }) {
   const [findingReplacement, setFindingReplacement] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const { label, detail } = describeSlot(slot)
@@ -200,7 +204,7 @@ function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook,
           <ReputationBadges verified={slot.reputation.verified} badges={slot.reputation.badges} size="sm" />
         </div>
       )}
-      <PaymentStatusControl matchId={matchId} slot={slot} slotsHook={slotsHook} />
+      <PaymentStatusControl matchId={matchId} slot={slot} slotsHook={slotsHook} canManage={canManage} />
       <PendingProposalsForSlot matchId={matchId} slotId={slot.id} proposals={proposals} slotsHook={slotsHook} />
       {(slot.status === 'ASSIGNED' || slot.status === 'COMPLETED') && slot.umpire_user_id && (
         <button
@@ -249,11 +253,11 @@ function SlotRow({ publicGroundId, matchId, matchStatus, slot, index, slotsHook,
   )
 }
 
-function FeeControl({ matchId, matchStatus, umpireFee, slotsHook }) {
+function FeeControl({ matchId, matchStatus, umpireFee, slotsHook, canManage }) {
   const [editing, setEditing] = useState(false)
   const [amountDraft, setAmountDraft] = useState('')
   const busy = slotsHook.actionBusyId === `fee-${matchId}`
-  const locked = matchStatus === 'completed' || matchStatus === 'finalized'
+  const locked = matchStatus === 'completed' || matchStatus === 'finalized' || !canManage
 
   const startEdit = () => {
     setAmountDraft(umpireFee?.amount ?? '')
@@ -302,7 +306,7 @@ function FeeControl({ matchId, matchStatus, umpireFee, slotsHook }) {
   )
 }
 
-function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, loading, error, onExpand, slotsHook, hasOpenCapacity }) {
+function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, loading, error, onExpand, slotsHook, hasOpenCapacity, canManage }) {
   const [expanded, setExpanded] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const openSlot = slots?.find((s) => s.status === 'AVAILABLE' || s.status === 'CANCELLED')
@@ -333,7 +337,7 @@ function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, lo
           {!loading && error && <p className="text-xs text-rose-300">{error}</p>}
           {!loading && !error && slots && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <FeeControl matchId={matchId} matchStatus={matchStatus} umpireFee={umpireFee} slotsHook={slotsHook} />
+              <FeeControl matchId={matchId} matchStatus={matchStatus} umpireFee={umpireFee} slotsHook={slotsHook} canManage={canManage} />
               {hasOpenCapacity && matchStatus === 'upcoming' && (
                 <RecommendedUmpires
                   publicGroundId={publicGroundId}
@@ -354,6 +358,7 @@ function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, lo
                   index={i}
                   slotsHook={slotsHook}
                   proposals={proposals}
+                  canManage={canManage}
                 />
               ))}
               {slotsHook.actionError && <p className="mt-2 text-xs text-rose-300">{slotsHook.actionError}</p>}
@@ -370,7 +375,7 @@ function SlotDetail({ publicGroundId, matchId, matchStatus, slots, umpireFee, lo
   )
 }
 
-function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook }) {
+function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook, canManage }) {
   const status = slotStatusInfo(match)
   const busy = lifecycleHook.lifecycleBusyId === match.id
   const result = lifecycleHook.lifecycleResults[match.id]
@@ -426,6 +431,7 @@ function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook }) {
           onExpand={slotsHook.load}
           slotsHook={slotsHook}
           hasOpenCapacity={match.filled_slots < match.total_slots}
+          canManage={canManage}
         />
       )}
 
@@ -439,19 +445,21 @@ function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook }) {
       {result?.type === 'understaffed' && (
         <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
           Only {result.filledSlots} of {result.totalSlots} umpire slots are filled.
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => lifecycleHook.start(match.id, { confirmUnderstaffed: true })}
-            className="ml-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Start anyway
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => lifecycleHook.start(match.id, { confirmUnderstaffed: true })}
+              className="ml-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Start anyway
+            </button>
+          )}
         </div>
       )}
       {result?.type === 'error' && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-rose-300">{result.message}</p>}
 
-      {match.status === 'upcoming' && (
+      {canManage && match.status === 'upcoming' && (
         <button
           type="button"
           disabled={busy}
@@ -461,7 +469,7 @@ function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook }) {
           {busy ? 'Starting…' : 'Match is Starting'}
         </button>
       )}
-      {match.status === 'live' && (
+      {canManage && match.status === 'live' && (
         <button
           type="button"
           disabled={busy}
@@ -503,6 +511,22 @@ export default function GroundMatchesPage() {
   const slotsHook = useMatchUmpireSlots(publicGroundId)
   const [showForm, setShowForm] = useState(false)
 
+  // Match Permission UX — MATCH_VIEW alone (no MATCH_MANAGE) is a real,
+  // Owner-granted staff configuration; hide create/start/complete/fee/
+  // payment-status actions rather than showing them and letting the
+  // existing backend 403 (groundOwner.routes.js) surprise the user. Owner
+  // routes (isStaffContext false) always get full access, unchanged.
+  const isStaffContext = useLocation().pathname.startsWith('/staff/')
+  const { memberships } = useMyGroundStaffMemberships(isStaffContext)
+  const membership = isStaffContext ? memberships.find((m) => m.publicGroundId === publicGroundId) : null
+  const canManageMatches = !isStaffContext || hasStaffPermission(membership, 'MATCH_MANAGE')
+  // `grounds` below comes from useMyGrounds() (GET /ground-owner/grounds),
+  // which only ever returns grounds the caller OWNS — always empty for a
+  // staff viewer. The below "Create Match" gate can't read ground.status
+  // for staff, so it defers to the backend's own identical, authoritative
+  // check (createGroundMatch throws if the ground isn't ACTIVE) instead of
+  // hiding the button outright.
+
   const ground = grounds.find((g) => g.public_ground_id === publicGroundId)
 
   return (
@@ -511,13 +535,15 @@ export default function GroundMatchesPage() {
         <GroundNavTabs />
 
         <div className="min-w-0 flex-1">
-      <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">{groundsLoading ? 'Loading…' : ground?.name || 'Ground'}</h1>
+      <h1 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">
+        {isStaffContext ? membership?.groundName || 'Ground' : groundsLoading ? 'Loading…' : ground?.name || 'Ground'}
+      </h1>
 
       <UmpireOperationsSummaryPanel publicGroundId={publicGroundId} />
 
       <div className="mt-6 flex items-center justify-between">
         <h2 className="text-xl font-semibold text-white">Matches</h2>
-        {ground?.status === 'ACTIVE' && (
+        {canManageMatches && (isStaffContext || ground?.status === 'ACTIVE') && (
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
@@ -528,13 +554,13 @@ export default function GroundMatchesPage() {
         )}
       </div>
 
-      {ground && ground.status !== 'ACTIVE' && (
+      {canManageMatches && ground && ground.status !== 'ACTIVE' && (
         <p className="mt-2 text-sm text-amber-300">
           This ground is {ground.status.toLowerCase()} — matches can't be created for it until it's active.
         </p>
       )}
 
-      {showForm && <CreateMatchForm onCreate={create} creating={creating} createError={createError} onDone={() => setShowForm(false)} />}
+      {canManageMatches && showForm && <CreateMatchForm onCreate={create} creating={creating} createError={createError} onDone={() => setShowForm(false)} />}
 
       <div className="mt-4">
         {loading && (
@@ -554,7 +580,14 @@ export default function GroundMatchesPage() {
         {!loading && !error && matches.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
             {matches.map((match) => (
-              <MatchCard key={match.id} publicGroundId={publicGroundId} match={match} slotsHook={slotsHook} lifecycleHook={groundMatches} />
+              <MatchCard
+                key={match.id}
+                publicGroundId={publicGroundId}
+                match={match}
+                slotsHook={slotsHook}
+                lifecycleHook={groundMatches}
+                canManage={canManageMatches}
+              />
             ))}
           </div>
         )}

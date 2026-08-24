@@ -83,6 +83,19 @@ export function getGroundOwnerAccountLinks() {
   return [{ label: 'Ground Owner Dashboard', to: '/ground-owner/dashboard', icon: LandPlot }]
 }
 
+// Ground-Level Staff Dashboard — mirrors getGroundOwnerAccountLinks' minimal
+// pattern: a dedicated, cut-down menu rather than the legacy staff menu
+// (getAccountLinks below), which sent this account type to unrelated
+// single-canteen/global pages (/canteen/staff, /bookings/staff, /canteen)
+// with no ground-scoped destination at all. My Profile reuses the existing
+// generic /profile page (RequireAuth-only) — no dedicated staff profile page.
+export function getGroundStaffAccountLinks() {
+  return [
+    { label: 'Staff Dashboard', to: '/staff/dashboard', icon: LayoutDashboard },
+    { label: 'My Profile', to: '/profile', icon: User },
+  ]
+}
+
 // The account nav was previously one static list for every
 // logged-in user, which sent staff to `/player/dashboard` (a page for a
 // player profile staff accounts don't have) and never surfaced the match

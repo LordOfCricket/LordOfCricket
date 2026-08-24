@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useParams, useLocation } from 'react-router-dom'
 import { Menu, ChevronDown, Swords, Settings, BarChart3, Star, UserCircle, Images, Sparkles, MapPin, CalendarClock, UtensilsCrossed, Users } from 'lucide-react'
 import BackButton from '../common/BackButton.jsx'
+import { useMyGroundStaffMemberships } from '../../hooks/useMyGroundStaffMemberships.js'
+import { getStaffVisibleTabLabels, getStaffCanteenHref } from '../../models/groundStaffNav.model.js'
 
 const TABS = [
   { label: 'Matches', path: '', icon: Swords },
@@ -24,13 +26,32 @@ const TABS = [
 // rendered as a column. Below `lg:`, this collapses to a "Sections"
 // accordion instead of a permanent sidebar so it never eats the content
 // area on small screens.
-export default function GroundNavTabs({ backLabel = 'Back to Dashboard', backFallback = '/ground-owner/dashboard' }) {
+export default function GroundNavTabs({ backLabel, backFallback }) {
   const { publicGroundId } = useParams()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const items = TABS.map((tab) => {
-    const href = `/ground-owner/grounds/${publicGroundId}${tab.path}`
+  // Staff Dashboard reuse — the exact same page components (GroundMatchesPage,
+  // GroundBookingPage, GroundCanteenPage, etc.) are mounted a second time
+  // under /staff/grounds/:publicGroundId/... for ground_users staff. This is
+  // the ONE place that tells the difference, so those pages themselves never
+  // need to know or change: an Owner URL always renders every tab exactly as
+  // before (isStaffContext is false there), a /staff/ URL gets a
+  // permission-filtered subset with staff-appropriate back/home links.
+  const isStaffContext = location.pathname.startsWith('/staff/')
+  const { memberships } = useMyGroundStaffMemberships(isStaffContext)
+  const membership = isStaffContext ? memberships.find((m) => m.publicGroundId === publicGroundId) : null
+
+  const basePath = isStaffContext ? '/staff/grounds' : '/ground-owner/grounds'
+  const resolvedBackLabel = backLabel ?? (isStaffContext ? 'Back to Staff Dashboard' : 'Back to Dashboard')
+  const resolvedBackFallback = backFallback ?? (isStaffContext ? '/staff/dashboard' : '/ground-owner/dashboard')
+  const visibleTabs = isStaffContext ? TABS.filter((tab) => getStaffVisibleTabLabels(membership).includes(tab.label)) : TABS
+
+  const items = visibleTabs.map((tab) => {
+    const href =
+      isStaffContext && tab.label === 'Canteen'
+        ? getStaffCanteenHref(membership, publicGroundId)
+        : `${basePath}/${publicGroundId}${tab.path}`
     const isActive = location.pathname === href
     const Icon = tab.icon
     return (
@@ -66,7 +87,7 @@ export default function GroundNavTabs({ backLabel = 'Back to Dashboard', backFal
         </button>
         {mobileOpen && (
           <nav className="mt-2 flex flex-col gap-1 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
-            <BackButton label={backLabel} fallback={backFallback} className="mb-1 w-full rounded-xl hover:bg-white/10" />
+            <BackButton label={resolvedBackLabel} fallback={resolvedBackFallback} className="mb-1 w-full rounded-xl hover:bg-white/10" />
             <div className="my-1 border-t border-white/10" />
             {items}
           </nav>
@@ -75,7 +96,7 @@ export default function GroundNavTabs({ backLabel = 'Back to Dashboard', backFal
 
       {/* Desktop — permanent left sidebar */}
       <aside className="hidden shrink-0 flex-col gap-1 self-start rounded-2xl border border-white/10 bg-slate-900/60 p-3 backdrop-blur-xl lg:sticky lg:top-6 lg:flex lg:w-64">
-        <BackButton label={backLabel} fallback={backFallback} className="mb-1 w-full rounded-xl hover:bg-white/10" />
+        <BackButton label={resolvedBackLabel} fallback={resolvedBackFallback} className="mb-1 w-full rounded-xl hover:bg-white/10" />
         <div className="my-1 border-t border-white/10" />
         {items}
       </aside>

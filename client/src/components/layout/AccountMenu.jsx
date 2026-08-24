@@ -3,8 +3,16 @@ import { Link } from 'react-router-dom'
 import { ChevronDown, LandPlot, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
-import { getAccountLinks, getUmpireAccountLinks, getGroundOwnerAccountLinks, isUmpireMode, isStaffMode } from '../../models/navLinks.model.js'
+import {
+  getAccountLinks,
+  getUmpireAccountLinks,
+  getGroundOwnerAccountLinks,
+  getGroundStaffAccountLinks,
+  isUmpireMode,
+  isStaffMode,
+} from '../../models/navLinks.model.js'
 import { useIsGroundOwner } from '../../hooks/useIsGroundOwner.js'
+import { useMyGroundStaffMemberships } from '../../hooks/useMyGroundStaffMemberships.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
   const umpireMode = isUmpireMode(user)
@@ -19,11 +27,27 @@ export default function AccountMenu({ user, player, onLogout }) {
   // existing role menu unchanged, with Ground Owner Dashboard still added
   // on below (see the block after MENU_LINKS).
   const groundOwnerMode = isGroundOwner && !umpireMode && !isStaffMode(user)
+  // Ground-Level Staff Dashboard — a ground_users staff (GROUND_ADMIN/
+  // CANTEEN_STAFF) row can belong to EITHER a brand-new dedicated account
+  // (role='staff', staff_role=null, created via groundStaff.service.js#
+  // createStaffForGround) OR an existing player/user account a Ground Owner
+  // added by their existing email/phone (createStaffForGround reuses the
+  // found account as-is — never rewrites its role). users.role can't tell
+  // these apart, so — same reasoning as isGroundOwner above — this is a real
+  // membership self-check, not a synchronous role check. Previously such an
+  // account had no ground-scoped destination at all: a dedicated staff
+  // account fell into getAccountLinks(user)'s generic isStaff branch
+  // (legacy single-canteen/global links), and an existing player/user
+  // account had no staff menu section whatsoever.
+  const { memberships: staffMemberships } = useMyGroundStaffMemberships(Boolean(user))
+  const groundStaffMode = staffMemberships.length > 0 && !groundOwnerMode && !umpireMode
   const MENU_LINKS = groundOwnerMode
     ? getGroundOwnerAccountLinks()
-    : umpireMode
-      ? getUmpireAccountLinks()
-      : getAccountLinks(user)
+    : groundStaffMode
+      ? getGroundStaffAccountLinks()
+      : umpireMode
+        ? getUmpireAccountLinks()
+        : getAccountLinks(user)
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 

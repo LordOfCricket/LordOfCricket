@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import { fetchGroundAvailability, fetchGroundBookings, createGroundStaffBlock, removeGroundStaffBlock } from '../../services/groundOwnerApi.js'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 
 export default function GroundBookingCalendarPage() {
   const { publicGroundId } = useParams()
+  // Staff Dashboard reuse — staff-block creation is hardcoded Owner-only
+  // server-side (groundOwnerBooking.routes.js, never delegable via any
+  // permission grant), so the button is hidden rather than shown-then-403'd
+  // for a staff viewer. Same /staff/ prefix detection GroundNavTabs uses.
+  const isStaffContext = useLocation().pathname.startsWith('/staff/')
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -141,7 +146,7 @@ export default function GroundBookingCalendarPage() {
                 className="px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-green-500"
               />
             </div>
-            {!showBlockForm && (
+            {!showBlockForm && !isStaffContext && (
               <button
                 onClick={() => setShowBlockForm(true)}
                 className="px-4 py-2 bg-amber-600 text-white rounded font-medium hover:bg-amber-500 transition"
@@ -151,7 +156,7 @@ export default function GroundBookingCalendarPage() {
             )}
           </div>
 
-          {showBlockForm && (
+          {showBlockForm && !isStaffContext && (
             <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 mb-6">
               <h3 className="text-lg font-semibold mb-4">Create Staff Block</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

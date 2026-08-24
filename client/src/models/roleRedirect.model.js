@@ -2,9 +2,11 @@ export function getPostAuthPath(user) {
   if (!user) return '/login'
   if (user.role === 'staff') {
     if (user.staff_role === 'admin' || user.staff_role === 'super_admin') return '/admin/dashboard'
-    // canteen_staff, or a legacy/unassigned staff row (staff_role null) —
-    // keep today's behavior rather than a dead end.
-    return '/canteen/staff'
+    if (user.staff_role === 'canteen_staff') return '/canteen/staff'
+    // staff_role null: ground-scoped staff (GROUND_ADMIN/CANTEEN_STAFF in
+    // ground_users), created by groundStaff.service.js#createStaffForGround
+    // — the only population that leaves staff_role unset.
+    return '/staff/dashboard'
   }
   if (user.role === 'player') {
     if (!user.player_type) return '/player-type'

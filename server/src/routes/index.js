@@ -20,6 +20,7 @@ import mfaRoutes from './mfa.routes.js'
 import umpireRequestRoutes from './umpireRequest.routes.js'
 import staffRoutes from './staff.routes.js'
 import meRoutes from './me.routes.js'
+import meGroundStaffRoutes from './meGroundStaff.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
@@ -126,6 +127,7 @@ router.use('/auth', mfaRoutes)
 router.use('/umpire-requests', umpireRequestRoutes)
 router.use('/staff', staffRoutes)
 router.use('/me', meRoutes)
+router.use('/me', meGroundStaffRoutes)
 // SUPER_ADMIN Identity & Secure Provisioning feature — the Admin Control
 // Center's own API surface (dashboard stats, all grounds, ground owners,
 // players, umpires, admin-initiated password recovery, audit log).
