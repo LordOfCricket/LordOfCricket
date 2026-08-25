@@ -1,7 +1,16 @@
 // Run with: node --test src/models/umpireDashboard.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { slotSummary, bucketAssignments, nextAssignment, canCancelAssignment, canEnterScoring, applyErrorMessage, cancelErrorMessage } from './umpireDashboard.model.js'
+import {
+  slotSummary,
+  bucketAssignments,
+  nextAssignment,
+  canCancelAssignment,
+  canEnterScoring,
+  applyErrorMessage,
+  cancelErrorMessage,
+  isAssignmentLocked,
+} from './umpireDashboard.model.js'
 
 test('slotSummary derives open capacity from total/filled, never negative', () => {
   assert.deepEqual(slotSummary({ total_slots: 2, filled_slots: 0 }), { total: 2, filled: 0, open: 2 })
@@ -91,4 +100,30 @@ test('cancelErrorMessage translates every backend code, falls back gracefully fo
   assert.equal(cancelErrorMessage('MATCH_NOT_FOUND'), 'This match no longer exists.')
   assert.equal(cancelErrorMessage('SOMETHING_NEW', 'server said x'), 'server said x')
   assert.equal(cancelErrorMessage('SOMETHING_NEW'), 'Unable to cancel this assignment.')
+})
+
+// Phase 2 (Umpire Interest+Assignment audit) — the 24h assignment lock.
+test('cancelErrorMessage: ASSIGNMENT_LOCKED translates to a real, actionable message', () => {
+  assert.equal(
+    cancelErrorMessage('ASSIGNMENT_LOCKED'),
+    'Assignment changes are locked within 24 hours of the match start. Contact the ground owner if you can no longer officiate.',
+  )
+})
+
+test('isAssignmentLocked: mirrors the backend — exact 24h boundary, not a calendar-day rule', () => {
+  const now = new Date('2026-08-25T18:00:00.000Z')
+  assert.equal(isAssignmentLocked('2026-08-26T18:00:01.000Z', now), false) // 24h + 1s away
+  assert.equal(isAssignmentLocked('2026-08-26T18:00:00.000Z', now), true) // exactly 24h away
+  assert.equal(isAssignmentLocked('2026-08-25T10:00:00.000Z', now), true) // already started
+  assert.equal(isAssignmentLocked(null, now), false, 'no match_date at all is never treated as locked')
+})
+
+test('canCancelAssignment: an ASSIGNED, upcoming, but within-24h assignment cannot be self-cancelled', () => {
+  const assignment = { status: 'ASSIGNED', match_status: 'upcoming', match_date: new Date(Date.now() + 6 * 3600000).toISOString() }
+  assert.equal(canCancelAssignment(assignment), false)
+})
+
+test('canCancelAssignment: an ASSIGNED, upcoming assignment safely outside the 24h window can be self-cancelled', () => {
+  const assignment = { status: 'ASSIGNED', match_status: 'upcoming', match_date: new Date(Date.now() + 7 * 86400000).toISOString() }
+  assert.equal(canCancelAssignment(assignment), true)
 })

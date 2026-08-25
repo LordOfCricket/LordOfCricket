@@ -1,6 +1,7 @@
-// U4 — pure helpers for the umpire dashboard/available-matches/my-assignments/
-// profile pages. No API calls here; hooks own fetching, these just shape data
-// the backend already returned.
+// U4 — pure helpers for the umpire dashboard/my-assignments/profile pages
+// (and ground discovery's own apply flow, which shares applyErrorMessage
+// below). No API calls here; hooks own fetching, these just shape data the
+// backend already returned.
 
 export function slotSummary(match) {
   const total = match?.total_slots ?? 0
@@ -46,11 +47,23 @@ export function nextAssignment(upcoming) {
   return upcoming.reduce((soonest, a) => (new Date(a.match_date) < new Date(soonest.match_date) ? a : soonest))
 }
 
+// Phase 2 (Umpire Interest+Assignment audit) — mirrors
+// matchTimeRange.js#isAssignmentLocked exactly (same 24h-before-kickoff
+// instant, never a calendar-day rule), so the UI's "locked" state can never
+// drift from what the backend will actually enforce.
+const ASSIGNMENT_LOCK_HOURS = 24
+
+export function isAssignmentLocked(matchDate, now = new Date()) {
+  if (!matchDate) return false
+  return new Date(matchDate).getTime() - now.getTime() <= ASSIGNMENT_LOCK_HOURS * 60 * 60000
+}
+
 // Mirrors the backend exactly (umpireAssignment.service.js's cancelAssignment,
-// U3.1: self-cancel is upcoming-only) — the frontend gate is UX only, the
-// backend remains authoritative regardless of what this returns.
+// U3.1: self-cancel is upcoming-only, Phase 2: also locked within 24h of
+// kickoff) — the frontend gate is UX only, the backend remains authoritative
+// regardless of what this returns.
 export function canCancelAssignment(assignment) {
-  return assignment?.status === 'ASSIGNED' && assignment?.match_status === 'upcoming'
+  return assignment?.status === 'ASSIGNED' && assignment?.match_status === 'upcoming' && !isAssignmentLocked(assignment?.match_date)
 }
 
 export function canEnterScoring(assignment) {
@@ -87,6 +100,8 @@ export function cancelErrorMessage(code, fallback) {
       return "You don't have an active assignment for this match."
     case 'MATCH_NOT_FOUND':
       return 'This match no longer exists.'
+    case 'ASSIGNMENT_LOCKED':
+      return 'Assignment changes are locked within 24 hours of the match start. Contact the ground owner if you can no longer officiate.'
     default:
       return fallback || 'Unable to cancel this assignment.'
   }

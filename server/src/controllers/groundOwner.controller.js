@@ -3,6 +3,7 @@ import * as groundOwnerAnalyticsService from '../services/groundOwnerAnalytics.s
 import * as groundOwnerReviewsService from '../services/groundOwnerReviews.service.js'
 import * as notificationService from '../services/groundNotification.service.js'
 import { recommendUmpiresForMatch } from '../services/umpireRecommendation.service.js'
+import { publishMatchState } from '../realtime/cricketRealtime.js'
 import { updateGroundProfile as updateGroundProfileModel } from '../models/ground.model.js'
 import {
   createStaffForGround,
@@ -242,6 +243,13 @@ export async function startGroundMatch(req, res, next) {
       confirmUnderstaffed: req.body?.confirmUnderstaffed === true,
     })
     res.json({ match })
+    // Phase 4 (Umpire Module) — this ground-owner-initiated start reuses
+    // match.service.js#startMatch directly (bypassing match.controller.js's
+    // own startMatch handler, which already does this for the umpire-
+    // initiated path), so it needs its own publish — a spectator sitting on
+    // the match page otherwise never learns upcoming -> live happened until
+    // their next poll/reconnect.
+    publishMatchState(req.io, match.id, 'lifecycle')
   } catch (err) {
     next(err)
   }
@@ -249,8 +257,23 @@ export async function startGroundMatch(req, res, next) {
 
 export async function completeGroundMatch(req, res, next) {
   try {
-    const match = await groundOwnerService.completeGroundMatch(req.ground, Number(req.params.matchId))
+    const { match, transitioned } = await groundOwnerService.completeGroundMatch(req.ground, Number(req.params.matchId))
     res.json({ match })
+    // Same reasoning as startGroundMatch above — only on a real transition,
+    // mirroring the notification's own no-op-branch guard right next to it.
+    if (transitioned) publishMatchState(req.io, match.id, 'lifecycle')
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function cancelGroundMatch(req, res, next) {
+  try {
+    const { match, transitioned } = await groundOwnerService.cancelGroundMatch(req.ground, Number(req.params.matchId), req.user.id, req.body?.reason)
+    res.json({ match })
+    // Same publish pattern as start/complete above — a spectator/other
+    // umpires' clients sitting on this match need to learn it's gone.
+    if (transitioned) publishMatchState(req.io, match.id, 'lifecycle')
   } catch (err) {
     next(err)
   }

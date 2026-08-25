@@ -120,31 +120,6 @@ export function requireStaffRole(...allowedNames) {
   }
 }
 
-// Scoring endpoints: super_admin staff (the LOC-authorized scorer role) or an
-// APPROVED umpire. Plain 'staff' (admin/canteen_staff) is deliberately
-// excluded — score editing is a super_admin-only capability.
-//
-// player_type='umpire' alone is NOT sufficient — it is set the moment a user
-// requests umpire status (selectPlayerType), before any admin decision, so
-// trusting it in isolation would let anyone grant themselves scorer access
-// just by asking. The user's LATEST umpire_requests row (there may be
-// several across a request/reject/re-request cycle — only the most recent
-// one reflects their current standing) must have status='approved'. A
-// rejected or still-pending request — or none at all — denies access, and a
-// later rejection of a previously-approved request revokes it immediately,
-// since this is checked live on every request rather than cached anywhere.
-export async function requireScorer(req, res, next) {
-  if (isSuperAdminUser(req.user)) return next()
-
-  try {
-    if (await isApprovedUmpireUser(req.user)) return next()
-  } catch (err) {
-    return next(err)
-  }
-
-  return res.status(403).json({ error: 'Scorer or staff access required.' })
-}
-
 // Global (this file's isSuperAdmin condition) — every requireMatchScorer call
 // site (matchScorerAccess.js) reuses this exact predicate so the super-admin
 // bypass is defined once, not re-implemented per gate.

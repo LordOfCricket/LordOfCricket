@@ -311,6 +311,35 @@ export default function GroundHomePage() {
         </div>
       </section>
 
+      {/* PRICING — DARK SECTION (Ground Time-Slot Pricing — only rendered
+          when this ground actually has active pricing configured, same
+          honest-empty-state convention as the Canteen section above; a
+          simple list of time band -> price rows, not over-designed) */}
+      {ground.pricingSlots?.length > 0 && (
+        <section className="relative w-full bg-[#07110E] px-6 py-12 lg:py-16 overflow-hidden">
+          <div className="relative mx-auto max-w-4xl text-center">
+            <div className="mb-6 flex items-center justify-center gap-4">
+              <div className="h-px w-12 bg-gradient-to-r from-transparent to-[#D4AF37]" />
+              <span className="text-xs font-bold uppercase tracking-widest text-[#D4AF37]">Rates</span>
+              <div className="h-px w-12 bg-gradient-to-l from-transparent to-[#D4AF37]" />
+            </div>
+            <h2 className="mb-3 text-4xl font-black text-[#F5F7F5] sm:text-5xl">Pricing</h2>
+            <p className="mb-8 text-lg text-[#B5C2BC]">Time slot rates for booking this ground</p>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {ground.pricingSlots.map((slot) => (
+                <div
+                  key={`${slot.startTime}-${slot.endTime}`}
+                  className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#101B17] to-[#0a1410] px-6 py-4 shadow-lg shadow-[#064B38]/20"
+                >
+                  <p className="text-sm text-[#B5C2BC]">{slot.startTime.slice(0, 5)} – {slot.endTime.slice(0, 5)}</p>
+                  <p className="mt-1 text-2xl font-bold text-[#F5D547]">₹{slot.price.toLocaleString('en-IN')}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* BOOKING + LOCATION — DARK SECTION */}
       <section id="booking" className="relative w-full bg-[#07110E] px-6 py-12 lg:py-16 overflow-hidden">
         <div className="absolute inset-0 opacity-30">
@@ -332,7 +361,7 @@ export default function GroundHomePage() {
                 </div>
 
                 <div className="rounded-3xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#101B17] to-[#0a1410] p-5 space-y-3 shadow-lg shadow-[#064B38]/20 flex flex-col">
-                  <PublicAvailabilityPreview />
+                  <PublicAvailabilityPreview publicGroundId={ground.publicGroundId} />
                   <button
                     type="button"
                     onClick={() => setBookingOpen(true)}
@@ -402,7 +431,7 @@ export default function GroundHomePage() {
         </div>
       </footer>
 
-      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
+      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} publicGroundId={ground.publicGroundId} />
       <GalleryModal open={galleryOpen} onClose={() => setGalleryOpen(false)} photos={ground.photos} groundName={ground.name} />
     </div>
   )

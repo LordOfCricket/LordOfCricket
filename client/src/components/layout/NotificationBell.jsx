@@ -1,7 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Calendar, XCircle, AlertTriangle, Clock, UserCheck, UserX, ClipboardCheck, ShoppingBag, PackageX, ClipboardX, UserPlus, UserMinus, MegaphoneIcon } from 'lucide-react'
+import {
+  Bell,
+  Calendar,
+  XCircle,
+  AlertTriangle,
+  Clock,
+  UserCheck,
+  UserX,
+  ClipboardCheck,
+  ShoppingBag,
+  PackageX,
+  ClipboardX,
+  UserPlus,
+  UserMinus,
+  MegaphoneIcon,
+  RefreshCw,
+  Gift,
+  PlayCircle,
+} from 'lucide-react'
 import { useNotifications } from '../../hooks/useNotifications.js'
+import { useAuth } from '../../hooks/useAuth.js'
+import { isUmpireMode } from '../../models/navLinks.model.js'
 
 // Wired to the real, persisted, in-app notification
 // store (ground_notifications). No email/SMS — every notification here is
@@ -20,6 +40,15 @@ const TYPE_ICON = {
   UMPIRE_SLOT_ASSIGNED: UserCheck,
   UMPIRE_SLOT_CANCELLED: UserX,
   UMPIRE_REQUEST_DECIDED: ClipboardCheck,
+  UMPIRE_REPLACEMENT_ASSIGNED: RefreshCw,
+  UMPIRE_NO_SHOW: UserX,
+  UMPIRE_PROPOSAL_RECEIVED: Gift,
+  UMPIRE_PROPOSAL_EXPIRED: Gift,
+  UMPIRE_REMINDER_24H: Clock,
+  UMPIRE_REMINDER_2H: Clock,
+  UMPIRE_REMINDER_30M: Clock,
+  MATCH_STARTING: PlayCircle,
+  MATCH_CANCELLED: XCircle,
   // Phase 15 — Ground Owner notification types.
   GROUND_BOOKING_RECEIVED: Calendar,
   GROUND_BOOKING_CANCELLED: XCircle,
@@ -51,6 +80,31 @@ const TYPE_ROUTE_SUFFIX = {
   GROUND_OPERATIONAL_ALERT: '/operations',
 }
 
+// Phase 2 (Umpire Interest+Assignment audit) — umpire-facing deep links.
+// These notification `type` values are ALSO sent to the ground owner side
+// of the same event (e.g. UMPIRE_SLOT_ASSIGNED fires for both the umpire
+// AND the match's owner, with different title/body but the identical
+// `type`), and the owner-facing rows carry no ground_public_id today (a
+// real, separately-flagged gap — see Phase 2 report), so this map is only
+// ever consulted when the viewer is confirmed to be in umpire mode
+// (isUmpireMode) — never applied to a ground owner viewing the same type.
+// Deliberately a section, not a per-match deep link, matching
+// TYPE_ROUTE_SUFFIX's own "closest safe, correct destination" precedent.
+const UMPIRE_TYPE_ROUTE = {
+  UMPIRE_SLOT_ASSIGNED: '/umpire/my-assignments',
+  UMPIRE_SLOT_CANCELLED: '/umpire/my-assignments',
+  UMPIRE_REQUEST_DECIDED: '/umpire',
+  UMPIRE_REPLACEMENT_ASSIGNED: '/umpire/my-assignments',
+  UMPIRE_NO_SHOW: '/umpire/my-assignments',
+  UMPIRE_PROPOSAL_RECEIVED: '/umpire/proposals',
+  UMPIRE_PROPOSAL_EXPIRED: '/umpire/proposals',
+  UMPIRE_REMINDER_24H: '/umpire/my-assignments',
+  UMPIRE_REMINDER_2H: '/umpire/my-assignments',
+  UMPIRE_REMINDER_30M: '/umpire/my-assignments',
+  MATCH_STARTING: '/umpire/my-assignments',
+  MATCH_CANCELLED: '/umpire/my-assignments',
+}
+
 function timeAgo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diffMs / 60000)
@@ -65,19 +119,30 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { notifications, unreadCount, loading, error, markRead, markAllRead, reload } = useNotifications()
 
   // Phase 15 — navigate to the ground section this notification is about
   // (see TYPE_ROUTE_SUFFIX's own comment on why it's a section, not a deep
   // link). Notifications with no ground_public_id (every pre-Phase-15
-  // type — umpire/match/customer-booking) keep their original mark-read-
-  // only behavior, unchanged.
+  // type — umpire/match/customer-booking) fall through to the umpire-mode
+  // check below, then finally to the original mark-read-only behavior.
   const handleNotificationClick = (n) => {
     if (!n.is_read) markRead(n.id)
     const suffix = TYPE_ROUTE_SUFFIX[n.type]
     if (suffix && n.ground_public_id) {
       setOpen(false)
       navigate(`/ground-owner/grounds/${n.ground_public_id}${suffix}`)
+      return
+    }
+    // Phase 2 — only ever taken when the viewer is themselves in umpire
+    // mode, so a ground owner viewing this same notification `type` (see
+    // UMPIRE_TYPE_ROUTE's own comment) is never sent to a /umpire/* route
+    // they'd just get redirected away from.
+    const umpireRoute = isUmpireMode(user) ? UMPIRE_TYPE_ROUTE[n.type] : null
+    if (umpireRoute) {
+      setOpen(false)
+      navigate(umpireRoute)
     }
   }
 

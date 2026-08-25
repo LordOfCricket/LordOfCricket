@@ -89,7 +89,7 @@ export default function Hero({ ground, onViewGallery, onBook }) {
             <div className="flex flex-col gap-3 sm:gap-4 lg:gap-5">
               <motion.div {...motionProps(DELAY.gallery)}>
                 <ParallaxLayer strength={6} tilt tiltStrength={2}>
-                  <BookStadiumPanel groundName={ground.name} onBook={() => onBook?.()} />
+                  <BookStadiumPanel groundName={ground.name} publicGroundId={ground.publicGroundId} onBook={() => onBook?.()} />
                 </ParallaxLayer>
               </motion.div>
               <motion.div {...motionProps(DELAY.loc)}>

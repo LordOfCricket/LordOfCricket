@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { estimateMatchDurationMinutes, estimateMatchTimeRange } from './matchTimeRange.js'
+import { estimateMatchDurationMinutes, estimateMatchTimeRange, isAssignmentLocked } from './matchTimeRange.js'
 import { rangesOverlap } from '../booking/availability.js'
 
 test('estimateMatchDurationMinutes: derives from real overs_per_innings (8 min/over/innings-side)', () => {
@@ -40,4 +40,34 @@ test('overlap shapes from the brief, using rangesOverlap([start,end)) against es
   assert.equal(rangesOverlap(a.start, a.end, near(22), near(23, 59)), false, '[start,end) — touching ranges do not overlap')
   // Fully separate: B 11:00pm -> 11:30pm
   assert.equal(rangesOverlap(a.start, a.end, near(23), near(23, 30)), false)
+})
+
+// Phase 2 (Umpire Interest+Assignment audit) — the 24h confirmation lock.
+const lockNow = new Date('2026-08-25T18:00:00.000Z')
+
+test('isAssignmentLocked: more than 24h before match start is not locked', () => {
+  const match = { match_date: '2026-08-26T18:00:01.000Z' } // 24h + 1s away
+  assert.equal(isAssignmentLocked(match, { now: lockNow }), false)
+})
+
+test('isAssignmentLocked: exactly 24h before match start IS locked (boundary is inclusive)', () => {
+  const match = { match_date: '2026-08-26T18:00:00.000Z' } // exactly 24h away
+  assert.equal(isAssignmentLocked(match, { now: lockNow }), true)
+})
+
+test('isAssignmentLocked: less than 24h before match start is locked', () => {
+  const match = { match_date: '2026-08-26T17:59:59.000Z' } // 23h59m59s away
+  assert.equal(isAssignmentLocked(match, { now: lockNow }), true)
+})
+
+test('isAssignmentLocked: a match that already started is locked', () => {
+  const match = { match_date: '2026-08-25T10:00:00.000Z' } // 8h in the past
+  assert.equal(isAssignmentLocked(match, { now: lockNow }), true)
+})
+
+test('isAssignmentLocked: exact-hours rule, not a calendar-day rule — a match tomorrow just after midnight is NOT locked when now is late tonight but still >24h away', () => {
+  // now is 2026-08-25T18:00:00Z; a naive calendar-day check ("is match_date
+  // tomorrow?") would wrongly call this locked. The real gap is 30h.
+  const match = { match_date: '2026-08-27T00:00:00.000Z' }
+  assert.equal(isAssignmentLocked(match, { now: lockNow }), false)
 })

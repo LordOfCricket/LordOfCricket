@@ -13,6 +13,10 @@ const PERMISSION_LABEL = {
   MATCH_MANAGE: 'Manage Matches',
   UMPIRE_MANAGE: 'Manage Umpires',
   STAFF_VIEW: 'View Staff',
+  BOOKING_VIEW: 'View Bookings',
+  BOOKING_MANAGE: 'Manage Bookings',
+  PRICING_VIEW: 'View Pricing',
+  PRICING_MANAGE: 'Manage Pricing',
 }
 
 function CreateStaffForm({ onCreate, creating, createError }) {

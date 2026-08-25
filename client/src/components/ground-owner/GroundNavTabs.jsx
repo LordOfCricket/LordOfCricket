@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams, useLocation } from 'react-router-dom'
-import { Menu, ChevronDown, Swords, Settings, BarChart3, Star, UserCircle, Images, Sparkles, MapPin, CalendarClock, UtensilsCrossed, Users } from 'lucide-react'
+import { Menu, ChevronDown, Swords, Settings, BarChart3, Star, UserCircle, Images, Sparkles, MapPin, CalendarClock, UtensilsCrossed, Users, IndianRupee } from 'lucide-react'
 import BackButton from '../common/BackButton.jsx'
 import { useMyGroundStaffMemberships } from '../../hooks/useMyGroundStaffMemberships.js'
 import { getStaffVisibleTabLabels, getStaffCanteenHref } from '../../models/groundStaffNav.model.js'
@@ -15,6 +15,7 @@ const TABS = [
   { label: 'Amenities', path: '/amenities', icon: Sparkles },
   { label: 'Location', path: '/location', icon: MapPin },
   { label: 'Bookings', path: '/bookings', icon: CalendarClock },
+  { label: 'Pricing', path: '/pricing', icon: IndianRupee },
   { label: 'Canteen', path: '/canteen', icon: UtensilsCrossed },
   { label: 'Staff', path: '/staff', icon: Users },
 ]

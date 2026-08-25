@@ -31,7 +31,7 @@ export function useGround(publicGroundId) {
         if (cancelled) return
         setGround(
           data.ground
-            ? { ...data.ground, photos: data.photos, amenities: data.amenities, amenityCatalog: data.amenityCatalog, canteens: data.canteens, gallery: data.gallery }
+            ? { ...data.ground, photos: data.photos, amenities: data.amenities, amenityCatalog: data.amenityCatalog, canteens: data.canteens, gallery: data.gallery, pricingSlots: data.pricingSlots }
             : null,
         )
         setNotFound(false)

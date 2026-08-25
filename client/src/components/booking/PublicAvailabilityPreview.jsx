@@ -11,19 +11,23 @@ const PREVIEW_SLOT_COUNT = 4
 // Only ever exposes AVAILABLE/UNAVAILABLE (never a reason, never any
 // customer data) — the exact same public shape GET /bookings/availability
 // already returns for an unauthenticated caller.
-export default function PublicAvailabilityPreview() {
+// `publicGroundId` is optional (Ground Time-Slot Pricing) — when known
+// (e.g. rendered on a specific ground's homepage), the preview reflects
+// THAT ground's own availability; omitted, this keeps the previous
+// platform-default-ground behavior.
+export default function PublicAvailabilityPreview({ publicGroundId = null }) {
   const [slots, setSlots] = useState(null)
   const [error, setError] = useState(false)
   const { enabled: glowEnabled, ref: glowRef, onPointerMove: onGlowMove, onPointerLeave: onGlowLeave } = useGlowHover()
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      fetchAvailability(todayDateInputValue())
+      fetchAvailability(todayDateInputValue(), publicGroundId)
         .then(setSlots)
         .catch(() => setError(true))
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [publicGroundId])
 
   if (error) return null
   if (!slots) {

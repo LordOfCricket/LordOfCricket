@@ -8,7 +8,11 @@ import { todayDateInputValue } from '../models/booking.model.js'
 // itself, and CONFIRM always sends the exact `startTime` instant the server
 // already told this client about (never client-computed date+hour+minute
 // math — see groundBooking.controller.js#resolveSlotInput).
-export function useBookingFlow() {
+// `publicGroundId` is optional (Ground Time-Slot Pricing) — when the caller
+// knows which ground this flow is for (e.g. GroundHomePage), availability
+// and the eventual booking are both scoped to that ground; omitted, this
+// keeps the exact previous platform-default-ground behavior.
+export function useBookingFlow(publicGroundId = null) {
   const { user } = useAuth()
   const [step, setStep] = useState('date') // date | slots | form | success | conflict
   const [dateStr, setDateStr] = useState(todayDateInputValue())
@@ -26,7 +30,7 @@ export function useBookingFlow() {
     setLoadingSlots(true)
     setError('')
     try {
-      const result = await fetchAvailability(date)
+      const result = await fetchAvailability(date, publicGroundId)
       setSlots(result)
       setStep('slots')
     } catch (err) {
@@ -71,6 +75,7 @@ export function useBookingFlow() {
         expectedPlayers: form.expectedPlayers ? Number(form.expectedPlayers) : null,
         contactPhone: form.contactPhone || null,
         clientActionId,
+        publicGroundId: publicGroundId || undefined,
       })
       setConfirmedBooking(booking)
       setStep('success')

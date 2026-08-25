@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { MapPin, CalendarDays } from 'lucide-react'
 import { formatMatchDate, formatMatchTime, statusLabel } from '../../models/matchDiscovery.model.js'
-import { canCancelAssignment, canEnterScoring } from '../../models/umpireDashboard.model.js'
+import { canCancelAssignment, canEnterScoring, isAssignmentLocked } from '../../models/umpireDashboard.model.js'
 
 // Status now reflects real history (ASSIGNED/COMPLETED/
 // CANCELLED/NO_SHOW), not just "Assigned" forever.
@@ -50,6 +50,13 @@ export default function AssignmentCard({ assignment, cancelling, onCancel, compa
       <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
         Status: {SLOT_STATUS_LABEL[assignment.status] || assignment.status}
       </p>
+      {assignment.status === 'CANCELLED' && (
+        <p className="mt-1 text-xs text-slate-400">
+          {assignment.match_status === 'cancelled'
+            ? `The ground owner cancelled this match${assignment.cancellation_reason ? ` — ${assignment.cancellation_reason}` : '.'}`
+            : `You cancelled this assignment${assignment.cancellation_reason ? ` — ${assignment.cancellation_reason}` : '.'}`}
+        </p>
+      )}
 
       {showActions && (
       <div className="mt-4 flex flex-wrap gap-3">
@@ -102,8 +109,16 @@ export default function AssignmentCard({ assignment, cancelling, onCancel, compa
           >
             {cancelling ? 'Cancelling…' : 'Cancel Assignment'}
           </button>
+        ) : isLive ? (
+          <p className="flex-1 self-center text-xs text-slate-500">Cancellation unavailable once a match is live.</p>
         ) : (
-          isLive && <p className="flex-1 self-center text-xs text-slate-500">Cancellation unavailable once a match is live.</p>
+          assignment.status === 'ASSIGNED' &&
+          assignment.match_status === 'upcoming' &&
+          isAssignmentLocked(assignment.match_date) && (
+            <p className="flex-1 self-center text-xs text-slate-500">
+              Assignment locked — within 24 hours of the match, contact the ground owner if you can no longer officiate.
+            </p>
+          )
         )}
       </div>
       )}

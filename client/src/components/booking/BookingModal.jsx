@@ -9,8 +9,8 @@ import Button from '../ui/Button.jsx'
 // Choose Date -> Available Times -> Booking Details -> Confirm -> Confirmed.
 // Internally scrollable (max-h + overflow-y-auto) so it fits at 390x844
 // without the page itself scrolling.
-export default function BookingModal({ open, onClose }) {
-  const flow = useBookingFlow()
+export default function BookingModal({ open, onClose, publicGroundId = null }) {
+  const flow = useBookingFlow(publicGroundId)
 
   useEffect(() => {
     if (open) flow.reset()

@@ -201,7 +201,10 @@ test('cancelling an assignment notifies both the umpire and the ground owner (UM
   const match = await matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,
-    matchDate: new Date().toISOString(),
+    // 3 days out, not "now" — this test self-cancels, which Phase 2's 24h
+    // assignment lock (matchTimeRange.js#isAssignmentLocked) would
+    // otherwise correctly refuse.
+    matchDate: new Date(Date.now() + 3 * 86400000).toISOString(),
     groundId: ground.id,
     requiredUmpires: 1,
   })
@@ -234,7 +237,8 @@ test('a failed cancel attempt (no active assignment) never creates a notificatio
   const server = await startTestApp()
   const teams = await makeTeams('failed-cancel-notify')
   const umpire = await approvedUmpire('failed-cancel-notify')
-  const match = await matchService.createMatch({ teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date().toISOString(), requiredUmpires: 1 })
+  // 3 days out — see the cancel-notification test above for why this can't be "now".
+  const match = await matchService.createMatch({ teamAId: teams.teamA.id, teamBId: teams.teamB.id, matchDate: new Date(Date.now() + 3 * 86400000).toISOString(), requiredUmpires: 1 })
   try {
     const cancelled = await json(`${server.baseUrl}/matches/${match.id}/umpire-slots/cancel`, { method: 'POST', token: umpire.token })
     assert.equal(cancelled.status, 404)

@@ -37,12 +37,10 @@ function BookGroundCard({ ground, onBookNow }) {
 
       <div className="flex gap-2 p-4">
         {/* Opens the real booking flow (BookingModal — pick a date, a real
-            availability check, pick a slot, then a login gate if needed).
-            Global, not scoped to this specific ground — the booking system
-            has no ground_id at all yet (single-ground by DB design, incl. a
-            no-overlap concurrency constraint), so this books "the" ground
-            rather than this card's ground specifically. Accepted tradeoff
-            until booking is made ground-scoped. */}
+            availability check, pick a slot, then a login gate if needed),
+            scoped to THIS card's ground (Ground Time-Slot Pricing — booking
+            is now ground-scoped end to end, see BookingModal's publicGroundId
+            prop). */}
         <button
           type="button"
           onClick={() => onBookNow(ground)}
@@ -67,7 +65,7 @@ function BookGroundCard({ ground, onBookNow }) {
 // nothing once loaded if there are zero grounds.
 export default function BookGroundSection() {
   const { grounds, loading, error } = useAllGrounds({ sort: 'name', limit: MAX_CARDS })
-  const [bookingOpen, setBookingOpen] = useState(false)
+  const [bookingGround, setBookingGround] = useState(null)
 
   if (!loading && !error && grounds.length === 0) return null
 
@@ -83,10 +81,10 @@ export default function BookGroundSection() {
       <div className="flex w-full max-w-6xl gap-6 overflow-x-auto px-1 pb-2 snap-x snap-mandatory">
         {loading &&
           Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-92 w-88 shrink-0 animate-pulse rounded-2xl border border-emerald-400/10 bg-white/5 sm:w-104" />)}
-        {!loading && !error && grounds.map((ground) => <BookGroundCard key={ground.publicGroundId} ground={ground} onBookNow={() => setBookingOpen(true)} />)}
+        {!loading && !error && grounds.map((ground) => <BookGroundCard key={ground.publicGroundId} ground={ground} onBookNow={() => setBookingGround(ground)} />)}
       </div>
 
-      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} />
+      <BookingModal open={Boolean(bookingGround)} onClose={() => setBookingGround(null)} publicGroundId={bookingGround?.publicGroundId} />
     </div>
   )
 }

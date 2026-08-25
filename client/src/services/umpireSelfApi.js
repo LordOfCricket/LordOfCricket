@@ -4,11 +4,6 @@
 // match lifecycle) — this file is specifically "my own umpire self-service".
 import api from './api.js'
 
-export async function fetchAvailableMatches() {
-  const { data } = await api.get('/umpire/matches/available')
-  return data.matches
-}
-
 export async function fetchMyAssignments() {
   const { data } = await api.get('/umpire/assignments')
   return data.assignments

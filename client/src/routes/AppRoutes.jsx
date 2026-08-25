@@ -66,7 +66,6 @@ const ProfileEditPage = lazy(() => import('../pages/profile/ProfileEditPage.jsx'
 const UmpireStatusPage = lazy(() => import('../pages/umpire/UmpireStatusPage.jsx'))
 const UmpireDashboardPage = lazy(() => import('../pages/umpire/UmpireDashboardPage.jsx'))
 const UmpireGroundDiscoveryPage = lazy(() => import('../pages/umpire/UmpireGroundDiscoveryPage.jsx'))
-const AvailableMatchesPage = lazy(() => import('../pages/umpire/AvailableMatchesPage.jsx'))
 const MyAssignmentsPage = lazy(() => import('../pages/umpire/MyAssignmentsPage.jsx'))
 const UmpireProfilePage = lazy(() => import('../pages/umpire/UmpireProfilePage.jsx'))
 const UmpireStatisticsPage = lazy(() => import('../pages/umpire/UmpireStatisticsPage.jsx'))
@@ -85,6 +84,7 @@ const GroundStaffPage = lazy(() => import('../pages/ground-owner/GroundStaffPage
 const GroundBookingPage = lazy(() => import('../pages/ground-owner/GroundBookingPage.jsx'))
 const GroundBookingCalendarPage = lazy(() => import('../pages/ground-owner/GroundBookingCalendarPage.jsx'))
 const GroundBookingListPage = lazy(() => import('../pages/ground-owner/GroundBookingListPage.jsx'))
+const GroundPricingPage = lazy(() => import('../pages/ground-owner/GroundPricingPage.jsx'))
 const GroundCanteenPage = lazy(() => import('../pages/ground-owner/GroundCanteenPage.jsx'))
 const GroundCanteenMenuPage = lazy(() => import('../pages/ground-owner/GroundCanteenMenuPage.jsx'))
 const GroundCanteenTodayPage = lazy(() => import('../pages/ground-owner/GroundCanteenTodayPage.jsx'))
@@ -222,7 +222,6 @@ const router = createBrowserRouter([
       { path: '/umpire', element: <RequireAuth>{withSuspense(<UmpireStatusPage />)}</RequireAuth> },
       { path: '/umpire/dashboard', element: <RequireApprovedUmpire>{withSuspense(<UmpireDashboardPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/find-matches', element: <RequireApprovedUmpire>{withSuspense(<UmpireGroundDiscoveryPage />)}</RequireApprovedUmpire> },
-      { path: '/umpire/available-matches', element: <RequireApprovedUmpire>{withSuspense(<AvailableMatchesPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/my-assignments', element: <RequireApprovedUmpire>{withSuspense(<MyAssignmentsPage />)}</RequireApprovedUmpire> },
       { path: '/umpire/profile', element: <RequireApprovedUmpire>{withSuspense(<UmpireProfilePage />)}</RequireApprovedUmpire> },
       { path: '/umpire/statistics', element: <RequireApprovedUmpire>{withSuspense(<UmpireStatisticsPage />)}</RequireApprovedUmpire> },
@@ -248,6 +247,7 @@ const router = createBrowserRouter([
       { path: '/ground-owner/grounds/:publicGroundId/bookings', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/bookings/calendar', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingCalendarPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/bookings/list', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundBookingListPage />)}</RequireMfaVerified></RequireGroundOwner> },
+      { path: '/ground-owner/grounds/:publicGroundId/pricing', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundPricingPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/canteen', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/canteen/menu', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenMenuPage />)}</RequireMfaVerified></RequireGroundOwner> },
       { path: '/ground-owner/grounds/:publicGroundId/canteen/today', element: <RequireGroundOwner><RequireMfaVerified force>{withSuspense(<GroundCanteenTodayPage />)}</RequireMfaVerified></RequireGroundOwner> },
@@ -265,6 +265,7 @@ const router = createBrowserRouter([
       { path: '/staff/grounds/:publicGroundId/bookings', element: <RequireGroundStaff>{withSuspense(<GroundBookingPage />)}</RequireGroundStaff> },
       { path: '/staff/grounds/:publicGroundId/bookings/calendar', element: <RequireGroundStaff>{withSuspense(<GroundBookingCalendarPage />)}</RequireGroundStaff> },
       { path: '/staff/grounds/:publicGroundId/bookings/list', element: <RequireGroundStaff>{withSuspense(<GroundBookingListPage />)}</RequireGroundStaff> },
+      { path: '/staff/grounds/:publicGroundId/pricing', element: <RequireGroundStaff>{withSuspense(<GroundPricingPage />)}</RequireGroundStaff> },
       { path: '/staff/grounds/:publicGroundId/canteen', element: <RequireGroundStaff>{withSuspense(<GroundCanteenPage />)}</RequireGroundStaff> },
       { path: '/staff/grounds/:publicGroundId/canteen/menu', element: <RequireGroundStaff>{withSuspense(<GroundCanteenMenuPage />)}</RequireGroundStaff> },
       { path: '/staff/grounds/:publicGroundId/canteen/today', element: <RequireGroundStaff>{withSuspense(<GroundCanteenTodayPage />)}</RequireGroundStaff> },

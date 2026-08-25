@@ -8,6 +8,7 @@ import { groundLocalToUtc, isValidDateStr, groundTodayDateStr, addDaysToDateStr 
 import { SLOT_DURATION_MINUTES, MAX_BOOKING_HORIZON_DAYS, GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR } from '../domain/booking/policy.js'
 import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
 import { isValidBlockType } from '../domain/booking/blockTypes.js'
+import { computeApplicablePrice } from './groundPricing.service.js'
 import * as googleCalendar from './googleCalendar.service.js'
 import * as auditLogService from './groundAuditLog.service.js'
 import * as notificationService from './groundNotification.service.js'
@@ -176,6 +177,24 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
     throw new BookingError(BOOKING_ERROR_CODES.BOOKING_CONFLICT, 'This time is unavailable — the ground has a scheduled match that day.', { alternatives })
   }
 
+  // Ground Time-Slot Pricing — server-side, authoritative price snapshot.
+  // Never trusts a frontend-supplied amount (none is even accepted here).
+  // A STAFF_BLOCK isn't a paid customer booking, so it's never priced.
+  // No active pricing slot covering this time-of-day is NOT an error — the
+  // booking still proceeds with amount=null ("price on request"), since LOC
+  // has no payment gateway to enforce against and blocking a booking over an
+  // owner's incomplete pricing config would be a disproportionate UX failure.
+  let amount = null
+  let pricingSlotId = null
+  if (bookingType === 'CUSTOMER') {
+    const timeOfDay = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    const applicable = await computeApplicablePrice(groundId, timeOfDay)
+    if (applicable) {
+      amount = applicable.amount
+      pricingSlotId = applicable.pricingSlotId
+    }
+  }
+
   const client = await pool.connect()
   let booking
   try {
@@ -196,6 +215,8 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
       clientActionId,
       createdByStaffId,
       blockType,
+      amount,
+      pricingSlotId,
     })
     await client.query('COMMIT')
   } catch (err) {

@@ -214,6 +214,29 @@ export async function cancelMyAssignment(matchId, userId, reason = null, client 
   return rows[0] || null
 }
 
+// Pre-match cancellation (Phase 6, Umpire Module) — a ground-owner-cancelled
+// match releases every ASSIGNED slot the same way cancelMyAssignment does
+// for one umpire's own self-cancel, just match-wide. Deliberately mirrors
+// cancelMyAssignment's exact column writes (status/cancelled_at/
+// cancellation_reason) — NOT paired with an insertAssignmentEvent call by
+// its caller (see groundOwner.service.js#cancelGroundMatch's own comment):
+// that event log's 'CANCELLED' type is exactly what getUmpireStats'
+// matches_cancelled counts, which feeds computeReliability's score, and a
+// match the GROUND OWNER cancelled (rain, double-booking, etc.) must never
+// count against the umpire's own reliability the way a genuine self-
+// cancellation does. matches.cancelled_by/cancelled_at is the authoritative
+// "who/when" record for this action instead.
+export async function cancelAllAssignedSlotsForMatch(matchId, reason = null, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE match_umpire_slots
+     SET status = 'CANCELLED', cancelled_at = NOW(), cancellation_reason = $2
+     WHERE match_id = $1 AND status = 'ASSIGNED'
+     RETURNING *`,
+    [matchId, reason],
+  )
+  return rows
+}
+
 // Append-only history log (Phase 23) — match_umpire_slots only ever holds
 // CURRENT per-slot state, and a CANCELLED/NO_SHOW row can later be
 // reclaimed/reassigned to a DIFFERENT umpire, overwriting umpire_user_id on
@@ -297,7 +320,7 @@ export async function findUpcomingMatchesForGrounds(groundIds, userId) {
 export async function findSlotsForUmpire(userId) {
   const { rows } = await pool.query(
     `SELECT
-       s.id, s.slot_number, s.status, s.assigned_at, s.cancelled_at,
+       s.id, s.slot_number, s.status, s.assigned_at, s.cancelled_at, s.cancellation_reason,
        m.id AS match_id, m.match_date, m.venue, m.status AS match_status,
        ta.name AS team_a_name, ta.short_name AS team_a_short,
        tb.name AS team_b_name, tb.short_name AS team_b_short,

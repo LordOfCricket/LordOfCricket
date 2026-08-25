@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchGroundMatches, createGroundMatch, startGroundMatch, completeGroundMatch } from '../services/groundOwnerApi.js'
+import { fetchGroundMatches, createGroundMatch, startGroundMatch, completeGroundMatch, cancelGroundMatch } from '../services/groundOwnerApi.js'
 
 export function useGroundMatches(publicGroundId) {
   const [matches, setMatches] = useState([])
@@ -91,6 +91,26 @@ export function useGroundMatches(publicGroundId) {
     }
   }
 
+  // Pre-match cancellation (Phase 6, Umpire Module). `reason` is optional
+  // free text shown to affected umpires and stored on the match row.
+  const cancel = async (matchId, reason) => {
+    setLifecycleBusyId(matchId)
+    setLifecycleResults((prev) => ({ ...prev, [matchId]: null }))
+    try {
+      await cancelGroundMatch(publicGroundId, matchId, reason)
+      await load()
+      return true
+    } catch (err) {
+      setLifecycleResults((prev) => ({
+        ...prev,
+        [matchId]: { type: 'error', message: err.response?.data?.error || err.response?.data?.message || 'Unable to cancel this match.' },
+      }))
+      return false
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
   return {
     matches,
     loading,
@@ -101,6 +121,7 @@ export function useGroundMatches(publicGroundId) {
     refresh: load,
     start,
     complete,
+    cancel,
     lifecycleBusyId,
     lifecycleResults,
   }

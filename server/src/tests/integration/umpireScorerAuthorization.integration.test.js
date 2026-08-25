@@ -1,64 +1,36 @@
-// Phase 21 (U2, revised U5.1) — closes the gap the Phase 0 audit found:
-// player_type='umpire' alone used to be enough to pass requireScorer, even
-// though it is set the moment a user REQUESTS umpire status
-// (selectPlayerType), before any admin decision. requireScorer must also
-// confirm the user's LATEST umpire_requests row is 'approved'.
+// Phase 21 (U2, revised U5.1, Phase 7 Umpire Module cleanup) — closes the
+// gap the Phase 0 audit found: player_type='umpire' alone used to be enough
+// to pass scorer checks, even though it is set the moment a user REQUESTS
+// umpire status (selectPlayerType), before any admin decision. The gate
+// must also confirm the user's LATEST umpire_requests row is 'approved'.
 //
-// U5.1 note: this file originally exercised requireScorer through the real
-// POST /api/matches route. U5.1 moved match CREATION to
-// requireStaffRole('super_admin') only (match.routes.js) — creation and
-// scoring are no longer the same permission, and requireScorer itself now
-// has zero production routes using it (match-scoped routes use
-// requireMatchScorer since U3; only requireScorer's own logic — Gate 1,
-// "is this an approved umpire" — is still worth testing directly). So this
-// file now mounts requireScorer on a disposable test-only route, exactly
-// the pattern groundMembership.integration.test.js already uses for
-// requireGroundRole (a real middleware with no single "natural" production
-// route to hang the test on). requireScorer itself is unmodified — this is
-// a test-harness change, not a behavior change.
+// Phase 7 note: this file used to exercise requireScorer (middlewares/
+// auth.js) through a disposable test-only Express route, since requireScorer
+// itself had zero production routes using it (match-scoped routes moved to
+// requireMatchScorer back in U3). Phase 7's dead-code audit proved
+// requireScorer was fully unreachable in production and deleted it — but
+// the actual logic worth testing here was never requireScorer's own
+// wrapper, it was Gate 1 underneath it: isApprovedUmpireUser
+// (umpireRequest.model.js), the single shared "is this user an approved
+// umpire" predicate every real gate (requireMatchScorer, umpireAssignment.
+// service.js, umpireProposal.service.js) still calls. So this file now
+// calls isApprovedUmpireUser directly — no HTTP layer, no disposable route,
+// same exact scenarios (pending/approved/rejected/no-request/latest-wins-
+// across-multiple-requests), now testing the real, live, still-used
+// function instead of a wrapper that no longer has any callers.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import http from 'http'
-import express from 'express'
 import { pool } from '../../config/db.js'
-import { signToken } from '../../utils/jwt.js'
-import { requireAuth, requireScorer } from '../../middlewares/auth.js'
-
-function buildTestApp() {
-  const app = express()
-  app.get('/test/scorer-only', requireAuth, requireScorer, (req, res) => res.json({ ok: true }))
-  return app
-}
-
-async function startTestApp() {
-  const httpServer = http.createServer(buildTestApp())
-  await new Promise((resolve) => httpServer.listen(0, resolve))
-  const port = httpServer.address().port
-  return {
-    baseUrl: `http://localhost:${port}/test`,
-    async close() {
-      await new Promise((resolve) => httpServer.close(resolve))
-    },
-  }
-}
-
-async function json(url, { token } = {}) {
-  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  return { status: res.status, data: await res.json() }
-}
+import { isApprovedUmpireUser } from '../../models/umpireRequest.model.js'
 
 // playerType null|'team_player'|'umpire'; requestStatuses is an ordered list
 // of umpire_requests rows to insert (oldest first) so multi-request /
 // latest-wins scenarios can be set up directly, independent of the
 // selectPlayerType application flow.
-async function makeUser({ label, role = 'player', playerType = null, requestStatuses = [], staffRoleName = null }) {
-  let staffRoleId = null
-  if (staffRoleName) {
-    staffRoleId = (await pool.query(`SELECT id FROM staff_roles WHERE name = $1`, [staffRoleName])).rows[0].id
-  }
+async function makeUser({ label, role = 'player', playerType = null, requestStatuses = [] }) {
   const { rows } = await pool.query(
-    `INSERT INTO users (name, email, password_hash, role, player_type, staff_role_id) VALUES ($1,$2,'not-a-real-hash',$3,$4,$5) RETURNING *`,
-    [`Integration Test ${label}`, `integration-test-u2-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, role, playerType, staffRoleId],
+    `INSERT INTO users (name, email, password_hash, role, player_type) VALUES ($1,$2,'not-a-real-hash',$3,$4) RETURNING *`,
+    [`Integration Test ${label}`, `integration-test-u2-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, role, playerType],
   )
   const user = rows[0]
 
@@ -85,7 +57,7 @@ async function makeUser({ label, role = 'player', playerType = null, requestStat
 
   return {
     id: user.id,
-    token: signToken({ id: user.id, name: user.name }),
+    row: user,
     async cleanup() {
       await pool.query('DELETE FROM umpire_requests WHERE user_id = $1', [user.id])
       await pool.query('DELETE FROM users WHERE id = $1', [user.id])
@@ -93,110 +65,74 @@ async function makeUser({ label, role = 'player', playerType = null, requestStat
   }
 }
 
-test('Case 1 — a PENDING umpire request is NOT an approved umpire: scorer access denied', async () => {
-  const server = await startTestApp()
+test('Case 1 — a PENDING umpire request is NOT an approved umpire: denied', async () => {
   const user = await makeUser({ label: 'pending', playerType: 'umpire', requestStatuses: ['pending'] })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403)
+    assert.equal(await isApprovedUmpireUser(user.row), false)
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
-test('Case 2 — an APPROVED umpire request grants scorer access', async () => {
-  const server = await startTestApp()
+test('Case 2 — an APPROVED umpire request grants approval', async () => {
   const user = await makeUser({ label: 'approved', playerType: 'umpire', requestStatuses: ['approved'] })
   try {
-    const { status, data } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 200, JSON.stringify(data))
+    assert.equal(await isApprovedUmpireUser(user.row), true)
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
-test('Case 3 — a REJECTED umpire request is NOT an approved umpire: scorer access denied', async () => {
-  const server = await startTestApp()
+test('Case 3 — a REJECTED umpire request is NOT an approved umpire: denied', async () => {
   const user = await makeUser({ label: 'rejected', playerType: 'umpire', requestStatuses: ['rejected'] })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403)
+    assert.equal(await isApprovedUmpireUser(user.row), false)
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
-test('Case 4 — a normal team_player has unchanged behavior: scorer access denied', async () => {
-  const server = await startTestApp()
+test('Case 4 — a normal team_player is denied regardless of request history', async () => {
   const user = await makeUser({ label: 'team-player', playerType: 'team_player' })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403)
+    assert.equal(await isApprovedUmpireUser(user.row), false)
   } finally {
     await user.cleanup()
-    await server.close()
-  }
-})
-
-test('Case 5 — super_admin scorer access is unchanged (bypasses the umpire-request check entirely)', async () => {
-  const server = await startTestApp()
-  const admin = await makeUser({ label: 'super-admin', role: 'staff', staffRoleName: 'super_admin' })
-  try {
-    const { status, data } = await json(`${server.baseUrl}/scorer-only`, { token: admin.token })
-    assert.equal(status, 200, JSON.stringify(data))
-  } finally {
-    await admin.cleanup()
-    await server.close()
   }
 })
 
 test('a user with no umpire_requests row at all (never requested) is denied, even with player_type=umpire', async () => {
-  const server = await startTestApp()
   const user = await makeUser({ label: 'no-request', playerType: 'umpire', requestStatuses: [] })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403)
+    assert.equal(await isApprovedUmpireUser(user.row), false)
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
 test('Case 6a — multiple requests: an old APPROVED request followed by a newer REJECTED one denies access (latest wins)', async () => {
-  const server = await startTestApp()
   const user = await makeUser({ label: 'approved-then-rejected', playerType: 'umpire', requestStatuses: ['approved', 'rejected'] })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403, 'a previously-approved umpire whose standing was later rejected must lose access immediately')
+    assert.equal(await isApprovedUmpireUser(user.row), false, 'a previously-approved umpire whose standing was later rejected must lose access immediately')
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
 test('Case 6b — multiple requests: an old REJECTED request followed by a newer APPROVED one grants access (latest wins)', async () => {
-  const server = await startTestApp()
   const user = await makeUser({ label: 'rejected-then-approved', playerType: 'umpire', requestStatuses: ['rejected', 'approved'] })
   try {
-    const { status, data } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 200, JSON.stringify(data))
+    assert.equal(await isApprovedUmpireUser(user.row), true)
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })
 
 test('Case 6c — multiple requests: old APPROVED followed by a newer still-PENDING re-request denies access', async () => {
-  const server = await startTestApp()
   const user = await makeUser({ label: 'approved-then-pending', playerType: 'umpire', requestStatuses: ['approved', 'pending'] })
   try {
-    const { status } = await json(`${server.baseUrl}/scorer-only`, { token: user.token })
-    assert.equal(status, 403, 'a pending re-request must not inherit authorization from an earlier, now-superseded approval')
+    assert.equal(await isApprovedUmpireUser(user.row), false, 'a pending re-request must not inherit authorization from an earlier, now-superseded approval')
   } finally {
     await user.cleanup()
-    await server.close()
   }
 })

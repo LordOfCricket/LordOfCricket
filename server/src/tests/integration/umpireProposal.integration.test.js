@@ -295,6 +295,52 @@ test('Race — two umpires proposed the same slot with different bonuses; one ac
   }
 })
 
+test('Guard — an umpire already holding one slot on a match cannot also accept a proposal for the match\'s other slot (clean 409, not a raw 500)', async () => {
+  const server = await startTestApp()
+  const ctx = await setupContext({ requiredUmpires: 2 })
+  const umpire = await createUser('double-slot', { playerType: 'umpire', umpireRequestStatus: 'approved' })
+  try {
+    const slots = await json(`${server.baseUrl}/ground-owner/grounds/${ctx.gf.ground.public_ground_id}/matches/${ctx.match.id}/umpire-slots`, {
+      cookie: ctx.owner.cookie,
+    })
+    assert.equal(slots.data.slots.length, 2)
+    const [slotOneId, slotTwoId] = slots.data.slots.map((s) => s.id)
+
+    // Umpire self-applies and wins slot one.
+    const applied = await json(`${server.baseUrl}/matches/${ctx.match.id}/umpire-slots/apply`, { method: 'POST', token: umpire.token })
+    assert.equal(applied.status, 201, JSON.stringify(applied.data))
+    assert.equal(applied.data.slot.id, slotOneId)
+
+    // Owner (unaware the umpire already holds slot one) proposes the SAME
+    // umpire for slot two — assertUmpireEligibleForMatch's overlap check
+    // deliberately excludes THIS match, so this must be rejected by the
+    // idx_match_umpire_slots_active_umpire guard, not silently allowed.
+    const propose = await json(proposeUrl(server, ctx, slotTwoId), {
+      method: 'POST',
+      cookie: ctx.owner.cookie,
+      body: { umpireUserId: umpire.id, incentiveAmount: 0 },
+    })
+    assert.equal(propose.status, 201, JSON.stringify(propose.data))
+
+    const accept = await json(`${server.baseUrl}/umpire/proposals/${propose.data.proposal.id}/respond`, {
+      method: 'POST',
+      token: umpire.token,
+      body: { accept: true },
+    })
+    assert.equal(accept.status, 409, JSON.stringify(accept.data))
+    assert.equal(accept.data.code, 'ALREADY_ASSIGNED')
+
+    // Slot two must still be open — the rejected accept must not have
+    // partially mutated it.
+    const { rows: slotTwoRows } = await pool.query('SELECT status FROM match_umpire_slots WHERE id = $1', [slotTwoId])
+    assert.equal(slotTwoRows[0].status, 'AVAILABLE')
+  } finally {
+    await umpire.cleanup()
+    await ctx.cleanup()
+    await server.close()
+  }
+})
+
 test('Race — a plain self-apply that fills a slot also expires any pending proposals for it', async () => {
   const server = await startTestApp()
   const ctx = await setupContext()

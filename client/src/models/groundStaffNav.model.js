@@ -14,6 +14,7 @@ export function getStaffVisibleTabLabels(membership) {
   const labels = []
   if (perms.includes('MATCH_VIEW') || perms.includes('MATCH_MANAGE')) labels.push('Matches')
   if (perms.includes('BOOKING_MANAGE')) labels.push('Bookings')
+  if (perms.includes('PRICING_VIEW') || perms.includes('PRICING_MANAGE')) labels.push('Pricing')
   labels.push('Canteen')
   return labels
 }

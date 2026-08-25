@@ -383,6 +383,18 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_type VARCHAR(10) CHECK (resu
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_margin INTEGER;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMP;
+-- Phase 6 (Umpire Module) — pre-match cancellation, the one confirmed-
+-- missing match lifecycle action from the Phase 5 audit. Mirrors
+-- completed_at/finalized_at's own shape exactly (a plain TIMESTAMP column
+-- directly on the match row is this table's established audit convention),
+-- plus cancelled_by/cancellation_reason so "who cancelled and why" is
+-- queryable without a second table. ON DELETE SET NULL matches every other
+-- "acting user" reference column in this schema (e.g. ground_audit_log's
+-- actor_user_id) — the audit fact survives even if that account is later
+-- deleted.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(280);
 
 -- ============================================================================
 -- PHASE 12 — Deterministic commentary projection
@@ -2334,32 +2346,23 @@ ALTER TABLE otp_codes ALTER COLUMN purpose TYPE VARCHAR(40);
 -- registrations" OTP gate) join the existing purposes.
 ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET', 'SIGNUP_VERIFY', 'GROUND_CONTACT_VERIFY', 'GROUND_REGISTRATION_LOOKUP'));
 
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
-  ) THEN
-    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
-  END IF;
-END $$;
-ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
-  CHECK (event_type IN (
-    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
-    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
-    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
-    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
-    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
-    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
-    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
-    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
-    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
-    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED',
-    -- SUPER_ADMIN Identity & Secure Provisioning feature.
-    'SUPER_ADMIN_BOOTSTRAPPED', 'ADMIN_LOGIN', 'PASSWORD_CHANGED',
-    'GROUND_SUSPENDED', 'GROUND_REACTIVATED', 'ACCOUNT_STATUS_CHANGED',
-    'PASSWORD_RESET_INITIATED_BY_ADMIN', 'TEMPORARY_CREDENTIAL_GENERATED', 'TEMPORARY_CREDENTIAL_USED'
-  ));
+-- Umpire Module Phase 6 — this block used to DROP+ADD
+-- account_audit_log_event_type_check down to a list missing the later
+-- Sponsors/Amenities Master values (SPONSOR_*/AMENITY_*), exactly the same
+-- bug class already documented and fixed twice earlier in this file (see
+-- the "Bug found and fixed here" comments above otp_codes' metadata column
+-- and above the account_audit_log index further up) — this specific
+-- occurrence was missed. schema.sql runs top-to-bottom as ONE implicit
+-- transaction (config/migrate.js sends the whole file as one multi-
+-- statement query), so on any re-run against this already-populated dev DB
+-- (which has real SPONSOR_CREATED/AMENITY_DELETED/etc. rows), this block's
+-- narrower ADD CONSTRAINT failed validation immediately, aborting the
+-- entire migration before it ever reached the correct, fully-widened block
+-- below — which already includes every value this one had, plus more.
+-- Removing this redundant intermediate block changes nothing about the
+-- FINAL constraint state on any database, fresh or live — confirmed by
+-- cross-checking every distinct event_type actually present in this dev
+-- DB's account_audit_log against the block below: all covered.
 
 -- ============================================================================
 -- PHASE 24 — Ground Booking System: Multi-Ground, Team & Player Conflict Engine
@@ -2672,7 +2675,10 @@ ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
     'BOOKING_REJECTED', 'PROPOSAL_RECEIVED', 'PROPOSAL_ACCEPTED', 'PROPOSAL_EXPIRED', 'BOOKING_EXPIRING_SOON', 'NO_SHOW_RECORDED',
     'GROUND_BOOKING_RECEIVED', 'GROUND_BOOKING_CANCELLED', 'GROUND_BOOKING_STATUS_CHANGED',
     'CANTEEN_ORDER_RECEIVED', 'CANTEEN_ORDER_STATUS_CHANGED', 'CANTEEN_LOW_STOCK', 'CANTEEN_MENU_NOT_PUBLISHED',
-    'GROUND_STAFF_ACTIVATED', 'GROUND_STAFF_DEACTIVATED', 'GROUND_OPERATIONAL_ALERT'
+    'GROUND_STAFF_ACTIVATED', 'GROUND_STAFF_DEACTIVATED', 'GROUND_OPERATIONAL_ALERT',
+    -- Phase 6 (Umpire Module) — pre-match cancellation, sent to any umpire
+    -- who held an ASSIGNED slot on the cancelled match.
+    'MATCH_CANCELLED'
   ));
 
 -- Sponsors + Amenities Master (Super Admin) — Sponsors reuses the existing
@@ -2720,4 +2726,94 @@ ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
     -- Sponsors + Amenities Master (Super Admin CMS).
     'SPONSOR_CREATED', 'SPONSOR_UPDATED', 'SPONSOR_DEACTIVATED', 'SPONSOR_DELETED',
     'AMENITY_CREATED', 'AMENITY_UPDATED', 'AMENITY_DEACTIVATED', 'AMENITY_DELETED'
+  ));
+
+-- ============================================================================
+-- Ground Time-Slot Pricing
+-- ============================================================================
+--
+-- Pricing is GROUND-level, not match-level: a Ground Owner defines named
+-- time bands (e.g. 06:00-09:00 = ₹2,000) that apply to every date. `TIME`
+-- columns (time-of-day, not a specific date's TIMESTAMPTZ) since a pricing
+-- slot is a recurring daily rule, never a one-off calendar event — the same
+-- distinction domain/booking/policy.js already draws between
+-- GROUND_OPENING_HOUR (a daily policy) and a real booking's TIMESTAMPTZ.
+-- No DB-level overlap EXCLUDE constraint: unlike ground_bookings' real-time
+-- customer-concurrency race (many customers racing for the same instant),
+-- pricing-slot edits are a single Ground Owner's own low-frequency admin
+-- config, the same class of action amenities/staff-permission management
+-- already handles with a plain service-layer transactional check rather
+-- than a GIST exclusion index — introducing one here (which would need a
+-- TIME-to-minutes int4range conversion; Postgres has no native time range
+-- type) would be new machinery this codebase has no other precedent for,
+-- for a case that doesn't need it.
+CREATE TABLE IF NOT EXISTS ground_pricing_slots (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  price NUMERIC(8,2) NOT NULL CHECK (price >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT ground_pricing_slots_end_after_start CHECK (end_time > start_time)
+);
+CREATE INDEX IF NOT EXISTS idx_ground_pricing_slots_ground_id ON ground_pricing_slots(ground_id);
+
+-- Price snapshot: the agreed amount at booking time, permanently stable
+-- even if the Ground Owner later edits/deactivates/deletes the pricing
+-- slot that produced it — mirrors menu_items/orders' own "unit_price is
+-- copied onto the order line, never re-read live" convention (schema.sql,
+-- Phase 10-ish canteen orders). `pricing_slot_id` is ON DELETE SET NULL
+-- (traceability only, never authoritative) — `amount` alone is what a
+-- historical booking's price actually is. Both nullable: existing
+-- bookings predate this feature, STAFF_BLOCK bookings have no customer
+-- price, and a booking made when no pricing slot covers its start time is
+-- allowed through with amount=NULL ("price on request"), not blocked —
+-- LOC has no payment gateway (out of scope by explicit product decision),
+-- so amount is informational/bookkeeping, not a payment-enforcement gate.
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS amount NUMERIC(8,2);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS pricing_slot_id INTEGER REFERENCES ground_pricing_slots(id) ON DELETE SET NULL;
+
+-- Ground Owner pricing management, delegable to staff exactly like
+-- BOOKING_VIEW/BOOKING_MANAGE above — the Owner always has full implicit
+-- access (requireGroundPermission's own GROUND_OWNER bypass); staff need
+-- an explicit grant, never automatic.
+INSERT INTO permissions (key, description) VALUES
+  ('PRICING_VIEW', 'View ground pricing slots'),
+  ('PRICING_MANAGE', 'Create, edit, activate/deactivate, and delete ground pricing slots')
+ON CONFLICT (key) DO NOTHING;
+
+-- ground_audit_log: widen for pricing-slot lifecycle events.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_entity_type_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_entity_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_entity_type_check
+  CHECK (entity_type IN ('BOOKING', 'BLOCK', 'PROPOSAL', 'PRICING_SLOT'));
+
+-- ground_audit_log: widen action for pricing-slot lifecycle events. Restates
+-- every value already live (same caution as the entity_type widening above
+-- and every prior widening in this file), plus 4 new ones.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_action_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_action_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
+  CHECK (action IN (
+    'CREATED', 'CANCELLED', 'GOOGLE_SYNC',
+    'CONFIRMED', 'REJECTED', 'EXPIRED', 'NO_SHOW', 'CHECKED_IN',
+    'PARTICIPANT_ADDED', 'PARTICIPANT_REMOVED', 'ACCEPTED', 'ACCEPT_FAILED', 'ADMIN_OVERRIDE',
+    -- Ground Time-Slot Pricing.
+    'UPDATED', 'ACTIVATED', 'DEACTIVATED', 'DELETED'
   ));

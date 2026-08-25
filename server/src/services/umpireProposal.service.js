@@ -153,10 +153,22 @@ export async function respondToProposal(proposalId, umpireUserId, accept) {
     await client.query('BEGIN')
     await client.query('SELECT pg_advisory_xact_lock($1)', [umpireUserId])
 
-    // Same shared eligibility gate every assignment path uses.
+    // Same shared eligibility gate every assignment path uses. Note this
+    // gate's own overlap check deliberately excludes THIS match (it only
+    // guards cross-match conflicts) — the try/catch below is what actually
+    // stops this same umpire from also holding the match's OTHER slot, via
+    // the same idx_match_umpire_slots_active_umpire partial unique index
+    // applyForSlot's own claimAvailableSlot already relies on.
     await assertUmpireEligibleForMatch(match, candidate, client)
 
-    slot = await claimSpecificSlotForProposal(proposal.match_umpire_slot_id, umpireUserId, proposal.incentive_amount, client)
+    try {
+      slot = await claimSpecificSlotForProposal(proposal.match_umpire_slot_id, umpireUserId, proposal.incentive_amount, client)
+    } catch (err) {
+      if (err.code === '23505') {
+        throw new UmpireAssignmentError(CODES.ALREADY_ASSIGNED, 'You are already assigned to umpire this match.')
+      }
+      throw err
+    }
     if (!slot) {
       // Someone else won the race, or the slot was otherwise filled/closed
       // since this proposal was sent.

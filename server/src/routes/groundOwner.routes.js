@@ -9,6 +9,7 @@ import {
   getGroundMatchUmpireSlots,
   startGroundMatch,
   completeGroundMatch,
+  cancelGroundMatch,
   markUmpireNoShow,
   getEligibleReplacements,
   assignReplacementUmpire,
@@ -34,6 +35,7 @@ import {
   markAllGroundNotificationsRead,
 } from '../controllers/groundOwner.controller.js'
 import { proposeUmpireForSlot, listMatchProposals, cancelMatchProposal } from '../controllers/umpireProposal.controller.js'
+import { listGroundPricingSlots, createGroundPricingSlot, updateGroundPricingSlot, deleteGroundPricingSlot } from '../controllers/groundPricing.controller.js'
 
 // Mounted at /api/ground-owner. Phase 5 — most routes below were
 // requireGroundRole('GROUND_OWNER') only; they now use
@@ -72,6 +74,10 @@ router.post('/grounds/:publicGroundId/matches', requireAuth, requireGroundPermis
 router.get('/grounds/:publicGroundId/matches/:matchId/umpire-slots', requireAuth, requireGroundPermission('MATCH_VIEW'), getGroundMatchUmpireSlots)
 router.post('/grounds/:publicGroundId/matches/:matchId/start', requireAuth, requireGroundPermission('MATCH_MANAGE'), startGroundMatch)
 router.post('/grounds/:publicGroundId/matches/:matchId/complete', requireAuth, requireGroundPermission('MATCH_MANAGE'), completeGroundMatch)
+// Phase 6 (Umpire Module) — pre-match cancellation, same permission as
+// start/complete above. Not delegable to an umpire merely by officiating —
+// this is exclusively a ground-management action.
+router.post('/grounds/:publicGroundId/matches/:matchId/cancel', requireAuth, requireGroundPermission('MATCH_MANAGE'), cancelGroundMatch)
 
 // Phase 23 — no-show / replacement / assignment history (Workstreams F/G/H).
 router.post(
@@ -125,6 +131,15 @@ router.post(
   requireGroundPermission('UMPIRE_MANAGE'),
   cancelMatchProposal,
 )
+
+// Ground Time-Slot Pricing — delegable to staff via PRICING_VIEW/
+// PRICING_MANAGE, same pattern as BOOKING_VIEW/BOOKING_MANAGE above; the
+// Owner always has full implicit access via requireGroundPermission's own
+// GROUND_OWNER bypass.
+router.get('/grounds/:publicGroundId/pricing-slots', requireAuth, requireGroundPermission('PRICING_VIEW'), listGroundPricingSlots)
+router.post('/grounds/:publicGroundId/pricing-slots', requireAuth, requireGroundPermission('PRICING_MANAGE'), createGroundPricingSlot)
+router.patch('/grounds/:publicGroundId/pricing-slots/:slotId', requireAuth, requireGroundPermission('PRICING_MANAGE'), updateGroundPricingSlot)
+router.delete('/grounds/:publicGroundId/pricing-slots/:slotId', requireAuth, requireGroundPermission('PRICING_MANAGE'), deleteGroundPricingSlot)
 
 // Phase 5 — the static permission catalog. Ground-agnostic (the same 4
 // permissions exist for every ground) and not sensitive, so requireAuth

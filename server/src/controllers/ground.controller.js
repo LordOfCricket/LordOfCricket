@@ -9,6 +9,7 @@ import { findGroundPhotosByGroundId } from '../models/groundPhoto.model.js'
 import { findAmenitiesByGroundId } from '../models/amenity.model.js'
 import { findByGroundId as findAmenityCatalogByGroundId } from '../models/groundAmenity.model.js'
 import { findCanteensByGroundId } from '../models/canteen.model.js'
+import { listActivePricingSlots } from '../services/groundPricing.service.js'
 import * as groundOwnerRequestService from '../services/groundOwnerRequest.service.js'
 import { mapRegistrationBody } from './groundOwnerRequest.controller.js'
 
@@ -84,6 +85,10 @@ function serializeGroundCard(row) {
     // NUMERIC(3,2) arrives from pg as a string; Number() only when non-null.
     ratingAvg: row.rating_avg !== null && row.rating_avg !== undefined ? Number(row.rating_avg) : null,
     ratingCount: row.rating_count ?? 0,
+    // Ground Time-Slot Pricing — MIN(active slot price), or null when no
+    // active pricing is configured yet. Never a fabricated ₹0; the frontend
+    // renders null as "Price on request".
+    startingPrice: row.starting_price !== null && row.starting_price !== undefined ? Number(row.starting_price) : null,
   }
 }
 
@@ -218,11 +223,12 @@ export async function getGroundProfile(req, res, next) {
       return res.status(404).json({ error: 'Ground not found.' })
     }
 
-    const [photos, amenities, amenityCatalog, canteens] = await Promise.all([
+    const [photos, amenities, amenityCatalog, canteens, pricingSlots] = await Promise.all([
       findGroundPhotosByGroundId(ground.id),
       findAmenitiesByGroundId(ground.id),
       findAmenityCatalogByGroundId(ground.id),
       findCanteensByGroundId(ground.id),
+      listActivePricingSlots(ground.id),
     ])
 
     res.json({
@@ -273,6 +279,11 @@ export async function getGroundProfile(req, res, next) {
       // real canteens. Only the fields Step 18 allows — never staff/orders/
       // menu/internal id.
       canteens: canteens.map((c) => ({ publicCanteenId: c.public_canteen_id, name: c.name, isActive: c.is_active })),
+      // Ground Time-Slot Pricing — active slots only, same never-leak-
+      // inactive-pricing posture as every other public read here. No
+      // internal id, no ground_id — just the time band + price a customer
+      // needs to see before booking.
+      pricingSlots: pricingSlots.map((s) => ({ startTime: s.start_time, endTime: s.end_time, price: Number(s.price) })),
     })
   } catch (err) {
     next(err)

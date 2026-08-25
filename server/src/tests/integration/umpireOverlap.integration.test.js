@@ -77,10 +77,16 @@ async function makeTeams() {
   }
 }
 
-// 7:00 PM today, 20 overs/innings -> estimated range is 7:00pm to 12:20am
-// (320 minutes: 20 * 2 * 8min) per matchTimeRange.js's own formula.
+// 7:00 PM 3 days out, 20 overs/innings -> estimated range is 7:00pm to
+// 12:20am (320 minutes: 20 * 2 * 8min) per matchTimeRange.js's own formula.
+// +3 days (not "today") is deliberate: this file's own self-cancel test
+// needs to clear the Phase 2 24h assignment lock (matchTimeRange.js's
+// isAssignmentLocked) — every other test here only cares about the
+// relative hour-of-day gap between matchA/matchB, which an equal forward
+// shift never changes.
 function matchAt(hour, minute = 0, overrides = {}) {
   const d = new Date()
+  d.setDate(d.getDate() + 3)
   d.setHours(hour, minute, 0, 0)
   return { matchDate: d.toISOString(), oversPerInnings: 20, ...overrides }
 }

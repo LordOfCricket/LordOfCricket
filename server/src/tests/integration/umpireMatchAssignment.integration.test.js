@@ -85,7 +85,13 @@ async function makeTeams() {
   }
 }
 
-async function createMatchWithSlots(teams, requiredUmpires = 1, matchDate = new Date().toISOString()) {
+// Default matchDate is 3 days out, not "now" — Phase 2's 24h assignment
+// lock (matchTimeRange.js#isAssignmentLocked) gates self-cancel purely on
+// match_date vs. real time, independent of the match's `status` column
+// (every test here only cares about status='upcoming', not the actual
+// date), so a same-instant default would spuriously lock every self-cancel
+// test in this file.
+async function createMatchWithSlots(teams, requiredUmpires = 1, matchDate = new Date(Date.now() + 3 * 86400000).toISOString()) {
   return matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,

@@ -10,6 +10,7 @@ export const STATUS_LABEL = {
   live: 'Live',
   completed: 'Awaiting Finalization',
   finalized: 'Official Result',
+  cancelled: 'Cancelled',
 }
 
 export function statusLabel(match) {

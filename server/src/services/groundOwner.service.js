@@ -7,9 +7,11 @@ import {
   markNoShow as markSlotNoShowModel,
   assignReplacementToSlot,
   insertAssignmentEvent,
+  cancelAllAssignedSlotsForMatch,
 } from '../models/matchUmpireSlot.model.js'
 import { findUserById } from '../models/user.model.js'
 import { findIncidentsByMatch } from '../models/matchIncident.model.js'
+import { expirePendingProposalsForSlot } from '../models/umpireProposal.model.js'
 import * as matchService from './match.service.js'
 import { assertUmpireEligibleForMatch } from './umpireAssignment.service.js'
 import { buildReputationSummaries } from './umpireReputation.service.js'
@@ -272,7 +274,111 @@ export async function completeGroundMatch(ground, matchId) {
       body: `${withTeams.team_a_name} vs ${withTeams.team_b_name} at ${ground.name} has ended.`,
     })
   }
-  return match
+  // `transitioned` surfaced to the controller (Phase 4, Umpire Module) so it
+  // can publishMatchState only on a REAL transition — same "no-op branch
+  // gets no broadcast" principle the notification above already follows,
+  // and matches match.controller.js#startMatch/finalizeMatch's own
+  // unconditional-on-success publish, which this ground-owner path had been
+  // missing entirely (a spectator sitting on the match page never learned
+  // it ended until their next poll/reconnect).
+  return { match, transitioned }
+}
+
+// Pre-match cancellation (Phase 6, Umpire Module) — the one confirmed-
+// missing match lifecycle action from the Phase 5 audit (deleteMatch in
+// match.model.js is dead code, zero call sites). Deliberately minimal
+// scope, per that phase's own instruction:
+// - Only an 'upcoming' match may be cancelled. Once live, the existing
+//   incident+NO_RESULT-completion combo (already audited, left alone) is
+//   the correct path for a match that can't continue; once completed/
+//   finalized, cancellation makes no sense. Reuses MATCH_NOT_ELIGIBLE
+//   rather than inventing a new error code for this.
+// - Idempotent: re-cancelling an already-cancelled match is a clean no-op,
+//   matching completeMatchManually's own transitioned:false precedent —
+//   never a 409 on a harmless retry.
+// - No timing threshold beyond "still upcoming" — explicit product
+//   assumption, reported per the brief's own instruction rather than
+//   invented silently. In particular this does NOT reuse the 24h
+//   assignment lock (umpireAssignment.service.js#cancelAssignment): that
+//   lock exists to stop an UMPIRE quietly backing out at the last minute,
+//   not to stop the GROUND OWNER from cancelling a match that genuinely
+//   cannot go ahead — bad weather discovered hours before kickoff is
+//   exactly when this is most needed, so blocking it here would be actively
+//   harmful, not safer.
+export async function cancelGroundMatch(ground, matchId, actingUserId, reason = null) {
+  const match = await resolveOwnedMatch(ground, matchId)
+  if (match.status === 'cancelled') return { match, transitioned: false }
+  if (match.status !== 'upcoming') {
+    throw new UmpireAssignmentError(CODES.MATCH_NOT_ELIGIBLE, `Cannot cancel a match that is '${match.status}' — only an upcoming match can be cancelled.`)
+  }
+  const trimmedReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 280) : null
+
+  // Slot ids fetched before the transaction — a plain read, and no other
+  // path adds/removes slot ROWS for an existing match (only their status
+  // changes), so this can't race against what the transaction below does.
+  const allSlots = await findSlotsByMatch(matchId)
+
+  const client = await pool.connect()
+  let updated
+  let cancelledSlots
+  let expiredProposals = []
+  try {
+    await client.query('BEGIN')
+    updated = await updateMatch(
+      matchId,
+      { status: 'cancelled', cancelled_at: new Date(), cancelled_by: actingUserId, cancellation_reason: trimmedReason },
+      client,
+    )
+    // Releases every ASSIGNED umpire's availability for this match — see
+    // cancelAllAssignedSlotsForMatch's own comment for why this does NOT
+    // also write an umpire_assignment_events 'CANCELLED' row.
+    cancelledSlots = await cancelAllAssignedSlotsForMatch(matchId, trimmedReason, client)
+    // Every PENDING proposal on every slot (ASSIGNED or still-open) is
+    // invalidated — a proposal for a match that no longer exists must never
+    // be accept-able. Reuses the exact same bulk-expire function
+    // applyForSlot/respondToProposal already use when a slot fills.
+    for (const slot of allSlots) {
+      expiredProposals.push(...(await expirePendingProposalsForSlot(slot.id, null, client)))
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // Best-effort, post-commit — same posture as every other notification in
+  // this codebase.
+  const withTeams = await findMatchByIdWithTeams(matchId)
+  const matchLabel = withTeams ? `${withTeams.team_a_name} vs ${withTeams.team_b_name}` : 'your match'
+  await Promise.all([
+    ...cancelledSlots
+      .filter((s) => s.umpire_user_id)
+      .map((s) =>
+        createNotification({
+          userId: s.umpire_user_id,
+          type: 'MATCH_CANCELLED',
+          title: 'A match you were assigned to was cancelled',
+          body: trimmedReason ? `${matchLabel} — ${trimmedReason}` : matchLabel,
+          relatedMatchId: matchId,
+        }),
+      ),
+    // Same UMPIRE_PROPOSAL_EXPIRED type applyForSlot/respondToProposal
+    // already use for "this opportunity is gone" — reused, not invented
+    // twice, for the pending-proposal (not yet accepted) group.
+    ...expiredProposals.map((p) =>
+      createNotification({
+        userId: p.umpire_user_id,
+        type: 'UMPIRE_PROPOSAL_EXPIRED',
+        title: 'That match was cancelled',
+        body: matchLabel,
+        relatedMatchId: matchId,
+      }),
+    ),
+  ])
+
+  return { match: updated, transitioned: true, cancelledSlots }
 }
 
 // Verifies the target slot belongs to THIS match (never trust a slot id
@@ -387,7 +493,18 @@ export async function assignReplacementUmpire(ground, matchId, slotId, newUmpire
 
     await assertUmpireEligibleForMatch(match, candidate, client)
 
-    slot = await assignReplacementToSlot(slotId, newUmpireUserId, client)
+    // Same idx_match_umpire_slots_active_umpire race guard applyForSlot/
+    // respondToProposal already handle — the eligibility gate above only
+    // checks CROSS-match overlap, so this catches the same-match case (e.g.
+    // the replacement candidate already holds the match's other slot).
+    try {
+      slot = await assignReplacementToSlot(slotId, newUmpireUserId, client)
+    } catch (err) {
+      if (err.code === '23505') {
+        throw new UmpireAssignmentError(CODES.ALREADY_ASSIGNED, 'This umpire is already assigned to another slot on this match.')
+      }
+      throw err
+    }
     if (!slot) {
       throw new UmpireAssignmentError(CODES.SLOT_NOT_ELIGIBLE, 'This slot is no longer NO_SHOW.')
     }

@@ -3,6 +3,7 @@ import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
 import { utcToGroundLocalParts } from '../domain/booking/timezone.js'
 import { deriveDisplayStatus } from '../domain/booking/bookingStatus.js'
 import * as groundReportService from '../services/groundReport.service.js'
+import { findPublicActiveGroundByPublicId } from '../models/ground.model.js'
 
 // Phase 14 Part 3 — thin HTTP glue only, same convention as every other
 // controller in this codebase (scoring.controller.js, team.controller.js) —
@@ -46,11 +47,28 @@ function serializeBooking(row) {
   }
 }
 
+// Ground Time-Slot Pricing — this legacy walk-in path predates ground_id on
+// bookings (Phase 6 added optional groundId support to the service layer,
+// but no caller here ever passed it, so every request silently booked the
+// platform's single default ground regardless of which ground's page the
+// customer was on). An optional publicGroundId now resolves to a real,
+// ACTIVE ground via the exact same lookup the public ground profile route
+// already uses (findPublicActiveGroundByPublicId) — never a raw internal id
+// trusted from the client. Omitted, this falls back to the identical
+// default-ground behavior every existing caller already relies on.
+async function resolveOptionalGroundId(publicGroundId) {
+  if (!publicGroundId) return null
+  const ground = await findPublicActiveGroundByPublicId(String(publicGroundId))
+  if (!ground) throw new BookingError(BOOKING_ERROR_CODES.BOOKING_NOT_FOUND, 'Ground not found.')
+  return ground.id
+}
+
 export async function getAvailability(req, res, next) {
   try {
     const dateStr = String(req.query.date || '')
     const isStaff = req.user?.role === 'staff'
-    const slots = await bookingService.getDayAvailability(dateStr, { isStaff })
+    const groundId = await resolveOptionalGroundId(req.query.publicGroundId)
+    const slots = await bookingService.getDayAvailability(dateStr, { isStaff, groundId })
     res.json({ date: dateStr, slots })
   } catch (err) {
     next(err)
@@ -59,8 +77,9 @@ export async function getAvailability(req, res, next) {
 
 export async function createBooking(req, res, next) {
   try {
-    const { purpose, expectedPlayers, notes, contactPhone, contactEmail, clientActionId } = req.body
+    const { purpose, expectedPlayers, notes, contactPhone, contactEmail, clientActionId, publicGroundId } = req.body
     const { dateStr, hour, minute } = resolveSlotInput(req.body)
+    const groundId = await resolveOptionalGroundId(publicGroundId)
     const { booking, idempotentReplay } = await bookingService.createBooking({
       dateStr,
       hour,
@@ -73,6 +92,7 @@ export async function createBooking(req, res, next) {
       expectedPlayers: expectedPlayers != null ? Number(expectedPlayers) : null,
       notes: notes || null,
       clientActionId: clientActionId || null,
+      groundId,
       io: req.io,
     })
     if (!idempotentReplay) bookingService.notifyBookingDateChanged(req.io, dateStr)

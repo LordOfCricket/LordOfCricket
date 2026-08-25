@@ -118,7 +118,10 @@ async function setupContext({ requiredUmpires = 1 } = {}) {
   const match = await matchService.createMatch({
     teamAId: teams.teamA.id,
     teamBId: teams.teamB.id,
-    matchDate: new Date(Date.now() + 3600000).toISOString(),
+    // 3 days out, not 1 hour — some tests in this file self-cancel, which
+    // Phase 2's 24h assignment lock (matchTimeRange.js#isAssignmentLocked)
+    // would otherwise correctly refuse.
+    matchDate: new Date(Date.now() + 3 * 86400000).toISOString(),
     groundId: gf.ground.id,
     requiredUmpires,
   })

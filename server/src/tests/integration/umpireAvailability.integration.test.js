@@ -81,8 +81,13 @@ async function makeTeams() {
   }
 }
 
+// 3 days out, not "today" — this file's self-cancel tests need to clear
+// Phase 2's 24h assignment lock (matchTimeRange.js#isAssignmentLocked);
+// every other test here only cares about the hour-of-day, unaffected by an
+// equal forward shift.
 function matchAt(hour, minute = 0, overrides = {}) {
   const d = new Date()
+  d.setDate(d.getDate() + 3)
   d.setHours(hour, minute, 0, 0)
   return { matchDate: d.toISOString(), oversPerInnings: 20, ...overrides }
 }
@@ -107,8 +112,11 @@ test('a weekly-unavailable day blocks apply with NOT_AVAILABLE', async () => {
   const teams = await makeTeams()
   const umpire = await approvedUmpire('weekly-block')
   try {
-    const today = new Date()
-    const dayOfWeek = today.getDay()
+    const fixture = matchAt(19)
+    // The day-of-week of the match itself (3 days out — see matchAt's own
+    // comment), not "today" — those diverged once matchAt stopped being
+    // same-day for the Phase 2 24h-lock fix below.
+    const dayOfWeek = new Date(fixture.matchDate).getDay()
 
     const weeklySet = await json(`${server.baseUrl}/umpire/availability/weekly`, {
       method: 'PATCH',
@@ -117,7 +125,7 @@ test('a weekly-unavailable day blocks apply with NOT_AVAILABLE', async () => {
     })
     assert.equal(weeklySet.status, 200, JSON.stringify(weeklySet.data))
 
-    const match = await createMatch(teams, matchAt(19))
+    const match = await createMatch(teams, fixture)
     const res = await apply(server, match.id, umpire.token)
     assert.equal(res.status, 409, JSON.stringify(res.data))
     assert.equal(res.data.code, 'NOT_AVAILABLE')

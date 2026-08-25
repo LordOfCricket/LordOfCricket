@@ -4,16 +4,16 @@ export async function insertBooking(client, {
   groundId, publicBookingId, bookingType = 'CUSTOMER', userId = null, customerName, contactPhone = null, contactEmail = null,
   startTime, endTime, purpose = null, expectedPlayers = null, notes = null, clientActionId = null, createdByStaffId = null,
   googleSyncStatus = 'PENDING', blockType = null, bookingPurpose = 'WALK_IN', matchFormat = null, status = 'CONFIRMED',
-  holdExpiresAt = null, proposalId = null,
+  holdExpiresAt = null, proposalId = null, amount = null, pricingSlotId = null,
 }) {
   const { rows } = await client.query(
     `INSERT INTO ground_bookings (
        ground_id, public_booking_id, booking_type, user_id, customer_name, contact_phone, contact_email,
        start_time, end_time, purpose, expected_players, notes, client_action_id, created_by_staff_id, google_sync_status, block_type,
-       booking_purpose, match_format, status, hold_expires_at, proposal_id
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+       booking_purpose, match_format, status, hold_expires_at, proposal_id, amount, pricing_slot_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
      RETURNING *`,
-    [groundId, publicBookingId, bookingType, userId, customerName, contactPhone, contactEmail, startTime, endTime, purpose, expectedPlayers, notes, clientActionId, createdByStaffId, googleSyncStatus, blockType, bookingPurpose, matchFormat, status, holdExpiresAt, proposalId]
+    [groundId, publicBookingId, bookingType, userId, customerName, contactPhone, contactEmail, startTime, endTime, purpose, expectedPlayers, notes, clientActionId, createdByStaffId, googleSyncStatus, blockType, bookingPurpose, matchFormat, status, holdExpiresAt, proposalId, amount, pricingSlotId]
   )
   return rows[0]
 }

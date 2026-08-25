@@ -127,7 +127,7 @@ async function cleanupIdentifier(identifier) {
   }
 }
 
-test('GET /ground-owner/permissions/catalog: requires auth, returns exactly the 6 catalog permissions', async () => {
+test('GET /ground-owner/permissions/catalog: requires auth, returns exactly the 8 catalog permissions', async () => {
   const server = await startTestApp()
   const owner = await createUser('catalog-owner', { role: 'user' })
   try {
@@ -140,8 +140,9 @@ test('GET /ground-owner/permissions/catalog: requires auth, returns exactly the 
     const keys = body.permissions.map((p) => p.key).sort()
     // Phase 24/25 added BOOKING_VIEW/BOOKING_MANAGE to the shared permissions
     // catalog (ground booking delegation for GROUND_ADMIN staff), alongside
-    // the original 4 (match/staff/umpire management).
-    assert.deepEqual(keys, ['BOOKING_MANAGE', 'BOOKING_VIEW', 'MATCH_MANAGE', 'MATCH_VIEW', 'STAFF_VIEW', 'UMPIRE_MANAGE'])
+    // the original 4 (match/staff/umpire management). Ground Time-Slot
+    // Pricing added PRICING_VIEW/PRICING_MANAGE the same way.
+    assert.deepEqual(keys, ['BOOKING_MANAGE', 'BOOKING_VIEW', 'MATCH_MANAGE', 'MATCH_VIEW', 'PRICING_MANAGE', 'PRICING_VIEW', 'STAFF_VIEW', 'UMPIRE_MANAGE'])
   } finally {
     await owner.cleanup()
     await server.close()

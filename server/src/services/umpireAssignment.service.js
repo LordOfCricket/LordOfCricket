@@ -16,7 +16,7 @@ import { findWeeklyAvailability, findDateAvailability } from '../models/umpireAv
 import { expirePendingProposalsForSlot } from '../models/umpireProposal.model.js'
 import { createNotification } from './groundNotification.service.js'
 import { UmpireAssignmentError, UMPIRE_ASSIGNMENT_ERROR_CODES as CODES } from '../domain/umpireAssignment/errors.js'
-import { estimateMatchTimeRange } from '../domain/umpireAssignment/matchTimeRange.js'
+import { estimateMatchTimeRange, isAssignmentLocked } from '../domain/umpireAssignment/matchTimeRange.js'
 import { rangesOverlap } from '../domain/booking/availability.js'
 import { isUmpireAvailableForMatch } from '../domain/umpireAssignment/availability.js'
 
@@ -222,6 +222,24 @@ export async function cancelAssignment({ matchId, user, reason }) {
   // below (Phase 23) rather than by normal self-cancel.
   if (match.status !== 'upcoming') {
     throw new UmpireAssignmentError(CODES.MATCH_NOT_ELIGIBLE, 'This match is no longer eligible for umpire assignment changes.')
+  }
+
+  // Phase 2 (Umpire Interest+Assignment audit) — 24h confirmation lock.
+  // Scoped deliberately to THIS action only: self-cancelling a CONFIRMED
+  // (ASSIGNED) slot is the one "normal" change that can strand a match
+  // umpire-less at short notice, so it locks. Filling a still-open slot
+  // (applyForSlot/proposeUmpire/respondToProposal accept) is NOT gated by
+  // this anywhere in this file — the existing emergency path
+  // (markMatchUmpireNoShow + assignReplacementUmpire, groundOwner.service.js)
+  // only ever operates on a NO_SHOW slot and stays open regardless of this
+  // lock, exactly as before. If an umpire genuinely cannot officiate this
+  // close to kickoff, the ground owner marking them a no-show and pulling a
+  // replacement is the intended path now, not silent self-cancellation.
+  if (isAssignmentLocked(match)) {
+    throw new UmpireAssignmentError(
+      CODES.ASSIGNMENT_LOCKED,
+      'Assignment changes are locked within 24 hours of the match start. Contact the ground owner if you can no longer officiate.',
+    )
   }
 
   // Scoped to (matchId, user.id) inside cancelMyAssignment's WHERE clause —

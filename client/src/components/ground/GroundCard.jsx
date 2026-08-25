@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { MapPin } from 'lucide-react'
-import { formatDistance } from '../../models/groundDiscovery.model.js'
+import { formatDistance, formatStartingPrice } from '../../models/groundDiscovery.model.js'
 import RatingBadge from './RatingBadge.jsx'
 
 const MAX_VISIBLE_FACILITIES = 3
@@ -8,9 +8,11 @@ const MAX_VISIBLE_FACILITIES = 3
 // Every field here comes straight from GET /api/grounds/search|nearby|
 // (city/nearby/browse-all discovery); nothing is hardcoded per-ground.
 // Navigation always uses the API's own publicGroundId, never an array
-// index or numeric id. No price shown — that field doesn't exist in the
-// schema. Phase 13 — rating now DOES exist (grounds.rating_avg/rating_count,
-// real match_feedback data) and is shown via RatingBadge.
+// index or numeric id. Phase 13 — rating now DOES exist (grounds.rating_avg/
+// rating_count, real match_feedback data) and is shown via RatingBadge.
+// Ground Time-Slot Pricing — startingPrice is MIN(active pricing slot price)
+// for this ground, or null (rendered as "Price on request") when none is
+// configured yet — see formatStartingPrice.
 export default function GroundCard({ ground }) {
   const facilities = ground.amenities || []
   const extraCount = Math.max(0, facilities.length - MAX_VISIBLE_FACILITIES)
@@ -56,6 +58,7 @@ export default function GroundCard({ ground }) {
           <div className="mt-1.5">
             <RatingBadge ratingAvg={ground.ratingAvg} ratingCount={ground.ratingCount} />
           </div>
+          <p className="mt-1.5 text-sm font-medium text-emerald-300">{formatStartingPrice(ground.startingPrice)}</p>
         </div>
 
         {facilities.length > 0 && (

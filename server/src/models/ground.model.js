@@ -153,6 +153,14 @@ const EARTH_RADIUS_KM = 6371 // mean radius, standard haversine constant
 // controllers coalesce that to [] before it reaches the client.
 const AMENITY_NAMES_SUBQUERY = `(SELECT array_agg(a.name) FROM amenities a WHERE a.ground_id = g.id) AS amenity_names`
 
+// Ground Time-Slot Pricing — "Starts from ₹X" on the homepage/discovery
+// cards. Same correlated-subquery-per-row convention as AMENITY_NAMES_
+// SUBQUERY right above; ACTIVE slots only (never leaks a deactivated/draft
+// price band), NULL (not a fabricated 0) when a ground has no active
+// pricing configured yet — the controller renders that honest-empty state
+// as "Price on request", never ₹0.
+const STARTING_PRICE_SUBQUERY = `(SELECT MIN(ps.price) FROM ground_pricing_slots ps WHERE ps.ground_id = g.id AND ps.is_active = true) AS starting_price`
+
 export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, limit, offset }) {
   const { rows } = await pool.query(
     `WITH candidate_grounds AS (
@@ -164,6 +172,7 @@ export async function findNearbyActiveGrounds({ latitude, longitude, radiusKm, l
           ORDER BY gp.sort_order, gp.created_at
           LIMIT 1) AS primary_photo,
          ${AMENITY_NAMES_SUBQUERY},
+         ${STARTING_PRICE_SUBQUERY},
          ${2 * EARTH_RADIUS_KM} * asin(
            sqrt(
              power(sin(radians(latitude - $1) / 2), 2)
@@ -211,7 +220,8 @@ export async function findActiveGroundsByCity({ city, limit, offset }) {
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
           LIMIT 1) AS primary_photo,
-         ${AMENITY_NAMES_SUBQUERY}
+         ${AMENITY_NAMES_SUBQUERY},
+         ${STARTING_PRICE_SUBQUERY}
        FROM grounds g
        WHERE status = 'ACTIVE' AND city ILIKE '%' || $1 || '%'
      )
@@ -374,7 +384,8 @@ export async function findAllActiveGrounds({ limit, offset, sort = 'name' }) {
           WHERE gp.ground_id = g.id
           ORDER BY gp.sort_order, gp.created_at
           LIMIT 1) AS primary_photo,
-         ${AMENITY_NAMES_SUBQUERY}
+         ${AMENITY_NAMES_SUBQUERY},
+         ${STARTING_PRICE_SUBQUERY}
        FROM grounds g
        WHERE status = 'ACTIVE'
      )

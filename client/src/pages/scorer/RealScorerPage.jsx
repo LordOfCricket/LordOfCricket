@@ -70,7 +70,7 @@ export default function RealScorerPage() {
           <button type="button" onClick={() => window.location.reload()} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950">
             Retry
           </button>
-          <button type="button" onClick={() => navigate('/player/dashboard')} className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-semibold text-white">
+          <button type="button" onClick={() => navigate('/umpire/dashboard')} className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-semibold text-white">
             Back to Dashboard
           </button>
         </div>
@@ -128,7 +128,7 @@ export default function RealScorerPage() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="flex items-center justify-between">
-          <button type="button" onClick={() => navigate('/player/dashboard')} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
+          <button type="button" onClick={() => navigate('/umpire/dashboard')} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
             <ArrowLeft className="h-4 w-4" />
             Exit Scorer
           </button>

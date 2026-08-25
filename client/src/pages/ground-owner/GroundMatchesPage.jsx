@@ -460,14 +460,28 @@ function MatchCard({ publicGroundId, match, slotsHook, lifecycleHook, canManage 
       {result?.type === 'error' && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-rose-300">{result.message}</p>}
 
       {canManage && match.status === 'upcoming' && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => lifecycleHook.start(match.id)}
-          className="mt-4 h-11 w-full rounded-2xl bg-linear-to-r from-green-700 via-green-500 to-lime-500 text-sm font-semibold text-white shadow-md shadow-green-900/40 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busy ? 'Starting…' : 'Match is Starting'}
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => lifecycleHook.start(match.id)}
+            className="h-11 flex-1 rounded-2xl bg-linear-to-r from-green-700 via-green-500 to-lime-500 text-sm font-semibold text-white shadow-md shadow-green-900/40 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? 'Starting…' : 'Match is Starting'}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm('Cancel this match? Any assigned or proposed umpires will be notified and released.')) return
+              const reason = window.prompt('Reason (optional, shown to affected umpires):') || undefined
+              lifecycleHook.cancel(match.id, reason)
+            }}
+            className="h-11 rounded-2xl border border-rose-400/30 px-4 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
       )}
       {canManage && match.status === 'live' && (
         <button

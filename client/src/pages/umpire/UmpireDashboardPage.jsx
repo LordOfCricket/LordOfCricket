@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarClock, Flag, ClipboardList, MapPin, MessageCircle } from 'lucide-react'
+import { CalendarClock, Flag, ClipboardList, MessageCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useUmpireDashboard } from '../../hooks/useUmpireDashboard.js'
 import UmpireLayout from '../../components/umpire-dashboard/UmpireLayout.jsx'
@@ -37,14 +37,7 @@ function NextAssignmentCard({ assignment }) {
           className="inline-flex h-10 items-center gap-2 rounded-full bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
         >
           <ClipboardList className="h-4 w-4" />
-          Match Briefing
-        </Link>
-        <Link
-          to={`/umpire/matches/${assignment.match_id}/briefing`}
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-4 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/5"
-        >
-          <MapPin className="h-4 w-4" />
-          Check In
+          Match Briefing &amp; Check-In
         </Link>
         <button
           type="button"

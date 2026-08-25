@@ -11,6 +11,7 @@ import * as scoringService from '../../services/scoring.service.js'
 import * as correctionService from '../../services/correction.service.js'
 import { createFixture } from './fixtures.js'
 import { ScoringError } from '../../domain/scoring/errors.js'
+import { selectWagonWheelShots } from '../../domain/scoring/selectors.js'
 
 async function recordRuns(fx, runsSequence) {
   const ids = []
@@ -501,6 +502,57 @@ test('void delivery: an accidental extra tap is excluded from scoring but stays 
     const d1Row = await pool.query('SELECT bat_runs, voided FROM deliveries WHERE id = $1', [d1])
     assert.equal(d1Row.rows[0].bat_runs, 1)
     assert.equal(d1Row.rows[0].voided, false)
+  } finally {
+    await fx.cleanup()
+  }
+})
+
+// Phase 4 (Umpire Module) — a void-only correction patch (`{ voided: true }`,
+// no `shot` key) never reaches applyCorrection's "delete the shot if 'shot'
+// is in the patch" branch, so a pre-existing wagon-wheel shot on the voided
+// delivery was left behind as a stale DB row. Fixed at the read side
+// (selectWagonWheelShots now excludes `voided` the same way it already
+// excludes `isDeadBall`) so it can never render regardless of what the
+// write side leaves behind — this proves that fix through the same
+// selector the real GET /innings/:id/wagon-wheel endpoint calls.
+test('void delivery with a wagon-wheel shot: the shot never renders after voiding, even though the DB row is left behind', async () => {
+  const fx = await createFixture()
+  try {
+    await fx.seatOpeners()
+    const shotDelivery = await scoringService.recordDelivery({
+      inningsId: fx.inningsId,
+      expectedVersion: (await scoringService.getInningsState(fx.inningsId)).innings.version,
+      clientActionId: randomUUID(),
+      input: { batRuns: 4, bowlerMatchPlayerId: fx.bowler1, shot: { normalizedX: 0.5, normalizedY: -0.5, angleDegrees: 90, regionId: 'cover' } },
+    })
+
+    const shotsBefore = await scoringService.listWagonWheelShots(fx.inningsId)
+    assert.equal(shotsBefore.length, 1, 'sanity check: the shot was actually recorded')
+
+    const version = (await scoringService.getInningsState(fx.inningsId)).innings.version
+    await correctionService.applyCorrection({
+      inningsId: fx.inningsId,
+      targetType: 'delivery',
+      targetId: shotDelivery.delivery.id,
+      patch: { voided: true },
+      reasonCode: 'ACCIDENTAL_DELIVERY',
+      expectedVersion: version,
+      clientActionId: randomUUID(),
+      correctedByUserId: fx.userId,
+    })
+
+    // The raw row may still exist (the write side doesn't clean it up for a
+    // void-only patch) — what matters is the same selector the real
+    // wagon-wheel endpoint uses never surfaces it.
+    const rawShotsAfter = await scoringService.listWagonWheelShots(fx.inningsId)
+    const { state } = await scoringService.getInningsState(fx.inningsId)
+    const shotsByDeliveryId = new Map(rawShotsAfter.map((s) => [String(s.delivery_id), s]))
+    const visibleShots = selectWagonWheelShots(state.deliveries, shotsByDeliveryId)
+    assert.equal(
+      visibleShots.some((s) => String(s.deliveryId) === String(shotDelivery.delivery.id)),
+      false,
+      'a voided delivery must never contribute a visible wagon-wheel shot',
+    )
   } finally {
     await fx.cleanup()
   }

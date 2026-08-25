@@ -77,8 +77,11 @@ async function makeTeams() {
   }
 }
 
+// 3 days out — see umpireAvailability.integration.test.js's own matchAt for
+// why (Phase 2's 24h assignment lock, matchTimeRange.js#isAssignmentLocked).
 function matchAt(hour) {
   const d = new Date()
+  d.setDate(d.getDate() + 3)
   d.setHours(hour, 0, 0, 0)
   return { matchDate: d.toISOString(), oversPerInnings: 20 }
 }

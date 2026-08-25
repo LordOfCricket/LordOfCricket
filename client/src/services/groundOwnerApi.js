@@ -66,6 +66,11 @@ export async function completeGroundMatch(publicGroundId, matchId) {
   return data.match
 }
 
+export async function cancelGroundMatch(publicGroundId, matchId, reason) {
+  const { data } = await api.post(`/ground-owner/grounds/${publicGroundId}/matches/${matchId}/cancel`, { reason })
+  return data.match
+}
+
 export async function markUmpireNoShow(publicGroundId, matchId, slotId) {
   const { data } = await api.post(`/ground-owner/grounds/${publicGroundId}/matches/${matchId}/umpire-slots/${slotId}/no-show`)
   return data.slot
@@ -319,4 +324,25 @@ export async function fetchGroundTrends(publicGroundId, range = 'TODAY') {
 export async function fetchGroundReviews(publicGroundId, { page = 1, limit = 20 } = {}) {
   const { data } = await api.get(`/ground-owner/grounds/${publicGroundId}/reviews`, { params: { page, limit } })
   return data
+}
+
+// Ground Time-Slot Pricing — owner-facing CRUD (GET requires PRICING_VIEW,
+// write requires PRICING_MANAGE; server-side, never client-checked).
+export async function fetchGroundPricingSlots(publicGroundId) {
+  const { data } = await api.get(`/ground-owner/grounds/${publicGroundId}/pricing-slots`)
+  return data.slots || []
+}
+
+export async function createGroundPricingSlot(publicGroundId, { startTime, endTime, price }) {
+  const { data } = await api.post(`/ground-owner/grounds/${publicGroundId}/pricing-slots`, { startTime, endTime, price })
+  return data.slot
+}
+
+export async function updateGroundPricingSlot(publicGroundId, slotId, updates) {
+  const { data } = await api.patch(`/ground-owner/grounds/${publicGroundId}/pricing-slots/${slotId}`, updates)
+  return data.slot
+}
+
+export async function deleteGroundPricingSlot(publicGroundId, slotId) {
+  await api.delete(`/ground-owner/grounds/${publicGroundId}/pricing-slots/${slotId}`)
 }

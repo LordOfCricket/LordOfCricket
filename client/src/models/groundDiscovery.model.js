@@ -55,6 +55,15 @@ export function formatDistance(distanceKm) {
   return `${Math.round(distanceKm)} km away`
 }
 
+// Ground Time-Slot Pricing — "Starts from ₹X" on GroundCard, or the honest
+// "Price on request" empty state when the ground has no active pricing
+// slots yet. Never a fabricated ₹0 (startingPrice is null in that case,
+// per the backend's own MIN(active price) subquery — see ground.model.js).
+export function formatStartingPrice(startingPrice) {
+  if (typeof startingPrice !== 'number' || !Number.isFinite(startingPrice)) return 'Price on request'
+  return `Starts from ₹${startingPrice.toLocaleString('en-IN')}`
+}
+
 // A ground's public contact fields are all optional (a ground
 // row can have null phone/email/website). Step 20 requires hiding missing
 // fields rather than rendering a placeholder, so callers check this instead
