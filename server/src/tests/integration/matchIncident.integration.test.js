@@ -142,10 +142,14 @@ test('the assigned umpire can report an incident; the ground owner sees it and g
     assert.equal(reported.data.incident.incident_type, 'RAIN')
     assert.equal(reported.data.incident.description, 'Heavy rain started at 8:12 PM.')
 
-    const notified = await pool.query(`SELECT COUNT(*)::int AS n FROM ground_notifications WHERE user_id = $1 AND type = 'MATCH_INCIDENT_REPORTED'`, [
+    const notified = await pool.query(`SELECT ground_id FROM ground_notifications WHERE user_id = $1 AND type = 'MATCH_INCIDENT_REPORTED'`, [
       owner.id,
     ])
-    assert.equal(notified.rows[0].n, 1)
+    assert.equal(notified.rows.length, 1)
+    // Phase 2 Cleanup — groundId lets NotificationBell deep-link the owner
+    // into their own ground's Matches tab (TYPE_ROUTE_SUFFIX), scoped to
+    // this incident's real, own ground only — never another ground's.
+    assert.equal(notified.rows[0].ground_id, gf.ground.id, "the owner's notification must carry this match's real ground id")
 
     const asUmpire = await json(`${server.baseUrl}/matches/${match.id}/incidents`, { token: umpire.token })
     assert.equal(asUmpire.status, 200)

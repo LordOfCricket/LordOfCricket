@@ -25,7 +25,7 @@ function ModuleCard({ icon: Icon, label, description, to }) {
 function GroundHub({ membership, onSwitchGround, showSwitch }) {
   const perms = membership.permissions || []
   const canMatches = perms.includes('MATCH_VIEW') || perms.includes('MATCH_MANAGE')
-  const canBookings = perms.includes('BOOKING_MANAGE')
+  const canBookings = perms.includes('BOOKING_VIEW') || perms.includes('BOOKING_MANAGE')
 
   return (
     <div>

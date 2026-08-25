@@ -12,7 +12,7 @@ import OnboardingBanner from '../../components/dashboard/OnboardingBanner.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 
 export default function PlayerDashboardPage() {
-  const { user, player, team, isNewPlayer } = usePlayerDashboard()
+  const { user, player, team, isNewPlayer, loading } = usePlayerDashboard()
   const location = useLocation()
 
   useEffect(() => {
@@ -38,6 +38,9 @@ export default function PlayerDashboardPage() {
         <BackButton fallback="/" className="mb-4" />
         <DashboardHeader name={user?.name} />
 
+        {loading ? (
+          <p className="mt-8 text-sm text-slate-400">Loading…</p>
+        ) : (
         <div className="mt-8 space-y-6">
           {isNewPlayer && <OnboardingBanner player={player} team={team} />}
 
@@ -62,6 +65,7 @@ export default function PlayerDashboardPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </main>
   )

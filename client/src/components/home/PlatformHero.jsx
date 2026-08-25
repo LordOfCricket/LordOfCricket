@@ -100,8 +100,10 @@ export default function PlatformHero() {
               // Ground discovery now lives on its own page (/grounds — city
               // sort, landmark search, km radius) rather than a same-page
               // section here, so this is a real route change.
+              // Phase 2 Cleanup — "Join LOC" is misleading for someone
+              // already signed in; label only, same link/behavior.
               <Link to="/grounds" className={CTA_CLASSNAME}>
-                Join LOC
+                Explore Grounds
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
               </Link>
             ) : (

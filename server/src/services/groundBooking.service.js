@@ -4,11 +4,12 @@ import { findDefaultGround, findGroundById } from '../models/ground.model.js'
 import * as bookingRepo from '../repositories/groundBooking.repository.js'
 import { computeDayAvailability } from '../domain/booking/availability.js'
 import { findNearbyAlternatives } from '../domain/booking/recommendations.js'
-import { groundLocalToUtc, isValidDateStr, groundTodayDateStr, addDaysToDateStr } from '../domain/booking/timezone.js'
+import { groundLocalToUtc, utcToGroundLocalParts, isValidDateStr, groundTodayDateStr, addDaysToDateStr } from '../domain/booking/timezone.js'
 import { SLOT_DURATION_MINUTES, MAX_BOOKING_HORIZON_DAYS, GROUND_OPENING_HOUR, GROUND_CLOSING_HOUR } from '../domain/booking/policy.js'
 import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
 import { isValidBlockType } from '../domain/booking/blockTypes.js'
-import { computeApplicablePrice } from './groundPricing.service.js'
+import { computeApplicablePrice, listActivePricingSlots } from './groundPricing.service.js'
+import { findSlotContainingTime, timeToMinutes } from '../domain/groundPricing/pricing.js'
 import * as googleCalendar from './googleCalendar.service.js'
 import * as auditLogService from './groundAuditLog.service.js'
 import * as notificationService from './groundNotification.service.js'
@@ -76,14 +77,26 @@ async function buildOccupiedRanges(dateStr, groundId) {
 export async function getDayAvailability(dateStr, { isStaff = false, groundId: paramGroundId = null } = {}) {
   assertBookableDate(dateStr)
   const groundId = paramGroundId || await resolveDefaultGroundId()
-  const occupied = await buildOccupiedRanges(dateStr, groundId)
+  const [occupied, activePricingSlots] = await Promise.all([buildOccupiedRanges(dateStr, groundId), listActivePricingSlots(groundId)])
   const slots = computeDayAvailability(dateStr, occupied)
-  return slots.map((s) => ({
-    startTime: s.startTime.toISOString(),
-    endTime: s.endTime.toISOString(),
-    status: s.status,
-    reason: isStaff ? s.reason : null,
-  }))
+  // Ground Pricing UX Polish — same lookup createBooking uses at
+  // confirmation time (findSlotContainingTime), just fetched once for the
+  // whole day instead of per-slot, so the customer can see the price before
+  // picking a time rather than discovering PRICE_UNAVAILABLE only on submit.
+  // null means "no active slot covers this time" — an honest absence, not a
+  // fabricated ₹0, same convention as computeApplicablePrice itself.
+  return slots.map((s) => {
+    const localParts = utcToGroundLocalParts(s.startTime)
+    const timeOfDayMinutes = timeToMinutes(`${String(localParts.hour).padStart(2, '0')}:${String(localParts.minute).padStart(2, '0')}`)
+    const priceSlot = findSlotContainingTime(activePricingSlots, timeOfDayMinutes)
+    return {
+      startTime: s.startTime.toISOString(),
+      endTime: s.endTime.toISOString(),
+      status: s.status,
+      reason: isStaff ? s.reason : null,
+      price: priceSlot ? Number(priceSlot.price) : null,
+    }
+  })
 }
 
 function availabilityLookupFactory(cache) {
@@ -179,20 +192,23 @@ export async function createBooking({ dateStr, hour, minute = 0, userId = null, 
 
   // Ground Time-Slot Pricing — server-side, authoritative price snapshot.
   // Never trusts a frontend-supplied amount (none is even accepted here).
-  // A STAFF_BLOCK isn't a paid customer booking, so it's never priced.
-  // No active pricing slot covering this time-of-day is NOT an error — the
-  // booking still proceeds with amount=null ("price on request"), since LOC
-  // has no payment gateway to enforce against and blocking a booking over an
-  // owner's incomplete pricing config would be a disproportionate UX failure.
+  // A STAFF_BLOCK isn't a paid customer booking, so it's never priced/gated.
+  // Ground Pricing UX Polish — no active pricing slot covering this
+  // time-of-day is now a hard rejection for a CUSTOMER booking (previously
+  // proceeded silently with amount=null). The frontend already shows price
+  // per slot from GET /availability above and disables unpriced slots, so a
+  // real user hitting this is a race (owner deactivated the slot between
+  // fetch and confirm) — this is the authoritative backstop either way.
   let amount = null
   let pricingSlotId = null
   if (bookingType === 'CUSTOMER') {
     const timeOfDay = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
     const applicable = await computeApplicablePrice(groundId, timeOfDay)
-    if (applicable) {
-      amount = applicable.amount
-      pricingSlotId = applicable.pricingSlotId
+    if (!applicable) {
+      throw new BookingError(BOOKING_ERROR_CODES.PRICE_UNAVAILABLE, 'Price unavailable for this time. Please select another time slot or contact the ground.')
     }
+    amount = applicable.amount
+    pricingSlotId = applicable.pricingSlotId
   }
 
   const client = await pool.connect()

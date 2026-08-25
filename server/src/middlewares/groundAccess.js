@@ -75,7 +75,15 @@ export function requireGroundRole(...allowedRoles) {
 // route, not a breaking change to what the controller/service receives).
 const GROUND_STAFF_ROLES = ['GROUND_OWNER', 'GROUND_ADMIN', 'CANTEEN_STAFF']
 
-export function requireGroundPermission(permissionKey) {
+// Ground Owner Staff Audit — accepts one or more permission keys (rest args,
+// same variadic shape as requireGroundRole above); a membership passes if it
+// holds an ACTIVE grant for ANY of them. Every pre-existing single-key call
+// site is unaffected (a 1-element list behaves identically to the old single
+// string). Needed so a route can honor an already-established "VIEW-or-MANAGE
+// grants read access" pattern (see bookingConflict.service.js#assertCanViewBooking,
+// which already does this exact any-of check for a different booking surface)
+// without duplicating the permission-check loop at each call site.
+export function requireGroundPermission(...permissionKeys) {
   return async (req, res, next) => {
     try {
       const ground = await findGroundByPublicId(req.params.publicGroundId)
@@ -103,8 +111,8 @@ export function requireGroundPermission(permissionKey) {
         return next()
       }
 
-      const allowed = await hasActivePermission(membership.id, permissionKey)
-      if (!allowed) {
+      const grants = await Promise.all(permissionKeys.map((key) => hasActivePermission(membership.id, key)))
+      if (!grants.some(Boolean)) {
         return res.status(403).json({ error: 'You do not have permission to perform this action at this ground.' })
       }
       next()

@@ -9,10 +9,25 @@ import { BookingError } from '../../domain/booking/errors.js'
 import { groundTodayDateStr, addDaysToDateStr, groundLocalToUtc } from '../../domain/booking/timezone.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import * as matchService from '../../services/match.service.js'
+import * as pricingService from '../../services/groundPricing.service.js'
+import { findDefaultGround } from '../../models/ground.model.js'
 
 const TEST_DATE = addDaysToDateStr(groundTodayDateStr(), 10)
 const TEST_DATE_2 = addDaysToDateStr(groundTodayDateStr(), 11)
 const TEST_DATE_3 = addDaysToDateStr(groundTodayDateStr(), 12)
+
+// Ground Pricing UX Polish — this file's tests are about booking/concurrency/
+// cancellation mechanics, not pricing itself, but a CUSTOMER booking now
+// requires an active pricing slot covering its start time (PRICE_UNAVAILABLE
+// otherwise). A single slot spanning the whole default operating window
+// covers every hour this file books at (6/8/10/12/14/18) without needing to
+// touch every individual test. Created once, removed once — never left
+// behind for other files/suites that also use the default ground.
+let fixturePricingSlot = null
+test.before(async () => {
+  const ground = await findDefaultGround()
+  fixturePricingSlot = await pricingService.createPricingSlot(ground, { startTime: '00:00', endTime: '23:59', price: 1000 }, null)
+})
 
 async function makeUser(name) {
   const { rows } = await pool.query(
@@ -242,4 +257,8 @@ test.after(async () => {
   await cleanupBookingsOnDates([TEST_DATE])
   await cleanupBookingsOnDates([TEST_DATE_2])
   await cleanupBookingsOnDates([TEST_DATE_3])
+  if (fixturePricingSlot) {
+    const ground = await findDefaultGround()
+    await pricingService.deletePricingSlot(ground, fixturePricingSlot.id, null)
+  }
 })

@@ -104,7 +104,13 @@ export function getGroundStaffAccountLinks() {
 export function getAccountLinks(user) {
   const isStaff = user?.role === 'staff'
   const isSuperAdminOrAdmin = isStaff && ['super_admin', 'admin'].includes(user?.staff_role)
-  const isScorer = (isStaff && user?.staff_role === 'super_admin') || user?.player_type === 'umpire'
+  // Final Whole-Project Audit — Super Admin previously also got "Manage
+  // Matches" here (staff_role === 'super_admin'), promoting the live
+  // match-scorer into primary navigation for a platform administrator. The
+  // backend's own super-admin scoring bypass (matchScorerAccess.js) is a
+  // separate, deliberate, unchanged capability — this only removes the
+  // nav-level promotion, matching the real Umpire role's own link below.
+  const isScorer = user?.player_type === 'umpire'
 
   const links = [
     isStaff

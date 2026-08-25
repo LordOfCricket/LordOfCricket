@@ -35,6 +35,11 @@ function serializeBooking(row) {
     purpose: row.purpose,
     expectedPlayers: row.expected_players,
     notes: row.notes,
+    // Ground Pricing UX Polish — the server-computed, immutable price
+    // snapshot taken at booking-creation time (never recalculated later).
+    // null only for a STAFF_BLOCK (never priced) — a CUSTOMER booking always
+    // has one now that PRICE_UNAVAILABLE blocks creation without it.
+    amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
     googleSyncStatus: row.google_sync_status,
     createdAt: row.created_at,
     cancelledAt: row.cancelled_at,

@@ -80,7 +80,17 @@ export function useBookingFlow(publicGroundId = null) {
       setConfirmedBooking(booking)
       setStep('success')
     } catch (err) {
-      if (err.response?.status === 409) {
+      // Ground Pricing UX Polish — PRICE_UNAVAILABLE is also a 409 (same
+      // "current state blocks this action" convention as BOOKING_CONFLICT),
+      // but it's not a scheduling conflict — no alternatives to suggest, and
+      // the 'conflict' step's copy would be misleading here. Checked by code,
+      // not status, so it never gets swept into the generic 409 branch. This
+      // is a defense-in-depth path only: the slot picker already hides
+      // unpriced slots, so a real user hits this only via a race (owner
+      // deactivated pricing between availability fetch and confirm).
+      if (err.response?.data?.code === 'PRICE_UNAVAILABLE') {
+        setError(err.response.data.message)
+      } else if (err.response?.status === 409) {
         setAlternatives(err.response.data.details?.alternatives || [])
         setStep('conflict')
       } else {

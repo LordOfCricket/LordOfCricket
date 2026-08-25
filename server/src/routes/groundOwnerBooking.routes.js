@@ -20,9 +20,14 @@ const router = Router({ mergeParams: true })
 // Distinct from public /bookings/availability which requires no auth.
 router.get('/availability', requireAuth, attachGroundContext, getGroundAvailability)
 
-// Ground owner operations — reading own ground's bookings
-router.get('/', requireAuth, attachGroundContext, requireGroundPermission('BOOKING_MANAGE'), listGroundBookings)
-router.get('/:publicBookingId', requireAuth, attachGroundContext, requireGroundPermission('BOOKING_MANAGE'), getGroundBooking)
+// Ground Owner Staff Audit — reading own ground's bookings now also accepts
+// BOOKING_VIEW (previously BOOKING_MANAGE-only, which left the "View
+// Bookings" permission an Owner can grant in Staff Management doing nothing
+// at these two routes — inconsistent with bookingConflict.service.js's own
+// assertCanViewBooking, which already treats BOOKING_VIEW as sufficient to
+// view a booking). Mutating the status below still requires BOOKING_MANAGE.
+router.get('/', requireAuth, attachGroundContext, requireGroundPermission('BOOKING_VIEW', 'BOOKING_MANAGE'), listGroundBookings)
+router.get('/:publicBookingId', requireAuth, attachGroundContext, requireGroundPermission('BOOKING_VIEW', 'BOOKING_MANAGE'), getGroundBooking)
 
 // Ground owner operations — managing booking status (check-in, no-show, cancel)
 router.patch('/:publicBookingId/status', bookingWriteLimiter, requireAuth, attachGroundContext, requireGroundPermission('BOOKING_MANAGE'), updateGroundBookingStatus)

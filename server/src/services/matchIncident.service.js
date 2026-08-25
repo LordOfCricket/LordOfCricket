@@ -50,6 +50,10 @@ export async function reportIncident({ matchId, user, incidentType, description,
           title: 'An incident was reported for your match',
           body: `${incidentType.replace(/_/g, ' ')} — ${match.team_a_name} vs ${match.team_b_name}.`,
           relatedMatchId: matchId,
+          // Phase 2 Cleanup — groundId lets NotificationBell deep-link to
+          // this ground's Matches tab (TYPE_ROUTE_SUFFIX), never leaking
+          // which ground since it's always this incident's own match.ground_id.
+          groundId: match.ground_id,
         }),
       ),
     )

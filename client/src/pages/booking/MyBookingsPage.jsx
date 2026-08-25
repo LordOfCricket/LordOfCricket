@@ -30,6 +30,7 @@ function BookingCard({ booking, onCancel, cancelling }) {
           </p>
           {booking.purpose && <p className="mt-1 text-xs text-slate-400">{booking.purpose}</p>}
           <p className="mt-2 text-xs font-semibold text-emerald-300">{booking.publicBookingId}</p>
+          {booking.amount != null && <p className="mt-1 text-sm font-bold text-[#F5D547]">₹{Number(booking.amount).toLocaleString('en-IN')}</p>}
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase ${STATUS_BADGE[booking.status] || 'bg-white/10 text-slate-300'}`}>{booking.status}</span>
       </div>

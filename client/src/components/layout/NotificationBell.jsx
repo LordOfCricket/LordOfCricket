@@ -78,6 +78,15 @@ const TYPE_ROUTE_SUFFIX = {
   GROUND_STAFF_ACTIVATED: '/staff',
   GROUND_STAFF_DEACTIVATED: '/staff',
   GROUND_OPERATIONAL_ALERT: '/operations',
+  // Phase 2 Cleanup — '' (no suffix) is deliberate, not an oversight:
+  // /ground-owner/grounds/:publicGroundId with NO suffix IS the Matches tab
+  // (GroundMatchesPage — matches the backend's own route exactly, see
+  // AppRoutes.jsx's own comment), where both MatchChatPanel (MATCH_MESSAGE)
+  // and this match's incident context (MATCH_INCIDENT_REPORTED) live. No
+  // dedicated incidents page exists to route to instead — this is the
+  // closest real page, not a fabricated one.
+  MATCH_MESSAGE: '',
+  MATCH_INCIDENT_REPORTED: '',
 }
 
 // Phase 2 (Umpire Interest+Assignment audit) — umpire-facing deep links.
@@ -90,6 +99,28 @@ const TYPE_ROUTE_SUFFIX = {
 // (isUmpireMode) — never applied to a ground owner viewing the same type.
 // Deliberately a section, not a per-match deep link, matching
 // TYPE_ROUTE_SUFFIX's own "closest safe, correct destination" precedent.
+// Player Role Audit — these 4 types are only ever created for the booking
+// customer (groundBooking.service.js/bookingConflict.service.js#createNotification
+// calls with userId, never ground_public_id), so — unlike TYPE_ROUTE_SUFFIX/
+// UMPIRE_TYPE_ROUTE above — no role/mode check is needed here; a ground
+// owner or umpire never receives these `type` values. Previously fell
+// through to "mark read only," leaving a player's click with no visible
+// effect. Same "closest safe section, not a fabricated per-booking deep
+// link" precedent as TYPE_ROUTE_SUFFIX (a notification row carries no
+// public_booking_id today).
+const PLAYER_BOOKING_TYPE_ROUTE = {
+  BOOKING_APPROVED: '/bookings',
+  BOOKING_CANCELLED: '/bookings',
+  BOOKING_REMINDER: '/bookings',
+  GROUND_CLOSED: '/bookings',
+  // Final Whole-Project Audit — a MATCH/PRACTICE proposal-confirmed booking
+  // is deliberately excluded from GET /bookings/my (booking_type='CUSTOMER'
+  // only, see groundBooking.repository.js#listByUser), so it never appears
+  // on /bookings — routing there would show an empty/misleading page.
+  // /team-bookings is the real destination for this booking type.
+  PROPOSAL_ACCEPTED: '/team-bookings',
+}
+
 const UMPIRE_TYPE_ROUTE = {
   UMPIRE_SLOT_ASSIGNED: '/umpire/my-assignments',
   UMPIRE_SLOT_CANCELLED: '/umpire/my-assignments',
@@ -103,6 +134,16 @@ const UMPIRE_TYPE_ROUTE = {
   UMPIRE_REMINDER_30M: '/umpire/my-assignments',
   MATCH_STARTING: '/umpire/my-assignments',
   MATCH_CANCELLED: '/umpire/my-assignments',
+  // Final Whole-Project Audit — MATCH_COMPLETED is only ever sent to
+  // assigned umpires (groundOwner.service.js#notifyAssignedUmpires, the same
+  // umpire-only helper MATCH_STARTING above already uses) — no dual-audience
+  // risk, same safe destination as the other match-lifecycle types.
+  MATCH_COMPLETED: '/umpire/my-assignments',
+  // Phase 2 Cleanup — the umpire-received copy of MATCH_MESSAGE carries no
+  // groundId (see matchMessage.service.js#sendMessage), so it never matches
+  // TYPE_ROUTE_SUFFIX above; this is its real destination — MatchChatPanel
+  // is hosted on UmpireDashboardPage, not MyAssignmentsPage.
+  MATCH_MESSAGE: '/umpire',
 }
 
 function timeAgo(iso) {
@@ -129,8 +170,12 @@ export default function NotificationBell() {
   // check below, then finally to the original mark-read-only behavior.
   const handleNotificationClick = (n) => {
     if (!n.is_read) markRead(n.id)
+    // Phase 2 Cleanup — `suffix != null` (not truthy-checked): '' is a
+    // real, valid suffix (the Matches tab has none), and a bare `if
+    // (suffix && ...)` would silently treat it as "no route," which is
+    // exactly the class of bug this fix exists to close.
     const suffix = TYPE_ROUTE_SUFFIX[n.type]
-    if (suffix && n.ground_public_id) {
+    if (suffix != null && n.ground_public_id) {
       setOpen(false)
       navigate(`/ground-owner/grounds/${n.ground_public_id}${suffix}`)
       return
@@ -143,6 +188,12 @@ export default function NotificationBell() {
     if (umpireRoute) {
       setOpen(false)
       navigate(umpireRoute)
+      return
+    }
+    const playerBookingRoute = PLAYER_BOOKING_TYPE_ROUTE[n.type]
+    if (playerBookingRoute) {
+      setOpen(false)
+      navigate(playerBookingRoute)
     }
   }
 

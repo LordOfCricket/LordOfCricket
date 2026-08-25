@@ -6,7 +6,7 @@ import http from 'http'
 import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
-import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
+import { mintMfaVerifiedSessionCookie, mintStepUpGrant } from './helpers/mfaFixtures.js'
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
@@ -293,6 +293,61 @@ test('MFA required - unauthenticated request rejected', async (t) => {
     await cleanupGround(ground.id)
     await owner.cleanup()
   } finally {
+    await server.close()
+  }
+})
+
+// Ground Owner Staff Audit — BOOKING_VIEW previously did nothing at these two
+// GET routes (only BOOKING_MANAGE was accepted), so a staff member granted
+// only "View Bookings" in the Owner's Staff Management UI got a 403 despite
+// the Owner believing they'd granted read access. Now consistent with
+// bookingConflict.service.js#assertCanViewBooking's own established
+// VIEW-or-MANAGE rule.
+test('GET /ground-owner/grounds/:publicGroundId/bookings - a staff member with only BOOKING_VIEW can list and read, but not mutate', async (t) => {
+  const server = await startTestApp()
+  const tag = uniqueTag()
+  const owner = await createUser('Owner', { role: 'player' })
+  let ground
+  let staffUser
+  try {
+    await elevate(owner)
+    ground = await createOwnedGround(owner.id, 'Test Ground', tag)
+
+    const staffRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/staff`, {
+      method: 'POST',
+      headers: cauth(owner),
+      body: JSON.stringify({ name: 'View Only Staff', identifier: `booking-view-staff-${tag}@example.test`, role: 'GROUND_ADMIN' }),
+    })
+    assert.equal(staffRes.status, 201, JSON.stringify(await staffRes.clone().json()))
+    const { membership, user } = await staffRes.json()
+    staffUser = { id: user.id, token: signToken({ id: user.id }) }
+
+    await mintStepUpGrant(owner.sessionId, owner.id, 'PERMISSION_GRANT')
+    const grantRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/staff/${membership.id}/permissions`, {
+      method: 'POST',
+      headers: cauth(owner),
+      body: JSON.stringify({ permissionKey: 'BOOKING_VIEW' }),
+    })
+    assert.equal(grantRes.status, 201)
+
+    const listRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/bookings`, {
+      headers: { Authorization: `Bearer ${staffUser.token}` },
+    })
+    assert.equal(listRes.status, 200, 'BOOKING_VIEW alone must be enough to list bookings')
+    const { bookings } = await listRes.json()
+    assert.ok(Array.isArray(bookings))
+
+    // Still cannot mutate — BOOKING_VIEW is read-only, unchanged.
+    const blockRes = await fetch(`${server.baseUrl}/ground-owner/grounds/${ground.public_ground_id}/bookings/staff-blocks`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${staffUser.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2027-01-01', hour: 8, minute: 0, purpose: 'Should be rejected' }),
+    })
+    assert.equal(blockRes.status, 403, 'staff blocks remain GROUND_OWNER-only regardless of BOOKING_VIEW')
+  } finally {
+    if (ground) await cleanupGround(ground.id)
+    if (staffUser) await pool.query('DELETE FROM users WHERE id = $1', [staffUser.id])
+    await owner.cleanup()
     await server.close()
   }
 })

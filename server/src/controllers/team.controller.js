@@ -47,12 +47,18 @@ export async function getTeam(req, res, next) {
   }
 }
 
+// Player Role Audit — this route only requires requireAuth (any
+// authenticated user, not just this team's own players/staff), so the raw
+// findPlayersByTeam row (nickname/date_of_birth/address_line/state/
+// postal_code/user_id) must never be returned directly here — same
+// public-safe allowlist publicTeam.service.js already established for the
+// equivalent public roster read.
 export async function listTeamPlayers(req, res, next) {
   try {
     const team = await findTeamById(req.params.id)
     if (!team) return res.status(404).json({ message: 'Team not found.' })
     const players = await findPlayersByTeam(req.params.id)
-    res.json({ players })
+    res.json({ players: players.map(publicTeamService.mapPublicSquadPlayer) })
   } catch (err) {
     next(err)
   }

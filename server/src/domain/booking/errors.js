@@ -41,6 +41,10 @@ export const BOOKING_ERROR_CODES = Object.freeze({
   INVALID_PRICING_SLOT: 'INVALID_PRICING_SLOT',
   PRICING_SLOT_OVERLAP: 'PRICING_SLOT_OVERLAP',
   PRICING_SLOT_NOT_FOUND: 'PRICING_SLOT_NOT_FOUND',
+  // Ground Pricing UX Polish — no active pricing slot covers a CUSTOMER
+  // booking's start time. Distinct from PRICING_SLOT_NOT_FOUND (that one is
+  // an owner-management 404 for a specific slot id).
+  PRICE_UNAVAILABLE: 'PRICE_UNAVAILABLE',
 })
 
 export class BookingError extends Error {
@@ -86,4 +90,5 @@ export const BOOKING_ERROR_HTTP_STATUS = Object.freeze({
   [BOOKING_ERROR_CODES.INVALID_PRICING_SLOT]: 400,
   [BOOKING_ERROR_CODES.PRICING_SLOT_OVERLAP]: 409,
   [BOOKING_ERROR_CODES.PRICING_SLOT_NOT_FOUND]: 404,
+  [BOOKING_ERROR_CODES.PRICE_UNAVAILABLE]: 409,
 })

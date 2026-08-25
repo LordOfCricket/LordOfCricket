@@ -10,6 +10,7 @@ import { generatePublicId } from '../../utils/publicId.js'
 import { signToken } from '../../utils/jwt.js'
 import * as bookingService from '../../services/groundBooking.service.js'
 import * as pricingService from '../../services/groundPricing.service.js'
+import { BookingError } from '../../domain/booking/errors.js'
 
 async function startTestApp() {
   const httpServer = http.createServer(app)
@@ -67,23 +68,47 @@ test('booking price calculation: server computes and snapshots the price at crea
   }
 })
 
-test('booking price calculation: no active pricing slot covers the requested time — booking still succeeds with amount=null ("price on request")', async () => {
+test('booking price calculation: no active pricing slot covers the requested time — booking is rejected with PRICE_UNAVAILABLE', async () => {
   const ground = await createGround('none')
   try {
     // A slot exists, but nowhere near the requested 14:00 start.
     await pricingService.createPricingSlot(ground, { startTime: '06:00', endTime: '09:00', price: 2000 }, null)
 
     const dateStr = tomorrowDateStr(3)
-    const { booking } = await bookingService.createBooking({
+    await assert.rejects(
+      () =>
+        bookingService.createBooking({
+          dateStr,
+          hour: 14,
+          minute: 0,
+          customerName: 'No Pricing Test Customer',
+          groundId: ground.id,
+        }),
+      (err) => err instanceof BookingError && err.code === 'PRICE_UNAVAILABLE'
+    )
+
+    const { rows } = await pool.query('SELECT COUNT(*) FROM ground_bookings WHERE ground_id = $1', [ground.id])
+    assert.equal(Number(rows[0].count), 0, 'no booking row must be created when pricing is unavailable')
+  } finally {
+    await cleanupGround(ground)
+  }
+})
+
+test('booking price calculation: a STAFF_BLOCK is never priced/gated, even with no active pricing slot at all', async () => {
+  const ground = await createGround('staffblock')
+  try {
+    const dateStr = tomorrowDateStr(3)
+    const { booking } = await bookingService.createStaffBlock({
       dateStr,
-      hour: 14,
+      hour: 8,
       minute: 0,
-      customerName: 'No Pricing Test Customer',
+      purpose: 'Ground maintenance',
+      createdByStaffId: null,
       groundId: ground.id,
     })
-
     assert.equal(booking.amount, null)
     assert.equal(booking.pricing_slot_id, null)
+    assert.equal(booking.status, 'CONFIRMED')
   } finally {
     await cleanupGround(ground)
   }
@@ -172,6 +197,94 @@ test('walk-in booking route: an explicit publicGroundId books the correct ground
     await pool.query('DELETE FROM users WHERE id = $1', [user.id])
     await cleanupGround(groundA)
     await cleanupGround(groundB)
+    await server.close()
+  }
+})
+
+// Ground Pricing UX Polish — items 3 and 4 of the brief's own testing
+// checklist, exercised over real HTTP against the real booking route (not
+// just the service function), since that's the boundary a client actually
+// crosses.
+test('booking response exposes amount, and a client-supplied amount is ignored — the server always computes its own', async () => {
+  const server = await startTestApp()
+  const ground = await createGround('http-amount')
+  const { rows: [user] } = await pool.query(
+    `INSERT INTO users (name, email, password_hash, role) VALUES ($1,$2,'not-a-real-hash','player') RETURNING *`,
+    [`Integration Test Amount Booker`, `pricing-http-amount-${uniqueTag()}@example.test`],
+  )
+  const token = signToken({ id: user.id, name: user.name })
+  try {
+    await pricingService.createPricingSlot(ground, { startTime: '06:00', endTime: '09:00', price: 2000 }, null)
+    const dateStr = tomorrowDateStr(6)
+
+    const res = await fetch(`${server.baseUrl}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      // A client attempting to pay ₹1 (or anything else) instead of the real
+      // ₹2000 price — createBooking's controller never even reads req.body.amount,
+      // so this can only prove itself by asserting the server's own response.
+      body: JSON.stringify({ date: dateStr, hour: 6, minute: 0, publicGroundId: ground.public_ground_id, amount: 1 }),
+    })
+    const body = await res.json()
+    assert.equal(res.status, 201, JSON.stringify(body))
+    assert.equal(body.booking.amount, 2000, 'the booking response must expose the server-computed amount, ignoring any client-supplied value')
+  } finally {
+    await pool.query('DELETE FROM ground_bookings WHERE user_id = $1', [user.id])
+    await pool.query('DELETE FROM users WHERE id = $1', [user.id])
+    await cleanupGround(ground)
+    await server.close()
+  }
+})
+
+test('booking creation rejects with PRICE_UNAVAILABLE over real HTTP, with no plaintext/internal detail leaked', async () => {
+  const server = await startTestApp()
+  const ground = await createGround('http-unavailable')
+  const { rows: [user] } = await pool.query(
+    `INSERT INTO users (name, email, password_hash, role) VALUES ($1,$2,'not-a-real-hash','player') RETURNING *`,
+    [`Integration Test Unpriced Booker`, `pricing-http-unpriced-${uniqueTag()}@example.test`],
+  )
+  const token = signToken({ id: user.id, name: user.name })
+  try {
+    // No pricing slot configured on this ground at all.
+    const dateStr = tomorrowDateStr(6)
+
+    const res = await fetch(`${server.baseUrl}/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ date: dateStr, hour: 6, minute: 0, publicGroundId: ground.public_ground_id }),
+    })
+    const body = await res.json()
+    assert.equal(res.status, 409)
+    assert.equal(body.code, 'PRICE_UNAVAILABLE')
+    assert.equal(body.message, 'Price unavailable for this time. Please select another time slot or contact the ground.')
+
+    const { rows } = await pool.query('SELECT COUNT(*) FROM ground_bookings WHERE ground_id = $1', [ground.id])
+    assert.equal(Number(rows[0].count), 0)
+  } finally {
+    await pool.query('DELETE FROM ground_bookings WHERE user_id = $1', [user.id])
+    await pool.query('DELETE FROM users WHERE id = $1', [user.id])
+    await cleanupGround(ground)
+    await server.close()
+  }
+})
+
+test('availability response carries the price for each priced slot, and null for slots with no active pricing', async () => {
+  const server = await startTestApp()
+  const ground = await createGround('http-availprice')
+  try {
+    await pricingService.createPricingSlot(ground, { startTime: '06:00', endTime: '09:00', price: 3500 }, null)
+    const dateStr = tomorrowDateStr(6)
+
+    const res = await fetch(`${server.baseUrl}/bookings/availability?date=${dateStr}&publicGroundId=${ground.public_ground_id}`)
+    const body = await res.json()
+    assert.equal(res.status, 200)
+
+    const priced = body.slots.find((s) => new Date(s.startTime).getTime() === new Date(body.slots[0].startTime).getTime() && s.price === 3500)
+    assert.ok(priced, 'at least one slot inside the 06:00-09:00 pricing band must carry price 3500')
+    const unpriced = body.slots.find((s) => s.price === null)
+    assert.ok(unpriced, 'at least one slot outside the pricing band must carry price null, not a fabricated number')
+  } finally {
+    await cleanupGround(ground)
     await server.close()
   }
 })

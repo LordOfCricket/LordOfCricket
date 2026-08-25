@@ -1,12 +1,16 @@
 import { Link } from 'react-router-dom'
-import { UtensilsCrossed, ClipboardCheck, Images, UserPlus, MapPinned, Trophy, Users, ShieldCheck, ClipboardList } from 'lucide-react'
+import { ClipboardCheck, Images, UserPlus, MapPinned, Trophy, Users, ShieldCheck, ClipboardList } from 'lucide-react'
 import AdminLayout from '../../components/admin/AdminLayout.jsx'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useAdminDashboard } from '../../hooks/useAdminDashboard.js'
 import BackButton from '../../components/common/BackButton.jsx'
 
+// Final Whole-Project Audit — Canteen is a ground-scoped operational
+// function (owner/canteen-staff only); Super Admin is a platform
+// administrator, not a ground operator, so it must never get a "Manage
+// Canteen" shortcut here (previously flagged in the Super Admin audit,
+// fixed now per this audit's explicit role-boundary requirement).
 const QUICK_ACTIONS = [
-  { to: '/canteen/staff', icon: UtensilsCrossed, title: 'Canteen', description: 'Manage food, stock and orders.', cta: 'Manage Canteen', allow: ['super_admin', 'admin'] },
   { to: '/admin/umpire-requests', icon: ClipboardCheck, title: 'Umpire Requests', description: 'Review and approve umpire requests.', cta: 'View Requests', allow: ['super_admin'] },
   { to: '/admin/photos-hub', icon: Images, title: 'Edit Photos', description: 'Manage homepage, amenities and gallery images.', cta: 'Manage Photos', allow: ['super_admin'] },
   { to: '/admin/staff/new', icon: UserPlus, title: 'Create Staff', description: 'Create Admin, Canteen Staff, or Super Admin accounts.', cta: 'Create Staff', allow: ['super_admin'] },

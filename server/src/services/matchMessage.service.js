@@ -39,18 +39,24 @@ export async function sendMessage(matchId, user, body, io) {
   // delivery (Workstream E's own requirement; createNotification already
   // swallows its own failures, same posture as every other umpire-ops
   // notification in this codebase).
-  const recipientUserIds = [...participants.ownerUserIds, ...participants.umpireUserIds].filter((id) => id !== user.id)
-  await Promise.all(
-    recipientUserIds.map((userId) =>
-      createNotification({
-        userId,
-        type: 'MATCH_MESSAGE',
-        title: `New message from ${role === 'GROUND_OWNER' ? 'Ground Owner' : 'Umpire'}`,
-        body: trimmed.length > 140 ? `${trimmed.slice(0, 140)}…` : trimmed,
-        relatedMatchId: matchId,
-      }),
-    ),
-  )
+  // Phase 2 Cleanup — split by recipient so only the Ground-Owner-received
+  // copy carries groundId (client-safe deep link into their own ground's
+  // Matches tab, where MatchChatPanel lives — same TYPE_ROUTE_SUFFIX
+  // convention as GROUND_BOOKING_*). The umpire-received copy of this same
+  // `type` deliberately carries no groundId, exactly like every other
+  // dual-audience type (UMPIRE_SLOT_ASSIGNED etc.) — NotificationBell's
+  // UMPIRE_TYPE_ROUTE map is the umpire's own destination instead, gated on
+  // umpire-mode so an owner viewing their own copy is never affected.
+  const title = `New message from ${role === 'GROUND_OWNER' ? 'Ground Owner' : 'Umpire'}`
+  const notifBody = trimmed.length > 140 ? `${trimmed.slice(0, 140)}…` : trimmed
+  await Promise.all([
+    ...participants.ownerUserIds
+      .filter((id) => id !== user.id)
+      .map((userId) => createNotification({ userId, type: 'MATCH_MESSAGE', title, body: notifBody, relatedMatchId: matchId, groundId: participants.match.ground_id })),
+    ...participants.umpireUserIds
+      .filter((id) => id !== user.id)
+      .map((userId) => createNotification({ userId, type: 'MATCH_MESSAGE', title, body: notifBody, relatedMatchId: matchId })),
+  ])
 
   publishMatchMessage(io, matchId, message)
   return message

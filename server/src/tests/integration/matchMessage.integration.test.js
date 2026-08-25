@@ -152,6 +152,11 @@ test('Ground Owner can send a message; the assigned umpire receives it and gets 
       ctx.match.id,
     ])
     assert.equal(rows.length, 1, 'the umpire must get a best-effort notification for the new message')
+    // Phase 2 Cleanup — the umpire's own copy carries no groundId (see
+    // matchMessage.service.js#sendMessage): NotificationBell resolves the
+    // umpire's destination via UMPIRE_TYPE_ROUTE instead, gated on umpire
+    // mode, never via TYPE_ROUTE_SUFFIX/ground_public_id.
+    assert.equal(rows[0].ground_id, null, "the umpire's own notification copy must not carry a groundId")
   } finally {
     await ctx.cleanup()
     await server.close()
@@ -170,6 +175,10 @@ test('the umpire can reply; the ground owner does not get notified of their own 
 
     const { rows: ownerNotifs } = await pool.query(`SELECT * FROM ground_notifications WHERE user_id = $1 AND type = 'MATCH_MESSAGE'`, [ctx.owner.id])
     assert.equal(ownerNotifs.length, 1)
+    // Phase 2 Cleanup — the Ground-Owner-received copy DOES carry groundId,
+    // so NotificationBell can deep-link into their own ground's Matches tab
+    // (TYPE_ROUTE_SUFFIX), scoped to this match's real, own ground only.
+    assert.equal(ownerNotifs[0].ground_id, ctx.gf.ground.id, "the owner's notification copy must carry this match's real ground id")
     const { rows: senderNotifs } = await pool.query(`SELECT * FROM ground_notifications WHERE user_id = $1 AND type = 'MATCH_MESSAGE'`, [ctx.umpire.id])
     assert.equal(senderNotifs.length, 0, 'the sender must never notify themselves')
   } finally {
