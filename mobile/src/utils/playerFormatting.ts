@@ -61,40 +61,61 @@ export function formatBowlingStyle(style: string | BowlingStyle | null | undefin
 
 /**
  * Format date string for display
- * Input: YYYY-MM-DD
+ * Input: YYYY-MM-DD (or a naive-timestamp string like
+ * "2026-08-20T00:00:00.000Z" — see the parsing note below)
  * Output: Jan 1, 2000
+ *
+ * QA fix: this used to do `new Date(dateString).toLocaleDateString(...)`
+ * with no `timeZone` option. For a pure date-only string, the JS spec
+ * parses it as UTC midnight; `toLocaleDateString` then renders it in the
+ * DEVICE's own local timezone, which silently shows the PREVIOUS calendar
+ * day for anyone on a negative UTC offset (all of the Americas). The same
+ * bug applied to PlayerMatchPerformance.date, a naive `TIMESTAMP WITHOUT
+ * TIME ZONE` value whose digits are already ground-local (see server/src/
+ * domain/shared/groundTime.js) — reusing the shared statsRange.ts finding.
+ * Fix: parse the literal YYYY-MM-DD digits directly and build the Date via
+ * the local-time numeric constructor (`new Date(y, m-1, d)`), which never
+ * round-trips through UTC, so the calendar day rendered is always exactly
+ * the day encoded in the string, regardless of device timezone.
  */
 export function formatDate(dateString: string | null | undefined): string | null {
   if (!dateString) return null
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  } catch {
-    return null
-  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateString)
+  if (!match) return null
+  const [, year, month, day] = match
+  const date = new Date(Number(year), Number(month) - 1, Number(day))
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 /**
- * Calculate age from date of birth
+ * Calculate age from date of birth.
+ * QA fix: same UTC-round-trip bug as formatDate above — `new
+ * Date(dateOfBirth)` anchored the birth date at UTC midnight, then
+ * `.getFullYear()/.getMonth()/.getDate()` (local getters) could read back
+ * the wrong calendar day on a negative-UTC-offset device, occasionally
+ * shifting the computed age by a year right around the birthday. Parsing
+ * the digits directly and building via the local numeric constructor
+ * avoids the round-trip entirely.
  */
 export function calculateAge(dateOfBirth: string | null | undefined): number | null {
   if (!dateOfBirth) return null
-  try {
-    const birthDate = new Date(dateOfBirth)
-    const today = new Date()
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--
-    }
-    return age >= 0 ? age : null
-  } catch {
-    return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOfBirth)
+  if (!match) return null
+  const [, year, month, day] = match
+  const birthDate = new Date(Number(year), Number(month) - 1, Number(day))
+  if (Number.isNaN(birthDate.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDiff = today.getMonth() - birthDate.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--
   }
+  return age >= 0 ? age : null
 }
 
 /**

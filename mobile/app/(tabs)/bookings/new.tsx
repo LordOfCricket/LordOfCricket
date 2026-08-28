@@ -11,16 +11,18 @@ import {
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { randomUUID } from 'expo-crypto'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useAvailability, useCreateBooking } from '../../../src/hooks/useBooking'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { toGroundDateStr } from '../../../src/utils/groundTime'
 
 type Step = 'date' | 'slot' | 'details' | 'confirm'
 
 export default function NewBookingScreen() {
   const router = useRouter()
+  const { publicGroundId, groundName } = useLocalSearchParams<{ publicGroundId?: string; groundName?: string }>()
   const [step, setStep] = useState<Step>('date')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showDatePicker, setShowDatePicker] = useState(false)
@@ -29,8 +31,8 @@ export default function NewBookingScreen() {
   const [expectedPlayers, setExpectedPlayers] = useState('')
   const [contactPhone, setContactPhone] = useState('')
 
-  const { data: availability, isLoading: isLoadingAvailability, isError: isAvailabilityError } =
-    useAvailability(selectedDate ? selectedDate.toISOString().slice(0, 10) : null, step !== 'date')
+  const { data: availability, isLoading: isLoadingAvailability, isError: isAvailabilityError, refetch: refetchAvailability } =
+    useAvailability(selectedDate ? toGroundDateStr(selectedDate) : null, publicGroundId, step !== 'date')
 
   const createBooking = useCreateBooking()
 
@@ -54,7 +56,10 @@ export default function NewBookingScreen() {
 
   const handleSlotSelect = (slot: any) => {
     setSelectedSlot(slot)
-    setStep('details')
+  }
+
+  const handleContinueFromSlot = () => {
+    if (selectedSlot) setStep('details')
   }
 
   const handleConfirm = async () => {
@@ -74,6 +79,7 @@ export default function NewBookingScreen() {
         contactPhone: contactPhone || undefined,
         notes: notes || undefined,
         clientActionId,
+        publicGroundId,
       })
 
       Alert.alert('Success', 'Booking confirmed!', [
@@ -92,6 +98,12 @@ export default function NewBookingScreen() {
 
   return (
     <View style={styles.container}>
+      {groundName && (
+        <View style={styles.groundBanner}>
+          <Text style={styles.groundBannerText}>Booking at {groundName}</Text>
+        </View>
+      )}
+
       {step === 'date' && (
         <DateSelectionStep
           selectedDate={selectedDate}
@@ -107,8 +119,10 @@ export default function NewBookingScreen() {
           availability={availability}
           isLoading={isLoadingAvailability}
           isError={isAvailabilityError}
+          onRetry={() => refetchAvailability()}
           selectedSlot={selectedSlot}
           onSlotSelect={handleSlotSelect}
+          onContinue={handleContinueFromSlot}
           onBack={() => setStep('date')}
         />
       )}
@@ -200,90 +214,102 @@ function SlotSelectionStep({
   availability,
   isLoading,
   isError,
+  onRetry,
   selectedSlot,
   onSlotSelect,
+  onContinue,
   onBack,
 }: {
   date: Date
   availability: any
   isLoading: boolean
   isError: boolean
+  onRetry: () => void
   selectedSlot: any
   onSlotSelect: (slot: any) => void
+  onContinue: () => void
   onBack: () => void
 }) {
-  if (isLoading) {
-    return (
-      <View style={styles.stepContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading available slots...</Text>
-      </View>
-    )
-  }
-
-  if (isError) {
-    return (
-      <View style={styles.stepContainer}>
-        <Text style={styles.errorText}>Failed to load availability</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onBack}>
-          <Text style={styles.retryButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    )
-  }
-
   const slots = availability?.slots || []
-  const availableSlots = slots.filter((s: any) => s.status === 'AVAILABLE')
-
-  if (availableSlots.length === 0) {
-    return (
-      <View style={styles.stepContainer}>
-        <Text style={styles.errorText}>No available slots on this date</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onBack}>
-          <Text style={styles.retryButtonText}>Choose Different Date</Text>
-        </TouchableOpacity>
-      </View>
-    )
-  }
+  const hasAvailable = slots.some((s: any) => s.status === 'AVAILABLE')
 
   return (
     <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
       <Text style={styles.stepCounter} accessibilityLabel="Step 2 of 4">Step 2 of 4</Text>
-      <Text style={styles.stepTitle}>Select Time Slot</Text>
+      <Text style={styles.stepTitle}>Choose an Available Slot</Text>
       <Text style={styles.stepDescription}>
         {date.toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
       </Text>
 
-      <View style={styles.slotsContainer}>
-        {availableSlots.map((slot: any) => {
-          const startTime = new Date(slot.startTime)
-          const endTime = new Date(slot.endTime)
-          const isSelected = selectedSlot?.startTime === slot.startTime
+      {isLoading ? (
+        <View style={styles.inlineState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading available slots...</Text>
+        </View>
+      ) : isError ? (
+        <View style={styles.inlineState}>
+          <Text style={styles.errorText}>Could not load availability for this date.</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : slots.length === 0 ? (
+        <View style={styles.inlineState}>
+          <Text style={styles.errorText}>No available slots for this date.</Text>
+        </View>
+      ) : (
+        <View style={styles.slotsContainer}>
+          {!hasAvailable && <Text style={styles.errorText}>No available slots for this date.</Text>}
+          {slots.map((slot: any) => {
+            const startTime = new Date(slot.startTime)
+            const endTime = new Date(slot.endTime)
+            const isAvailable = slot.status === 'AVAILABLE'
+            const isSelected = isAvailable && selectedSlot?.startTime === slot.startTime
 
-          return (
-            <TouchableOpacity
-              key={`${slot.startTime}-${slot.endTime}`}
-              style={[
-                styles.slotButton,
-                isSelected && styles.slotButtonSelected,
-              ]}
-              onPress={() => onSlotSelect(slot)}
-            >
-              <Text style={[styles.slotText, isSelected && styles.slotTextSelected]}>
-                {startTime.toLocaleTimeString('en-IN', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}{' '}
-                -{' '}
-                {endTime.toLocaleTimeString('en-IN', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
+            return (
+              <TouchableOpacity
+                key={`${slot.startTime}-${slot.endTime}`}
+                style={[
+                  styles.slotButton,
+                  isSelected && styles.slotButtonSelected,
+                  !isAvailable && styles.slotButtonDisabled,
+                ]}
+                onPress={() => isAvailable && onSlotSelect(slot)}
+                disabled={!isAvailable}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected, disabled: !isAvailable }}
+              >
+                <Text
+                  style={[
+                    styles.slotText,
+                    isSelected && styles.slotTextSelected,
+                    !isAvailable && styles.slotTextDisabled,
+                  ]}
+                >
+                  {startTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  {' – '}
+                  {endTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+                {isAvailable && slot.price != null && (
+                  <Text style={[styles.slotPrice, isSelected && styles.slotTextSelected]}>₹{slot.price}</Text>
+                )}
+                <View style={styles.slotStatusRow}>
+                  {isSelected && <Text style={styles.slotSelectedBadge}>✓ SELECTED</Text>}
+                  <Text
+                    style={[
+                      styles.slotStatusText,
+                      isSelected && styles.slotTextSelected,
+                      !isAvailable && styles.slotTextDisabled,
+                    ]}
+                  >
+                    {isAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      )}
 
       <View style={styles.buttonGroup}>
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
@@ -291,7 +317,7 @@ function SlotSelectionStep({
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.nextButton, !selectedSlot && styles.buttonDisabled]}
-          onPress={() => selectedSlot && onSlotSelect(selectedSlot)}
+          onPress={onContinue}
           disabled={!selectedSlot}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
@@ -476,6 +502,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  groundBanner: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  groundBannerText: {
+    color: Colors.white,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+  },
   stepContainer: {
     flex: 1,
     padding: Spacing.lg,
@@ -487,12 +523,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   stepTitle: {
-    ...Typography.title,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
     marginBottom: Spacing.md,
   },
   stepDescription: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
     marginBottom: Spacing.lg,
   },
@@ -505,43 +542,47 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   dateButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.primary,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
+  },
+  inlineState: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xl,
   },
   loadingText: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
     marginTop: Spacing.md,
     textAlign: 'center',
   },
   errorText: {
-    ...Typography.body1,
-    color: Colors.danger,
+    fontSize: Typography.fontSize.base,
+    color: Colors.error,
     textAlign: 'center',
     marginBottom: Spacing.lg,
   },
   retryButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
-    padding: Spacing.lg,
-    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
   },
   retryButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.white,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   slotsContainer: {
     marginVertical: Spacing.lg,
+    gap: Spacing.md,
   },
   slotButton: {
     backgroundColor: Colors.white,
     borderRadius: 12,
     padding: Spacing.md,
-    marginBottom: Spacing.md,
     borderWidth: 2,
     borderColor: Colors.border,
   },
@@ -549,11 +590,39 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
+  slotButtonDisabled: {
+    backgroundColor: Colors.gray[100],
+    borderColor: Colors.gray[200],
+    opacity: 0.6,
+  },
+  slotTextDisabled: {
+    color: Colors.textTertiary,
+  },
   slotText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.text,
-    textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
+  },
+  slotPrice: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  slotStatusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  slotStatusText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.success,
+  },
+  slotSelectedBadge: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.white,
   },
   slotTextSelected: {
     color: Colors.white,
@@ -562,9 +631,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   label: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.text,
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
     marginBottom: Spacing.sm,
   },
   textInput: {
@@ -573,7 +642,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.text,
   },
   input: {
@@ -583,7 +652,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.text,
   },
   multilineInput: {
@@ -604,14 +673,14 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   summaryLabel: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   summaryValue: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.text,
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   buttonGroup: {
     flexDirection: 'row',
@@ -627,10 +696,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
   },
   backButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.primary,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   nextButton: {
     flex: 1,
@@ -639,10 +708,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
   },
   nextButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.white,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   confirmButton: {
     flex: 1,
@@ -651,10 +720,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
   },
   confirmButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.white,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   buttonDisabled: {
     opacity: 0.6,

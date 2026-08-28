@@ -1,5 +1,7 @@
 import React from 'react'
-import { View, Text, StyleSheet } from 'react-native'
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { useRouter } from 'expo-router'
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { Colors, Spacing, Typography } from '../constants/colors'
 
 interface BattingPlayer {
@@ -25,6 +27,28 @@ interface CurrentPlayersProps {
   bowler: BowlingPlayer | null | undefined
 }
 
+// The live-scoring domain already carries publicPlayerId alongside name
+// (BattingPlayer/BowlingPlayer above) — it just wasn't rendered as a link.
+// Only tappable when a real id is present (it's typed nullable — never
+// invented); otherwise renders as the same plain text as before.
+function PlayerNameLink({ publicPlayerId, name }: { publicPlayerId: string | null; name: string }) {
+  const router = useRouter()
+  if (!publicPlayerId) {
+    return <Text style={styles.playerName}>{name}</Text>
+  }
+  return (
+    <TouchableOpacity
+      style={styles.playerNameRow}
+      onPress={() => router.push(`/(tabs)/players/${publicPlayerId}` as any)}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${name}'s player profile`}
+    >
+      <Text style={styles.playerName}>{name}</Text>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textTertiary} />
+    </TouchableOpacity>
+  )
+}
+
 export function CurrentPlayers({ striker, nonStriker, bowler }: CurrentPlayersProps) {
   if (!striker && !nonStriker && !bowler) {
     return (
@@ -41,7 +65,7 @@ export function CurrentPlayers({ striker, nonStriker, bowler }: CurrentPlayersPr
         <View style={styles.section}>
           <Text style={styles.roleLabel}>Striker</Text>
           <View style={styles.playerCard}>
-            <Text style={styles.playerName}>{striker.player.name}</Text>
+            <PlayerNameLink publicPlayerId={striker.player.publicPlayerId} name={striker.player.name} />
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{striker.runs}</Text>
@@ -74,7 +98,7 @@ export function CurrentPlayers({ striker, nonStriker, bowler }: CurrentPlayersPr
         <View style={styles.section}>
           <Text style={styles.roleLabel}>Non-Striker</Text>
           <View style={styles.playerCard}>
-            <Text style={styles.playerName}>{nonStriker.player.name}</Text>
+            <PlayerNameLink publicPlayerId={nonStriker.player.publicPlayerId} name={nonStriker.player.name} />
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{nonStriker.runs}</Text>
@@ -107,7 +131,7 @@ export function CurrentPlayers({ striker, nonStriker, bowler }: CurrentPlayersPr
         <View style={styles.section}>
           <Text style={styles.roleLabel}>Bowler</Text>
           <View style={styles.playerCard}>
-            <Text style={styles.playerName}>{bowler.player.name}</Text>
+            <PlayerNameLink publicPlayerId={bowler.player.publicPlayerId} name={bowler.player.name} />
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{bowler.oversLabel}</Text>
@@ -154,6 +178,13 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     backgroundColor: Colors.backgroundAlt,
     borderRadius: 8,
+  },
+  playerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    minHeight: 36,
   },
   playerName: {
     fontSize: Typography.fontSize.base,

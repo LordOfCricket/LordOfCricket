@@ -10,7 +10,9 @@ export async function listFinalizedMatchParticipation(playerId, client = pool) {
     `SELECT mp.id AS match_player_id, mp.match_id, mp.team_id, mp.is_wicketkeeper,
             m.match_date, m.venue, m.team_a_id, m.team_b_id,
             m.winner_team_id, m.result_type, m.result_margin, m.result,
-            ta.name AS team_a_name, tb.name AS team_b_name
+            ta.name AS team_a_name, tb.name AS team_b_name,
+            ta.short_name AS team_a_short, tb.short_name AS team_b_short,
+            ta.logo_url AS team_a_logo, tb.logo_url AS team_b_logo
      FROM match_players mp
      JOIN matches m ON m.id = mp.match_id
      JOIN teams ta ON ta.id = m.team_a_id

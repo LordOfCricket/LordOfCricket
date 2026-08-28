@@ -10,6 +10,7 @@ import TeamSquadManager from '../../components/teams/TeamSquadManager.jsx'
 import TeamTopPerformers from '../../components/teams/TeamTopPerformers.jsx'
 import TeamMatchSection from '../../components/teams/TeamMatchSection.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
+import FollowButton from '../../components/common/FollowButton.jsx'
 import MatchCard from '../../components/matches/MatchCard.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchTeamInsight } from '../../services/aiInsightApi.js'
@@ -54,7 +55,10 @@ export default function TeamProfilePage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl space-y-6">
-        <BackButton fallback="/teams" />
+        <div className="flex items-center justify-between gap-3">
+          <BackButton fallback="/teams" />
+          <FollowButton type="team" id={team.id} />
+        </div>
 
         <TeamHero team={team} squadCount={squad.length} />
 

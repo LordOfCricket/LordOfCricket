@@ -10,7 +10,7 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import * as Location from 'expo-location'
-import { useNearbyGrounds } from '../../../src/hooks/useGrounds'
+import { useNearbyGrounds, useFeaturedGrounds } from '../../../src/hooks/useGrounds'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
@@ -23,11 +23,24 @@ export default function GroundsScreen() {
   const [locationError, setLocationError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  const { data, isLoading, isError, error, refetch } = useNearbyGrounds(
+  const locationAvailable = !!location && !locationError
+  const locationUnavailable = !locationLoading && (!!locationError || !location)
+
+  const nearbyQuery = useNearbyGrounds(
     location?.coords.latitude || 0,
     location?.coords.longitude || 0,
     10
   )
+  const allGroundsQuery = useFeaturedGrounds(50, locationUnavailable)
+
+  const { data, isLoading, isError, refetch } = locationAvailable
+    ? nearbyQuery
+    : {
+        data: allGroundsQuery.data ? { grounds: allGroundsQuery.data.grounds } : undefined,
+        isLoading: allGroundsQuery.isLoading,
+        isError: allGroundsQuery.isError,
+        refetch: allGroundsQuery.refetch,
+      }
 
   const requestLocation = async () => {
     try {
@@ -66,17 +79,6 @@ export default function GroundsScreen() {
     return <LoadingScreen />
   }
 
-  if (locationError && !location) {
-    return (
-      <ErrorScreen
-        title="Location Required"
-        message={locationError}
-        onRetry={requestLocation}
-        retryLabel="Enable Location"
-      />
-    )
-  }
-
   if (isLoading) {
     return <LoadingScreen />
   }
@@ -85,19 +87,26 @@ export default function GroundsScreen() {
     return (
       <ErrorScreen
         title="Failed to Load"
-        message="Could not load nearby grounds. Please try again."
+        message={locationAvailable ? 'Could not load nearby grounds. Please try again.' : 'Could not load grounds. Please try again.'}
         onRetry={() => refetch()}
       />
     )
   }
 
-  const grounds = data?.grounds || []
+  const grounds = (data?.grounds || []).map((item: any) => ({
+    id: item.public_ground_id || item.publicGroundId,
+    name: item.name,
+    city: item.city,
+    secondaryLine: item.address_line || item.state,
+  }))
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Grounds</Text>
-        <Text style={styles.subtitle}>Find cricket grounds nearby</Text>
+        <Text style={styles.subtitle}>
+          {locationAvailable ? 'Find cricket grounds nearby' : 'Browse registered grounds'}
+        </Text>
       </View>
 
       {grounds.length > 0 ? (
@@ -106,17 +115,17 @@ export default function GroundsScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.groundCard}
-              onPress={() => handleGroundPress(item.public_ground_id)}
+              onPress={() => handleGroundPress(item.id)}
             >
               <View style={styles.groundContent}>
                 <Text style={styles.groundName}>{item.name}</Text>
                 {item.city && <Text style={styles.groundLocation}>📍 {item.city}</Text>}
-                {item.address_line && <Text style={styles.groundAddress}>{item.address_line}</Text>}
+                {item.secondaryLine && <Text style={styles.groundAddress}>{item.secondaryLine}</Text>}
               </View>
               <Text style={styles.arrow}>›</Text>
             </TouchableOpacity>
           )}
-          keyExtractor={(item) => item.public_ground_id}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         />

@@ -10,12 +10,12 @@ import {
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useRouter } from 'expo-router'
-import { useMyBookings } from '../../src/hooks/useBooking'
-import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../src/components/ErrorScreen'
-import { EmptyState } from '../../src/components/EmptyState'
-import { Booking } from '../../src/types'
+import { useMyBookings } from '../../../src/hooks/useBooking'
+import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { LoadingScreen } from '../../../src/components/LoadingScreen'
+import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { EmptyState } from '../../../src/components/EmptyState'
+import { Booking } from '../../../src/types'
 
 export default function BookingsScreen() {
   const router = useRouter()

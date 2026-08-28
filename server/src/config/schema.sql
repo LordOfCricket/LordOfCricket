@@ -2817,3 +2817,33 @@ ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
     -- Ground Time-Slot Pricing.
     'UPDATED', 'ACTIVATED', 'DEACTIVATED', 'DELETED'
   ));
+
+-- ============================================================================
+-- Social Foundation — Follow Players / Teams (Priority 1)
+-- ============================================================================
+--
+-- One personal user->entity relationship that powers BOTH the "Follow" button
+-- on public player/team profiles AND the authenticated user's "Following"
+-- quick-access list. Deliberately ONE table, not a separate `follows` and
+-- `favorites` — for LOC these are the same relationship (keep an entity
+-- close), and a second near-identical table would be duplication. It does
+-- NOT drive notifications in this batch (fan-out to followers is a separate
+-- concern — see the roadmap); it is purely a quick-access subscription.
+--
+-- Exactly one of player_id / team_id is set per row (the XOR CHECK). The two
+-- partial-looking UNIQUE constraints work because Postgres treats NULLs as
+-- distinct: a user has at most one row per followed player and at most one
+-- per followed team, but many team rows (each player_id NULL) never collide.
+CREATE TABLE IF NOT EXISTS user_follows (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT user_follows_exactly_one_target CHECK ((player_id IS NOT NULL) <> (team_id IS NOT NULL)),
+  CONSTRAINT user_follows_unique_player UNIQUE (user_id, player_id),
+  CONSTRAINT user_follows_unique_team UNIQUE (user_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_follows_user ON user_follows(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_follows_player ON user_follows(player_id) WHERE player_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_follows_team ON user_follows(team_id) WHERE team_id IS NOT NULL;

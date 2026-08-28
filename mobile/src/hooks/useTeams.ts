@@ -18,10 +18,15 @@ export function useSearchTeams(query: string, limit = 20, offset = 0) {
   })
 }
 
-export function useTeamDetail(teamId: number) {
+// Accepts number | null so callers with an optional/not-yet-known team id
+// (e.g. Profile's player.team_id, which is nullable) don't need an unsafe
+// `as number` cast at the call site — `enabled: !!teamId` already made this
+// safe at runtime; the type just didn't reflect that.
+export function useTeamDetail(teamId: number | null) {
   return useQuery({
     queryKey: ['teams', teamId],
-    queryFn: () => teamApi.getTeamProfile(teamId),
+    // Only ever invoked when `enabled` is true, i.e. teamId is truthy.
+    queryFn: () => teamApi.getTeamProfile(teamId!),
     staleTime: 1000 * 60, // 1 minute
     enabled: !!teamId,
   })

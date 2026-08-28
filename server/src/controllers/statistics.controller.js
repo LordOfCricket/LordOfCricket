@@ -29,12 +29,17 @@ function roundPerformance(perf) {
   }
 }
 
+function roundTeamHistoryEntry(entry) {
+  return { ...entry, record: { ...entry.record, winPercentage: round2(entry.record.winPercentage) } }
+}
+
 function serializeStats(stats) {
   return {
     ...stats,
     career: { ...stats.career, batting: roundBatting(stats.career.batting), bowling: roundBowling(stats.career.bowling) },
     recentForm: stats.recentForm.map(roundPerformance),
     matchHistory: { ...stats.matchHistory, items: stats.matchHistory.items.map(roundPerformance) },
+    teamHistory: stats.teamHistory.map(roundTeamHistoryEntry),
   }
 }
 

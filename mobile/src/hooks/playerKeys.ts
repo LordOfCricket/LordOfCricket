@@ -17,8 +17,12 @@ export const playerKeys = {
     [...playerKeys.all, 'public', publicPlayerId] as const,
   
   // Public player statistics
-  publicStats: (publicPlayerId: string) => 
+  publicStats: (publicPlayerId: string) =>
     [...playerKeys.all, 'public-stats', publicPlayerId] as const,
-  publicStatsWithPagination: (publicPlayerId: string, limit: number, offset: number) => 
+  publicStatsWithPagination: (publicPlayerId: string, limit: number, offset: number) =>
     [...playerKeys.publicStats(publicPlayerId), { limit, offset }] as const,
+
+  // Player directory/search (GET /players)
+  search: (query: string, limit: number, offset: number) =>
+    [...playerKeys.all, 'search', query, limit, offset] as const,
 }

@@ -7,12 +7,12 @@ import * as groundApi from '../services/groundApi'
  * Fetch available slots for a given date.
  * Public API — no auth required to view availability.
  */
-export function useAvailability(date: string | null, enabled = true) {
+export function useAvailability(date: string | null, publicGroundId?: string, enabled = true) {
   return useQuery({
-    queryKey: ['availability', date],
+    queryKey: ['availability', date, publicGroundId],
     queryFn: async () => {
       if (!date) return null
-      const response = await groundApi.getAvailability(date)
+      const response = await groundApi.getAvailability(date, publicGroundId)
       return response as Availability
     },
     enabled: enabled && !!date,

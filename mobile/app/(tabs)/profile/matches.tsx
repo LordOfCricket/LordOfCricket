@@ -4,27 +4,29 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useMyPlayerStats } from '../../../src/hooks/usePlayer'
 import { useAuth } from '../../../src/hooks/useAuth'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { EmptyState } from '../../../src/components/EmptyState'
+import { PlayerMatchPerformance } from '../../../src/types'
 
 const PAGE_SIZE = 10
 
 export default function MatchHistoryScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { user } = useAuth()
   const [offset, setOffset] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
-  const [allMatches, setAllMatches] = useState<any[]>([])
+  const [allMatches, setAllMatches] = useState<PlayerMatchPerformance[]>([])
 
   const handleMatchTap = useCallback((matchId: number) => {
     router.push(`/profile/matches/${matchId}`)
@@ -38,7 +40,18 @@ export default function MatchHistoryScreen() {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setAllMatches(statsQuery.data.matchHistory.items)
       } else {
-        setAllMatches((prev) => [...prev, ...statsQuery.data.matchHistory.items])
+        // QA fix: append with a dedupe-by-matchId guard instead of a blind
+        // concat. A background refetch of the SAME page (window focus,
+        // reconnect, pull-to-refresh racing a load-more) can re-fire this
+        // effect with a new `items` array reference at an unchanged
+        // `offset`, which previously re-appended the same matches and
+        // produced visible duplicate rows.
+        const items = statsQuery.data.matchHistory.items
+        setAllMatches((prev) => {
+          const existingIds = new Set(prev.map((m) => m.matchId))
+          const newItems = items.filter((m) => !existingIds.has(m.matchId))
+          return newItems.length > 0 ? [...prev, ...newItems] : prev
+        })
       }
     }
   }, [statsQuery.data?.matchHistory?.items, offset])
@@ -66,12 +79,12 @@ export default function MatchHistoryScreen() {
 
   if (!user || user.role !== 'player') {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <EmptyState
           title="Player Profile Required"
           message="You need a player role to view match history."
         />
-      </SafeAreaView>
+      </View>
     )
   }
 
@@ -90,11 +103,26 @@ export default function MatchHistoryScreen() {
     )
   }
 
+  // Real per-match team representation (match_players.team_id snapshot),
+  // resolved to a name via teamHistory. Only surfaced when the player has
+  // represented more than one team — otherwise it's redundant with the
+  // header. Never the player's CURRENT team.
+  const teamHistory = statsQuery.data?.teamHistory ?? []
+  const showRepresented = teamHistory.length > 1
+  const teamNameById = new Map<number, string>(teamHistory.map((t) => [t.teamId, t.shortName || t.name]))
+
   const total = statsQuery.data?.matchHistory?.total || 0
-  const showLoadMore = allMatches.length < total && !statsQuery.isPending
+  const hasMoreToLoad = allMatches.length < total
+  // A first-page error already returns the full-screen ErrorScreen above
+  // (offset === 0 && statsQuery.error), so reaching here with an error
+  // means a LOAD MORE request specifically failed — show that inline in the
+  // footer instead of leaving the "Load More" button silently misleading.
+  const showLoadMoreError = hasMoreToLoad && !!statsQuery.error
+  const showLoadMore = hasMoreToLoad && !statsQuery.isPending && !statsQuery.error
+  const showEndOfHistory = !hasMoreToLoad && allMatches.length > 0 && !statsQuery.isPending
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -112,7 +140,13 @@ export default function MatchHistoryScreen() {
         <FlatList
           data={allMatches}
           keyExtractor={(item) => `${item.matchId}`}
-          renderItem={({ item }) => <MatchCard match={item} onPress={() => handleMatchTap(item.matchId)} />}
+          renderItem={({ item }) => (
+            <MatchCard
+              match={item}
+              representedTeam={showRepresented && item.teamId != null ? teamNameById.get(item.teamId) : undefined}
+              onPress={() => handleMatchTap(item.matchId)}
+            />
+          )}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
           }
@@ -123,10 +157,21 @@ export default function MatchHistoryScreen() {
                   <ActivityIndicator size="small" color={Colors.primary} />
                 </View>
               )}
+              {showLoadMoreError && (
+                <View style={styles.loadMoreErrorBox}>
+                  <Text style={styles.loadMoreErrorText}>Could not load more matches.</Text>
+                  <TouchableOpacity onPress={() => statsQuery.refetch()}>
+                    <Text style={styles.loadMoreRetryText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               {showLoadMore && (
                 <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
                   <Text style={styles.loadMoreText}>Load More Matches</Text>
                 </TouchableOpacity>
+              )}
+              {showEndOfHistory && (
+                <Text style={styles.endOfHistoryText}>You've reached the end of your match history.</Text>
               )}
             </>
           }
@@ -134,11 +179,19 @@ export default function MatchHistoryScreen() {
           showsVerticalScrollIndicator={true}
         />
       )}
-    </SafeAreaView>
+    </View>
   )
 }
 
-function MatchCard({ match, onPress }: any) {
+function MatchCard({
+  match,
+  representedTeam,
+  onPress,
+}: {
+  match: PlayerMatchPerformance
+  representedTeam?: string
+  onPress: () => void
+}) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress}>
       <View style={styles.cardHeader}>
@@ -150,6 +203,7 @@ function MatchCard({ match, onPress }: any) {
 
       <Text style={styles.venue}>{match.venue || 'Venue unavailable'}</Text>
       <Text style={styles.opponent}>vs {match.opponent || 'Opponent unavailable'}</Text>
+      {representedTeam ? <Text style={styles.represented}>Represented: {representedTeam}</Text> : null}
 
       {match.result && <Text style={styles.matchResult}>{match.result}</Text>}
 
@@ -187,13 +241,20 @@ function MatchCard({ match, onPress }: any) {
   )
 }
 
+// QA fix: was `new Date(dateString).toLocaleDateString(...)` with no
+// `timeZone` option — silently shifts the displayed day back by one on any
+// negative-UTC-offset device, since match.date's digits are already the
+// correct ground-local calendar date (see server/src/domain/shared/
+// groundTime.js) but a UTC-anchored parse + local-timezone render can
+// re-interpret them a day early. Parsing the digits directly and building
+// via the local numeric Date constructor never round-trips through UTC.
 function formatDate(dateString: string): string {
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  } catch {
-    return dateString
-  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateString)
+  if (!match) return dateString
+  const [, year, month, day] = match
+  const date = new Date(Number(year), Number(month) - 1, Number(day))
+  if (Number.isNaN(date.getTime())) return dateString
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatOvers(legalBalls: number | undefined): string {
@@ -204,15 +265,22 @@ function formatOvers(legalBalls: number | undefined): string {
 }
 
 function getResultColor(won: boolean | null): string {
-  if (won === true) return '#00D084'
-  if (won === false) return '#FF3B30'
+  if (won === true) return Colors.success
+  if (won === false) return Colors.error
   return Colors.gray[400]
 }
 
+// QA fix: the neutral (tie/no-result) case previously showed the literal
+// word "Result" as the badge text, which reads like an unfinished
+// placeholder rather than an honest "we don't know which" state. `won` is
+// boolean|null with null covering BOTH a tie and a no-result — there's no
+// separate field to tell them apart (see statistics.service.js#wonFor) —
+// so this stays neutral rather than guessing, matching the same "–" this
+// app's Recent Form already uses for the identical ambiguous case.
 function getResultLabel(won: boolean | null): string {
   if (won === true) return 'Won'
   if (won === false) return 'Lost'
-  return 'Result'
+  return '–'
 }
 
 const styles = StyleSheet.create({
@@ -284,6 +352,12 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.bold,
     marginBottom: Spacing.xs,
   },
+  represented: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
+    marginBottom: Spacing.xs,
+  },
   matchResult: {
     fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
@@ -332,5 +406,26 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: Typography.fontWeight.semibold,
     fontSize: Typography.fontSize.base,
+  },
+  loadMoreErrorBox: {
+    marginHorizontal: Spacing.lg,
+    marginVertical: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  loadMoreErrorText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+  },
+  loadMoreRetryText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.primary,
+  },
+  endOfHistoryText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    marginVertical: Spacing.lg,
   },
 })

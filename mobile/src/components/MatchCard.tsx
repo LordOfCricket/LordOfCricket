@@ -6,11 +6,9 @@ import { Match } from '../types'
 
 interface MatchCardProps {
   match: Match
-  teamAName?: string
-  teamBName?: string
 }
 
-export function MatchCard({ match, teamAName = 'Team A', teamBName = 'Team B' }: MatchCardProps) {
+export function MatchCard({ match }: MatchCardProps) {
   const router = useRouter()
 
   const handlePress = () => {
@@ -25,6 +23,8 @@ export function MatchCard({ match, teamAName = 'Team A', teamBName = 'Team B' }:
         return Colors.statusUpcoming
       case 'completed':
         return Colors.statusCompleted
+      case 'finalized':
+        return Colors.success
       case 'cancelled':
         return Colors.statusCancelled
       default:
@@ -33,16 +33,24 @@ export function MatchCard({ match, teamAName = 'Team A', teamBName = 'Team B' }:
   }
 
   const getStatusLabel = () => {
+    if (match.status === 'completed') return 'Awaiting Finalization'
+    if (match.status === 'finalized') return 'Official Result'
     return match.status.charAt(0).toUpperCase() + match.status.slice(1)
   }
 
-  const matchDate = new Date(match.match_date)
+  const matchDate = new Date(match.matchDate)
   const dateStr = matchDate.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
+
+  // Innings are batting-team-scoped, not innings-number-scoped — a team's
+  // score card is whichever innings entry (1st or 2nd) it batted in.
+  const inningsFor = (teamId: number) => match.innings.find((i) => i.battingTeamId === teamId) || null
+  const teamAInnings = inningsFor(match.teamA.id)
+  const teamBInnings = inningsFor(match.teamB.id)
 
   return (
     <TouchableOpacity style={styles.card} onPress={handlePress}>
@@ -56,11 +64,11 @@ export function MatchCard({ match, teamAName = 'Team A', teamBName = 'Team B' }:
       <View style={styles.matchupContainer}>
         <View style={styles.team}>
           <Text style={styles.teamName} numberOfLines={1}>
-            {teamAName}
+            {match.teamA.name}
           </Text>
-          {match.team_a_runs !== null && (
+          {teamAInnings && (
             <Text style={styles.score}>
-              {match.team_a_runs}/{match.team_a_wickets}
+              {teamAInnings.runs}/{teamAInnings.wickets}
             </Text>
           )}
         </View>
@@ -69,18 +77,18 @@ export function MatchCard({ match, teamAName = 'Team A', teamBName = 'Team B' }:
 
         <View style={styles.team}>
           <Text style={styles.teamName} numberOfLines={1}>
-            {teamBName}
+            {match.teamB.name}
           </Text>
-          {match.team_b_runs !== null && (
+          {teamBInnings && (
             <Text style={styles.score}>
-              {match.team_b_runs}/{match.team_b_wickets}
+              {teamBInnings.runs}/{teamBInnings.wickets}
             </Text>
           )}
         </View>
       </View>
 
       {match.venue && <Text style={styles.venueText}>{match.venue}</Text>}
-      {match.result && <Text style={styles.resultText}>{match.result}</Text>}
+      {match.result && <Text style={styles.resultText}>{match.result.text}</Text>}
     </TouchableOpacity>
   )
 }

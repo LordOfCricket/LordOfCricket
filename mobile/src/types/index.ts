@@ -33,6 +33,29 @@ export interface Player {
   team_id?: number | null
 }
 
+// GET /players/:publicPlayerId response (statistics.service.js#getPublicPlayerProfile).
+// A deliberately NARROW, public-safe DTO — NOT the same shape as `Player`
+// (GET /me/player does `SELECT *` on the players row; this endpoint's own
+// repository query, findPublicPlayerByPublicId, explicitly selects only
+// these columns — no email/phone/user_id/date_of_birth/address_line/state/
+// postal_code/is_wicket_keeper). Also camelCase throughout, unlike `Player`'s
+// snake_case — a real, previously-uncaught mismatch: this used to be cast to
+// `Player` and read via `.photo_url`/`.batting_style` etc., which were
+// always undefined at runtime since the real keys are `.photoUrl`/
+// `.battingStyle`.
+export interface PublicPlayerProfile {
+  publicPlayerId: string
+  name: string
+  role: string | null
+  battingStyle: string | null
+  bowlingStyle: string | null
+  jerseyNumber: number | null
+  photoUrl: string | null
+  city: string | null
+  bio: string | null
+  team: { id: number; name: string; shortName: string; logoUrl: string | null } | null
+}
+
 // Editable fields for PATCH /me/player
 export interface EditablePlayerFields {
   name?: string
@@ -128,6 +151,9 @@ export interface PlayerMatchPerformance {
   matchId: number
   date: string
   venue: string | null
+  // Immutable per-match team snapshot (match_players.team_id). Optional here
+  // because a few lighter payloads reuse this shape.
+  teamId?: number | null
   opponent: string
   result: string
   won: boolean | null
@@ -157,6 +183,60 @@ export interface PlayerMinimal {
   role: string | null
 }
 
+// One team this player has genuinely represented in finalized matches —
+// derived server-side from match_players.team_id (an immutable per-match
+// snapshot), NOT a membership table (none exists). See
+// statistics.service.js#buildTeamHistory. A player who has only ever played
+// for their current team will simply have exactly one entry here; this is
+// independent of players.team_id (the current-roster FK My Teams already
+// uses) and reflects real historical participation, not fabricated data.
+export interface TeamHistoryEntry {
+  teamId: number
+  name: string
+  shortName: string
+  logoUrl: string | null
+  record: {
+    matches: number
+    wins: number
+    losses: number
+    ties: number
+    noResults: number
+    winPercentage: number | null
+  }
+  firstMatchDate: string
+  lastMatchDate: string
+}
+
+// Career milestone (server/src/domain/statistics/careerMilestones.js).
+// Deterministic threshold over finalized-match history; `achievedOn` is only
+// present when the exact crossing match is known (never a fabricated date).
+export interface CareerAchievement {
+  id: string
+  category: 'appearance' | 'batting' | 'bowling' | 'fielding'
+  title: string
+  description: string
+  value: number
+  target: number
+  achieved: boolean
+  achievedOn: { matchId: number; date: string; opponent: string } | null
+}
+
+export interface PlayerAchievements {
+  earned: CareerAchievement[]
+  next: CareerAchievement | null
+}
+
+// One calendar year of the player's career (server/src/domain/statistics/
+// careerTimeline.js). Teams come from the real per-match team snapshot.
+export interface CareerTimelineYear {
+  year: number
+  matches: number
+  runs: number
+  wickets: number
+  teams: { teamId: number; name: string | null; shortName: string | null; logoUrl: string | null; matches: number }[]
+  milestones: { id: string; title: string; matchId: number; opponent: string }[]
+}
+
 // Complete player statistics response (GET /me/stats or GET /players/:id/stats)
 export interface PlayerStats {
   player: PlayerMinimal
@@ -164,6 +244,9 @@ export interface PlayerStats {
   recentForm: PlayerMatchPerformance[]
   matchHistory: MatchHistory
   personalBests: PersonalBests
+  teamHistory: TeamHistoryEntry[]
+  achievements: PlayerAchievements
+  careerTimeline: CareerTimelineYear[]
 }
 
 export interface Team {
@@ -187,44 +270,241 @@ export interface Ground {
   created_at: string
 }
 
+export type MatchStatus = 'upcoming' | 'live' | 'completed' | 'finalized' | 'cancelled'
+
+// Lightweight team ref embedded in match payloads (buildMatchCard.js /
+// matchSummary.service.js#teamSummary) — distinct from the full `Team`
+// entity returned by /teams endpoints (different field set, snake_case).
+export interface MatchTeamRef {
+  id: number
+  name: string
+  shortName: string
+  logoUrl: string | null
+}
+
+export interface MatchFormat {
+  oversPerInnings: number | null
+  ballsPerOver: number
+}
+
+// buildMatchCard.js's lightweight per-card innings entry.
+export interface MatchCardInnings {
+  inningsNumber: number
+  battingTeamId: number
+  runs: number
+  wickets: number
+  oversLabel: string
+}
+
+export interface MatchChase {
+  target: number
+  runsNeeded: number
+  ballsRemaining: number | null
+  requiredRunRate: number | null
+}
+
+export interface MatchResult {
+  winnerTeamId: number | null
+  resultType: string
+  resultMargin: number | null
+  text: string
+}
+
+// GET /matches/discover item shape (buildMatchCard.js) — also embedded in
+// GET /matches/home's featuredLiveMatch/upcomingMatches/recentResults.
 export interface Match {
   id: number
-  team_a_id: number
-  team_b_id: number
-  venue?: string
-  match_date: string
-  status: 'upcoming' | 'live' | 'completed' | 'cancelled'
-  toss_winner_id?: number
-  result?: string
-  team_a_runs?: number
-  team_a_wickets?: number
-  team_a_overs?: number
-  team_b_runs?: number
-  team_b_wickets?: number
-  team_b_overs?: number
-  created_at: string
+  status: MatchStatus
+  isInningsBreak: boolean
+  isOfficial: boolean
+  awaitingFinalization: boolean
+  matchDate: string
+  venue: string | null
+  format: MatchFormat
+  teamA: MatchTeamRef
+  teamB: MatchTeamRef
+  innings: MatchCardInnings[]
+  chase: MatchChase | null
+  result: MatchResult | null
+}
+
+export interface MatchDiscoverResponse {
+  category: 'LIVE' | 'UPCOMING' | 'RESULTS'
+  pagination: {
+    limit: number
+    offset: number
+    total: number
+  }
+  items: Match[]
+}
+
+export interface HomeFeedResponse {
+  featuredLiveMatch: Match | null
+  upcomingMatches: Match[]
+  recentResults: Match[]
+}
+
+// GET /matches/:id/summary response (matchSummary.service.js)
+export interface MatchSummaryInfo {
+  id: number
+  status: MatchStatus
+  isInningsBreak: boolean
+  isOfficial: boolean
+  awaitingFinalization: boolean
+  venue: string | null
+  matchDate: string
+  oversPerInnings: number | null
+  ballsPerOver: number
+}
+
+export interface MatchToss {
+  winnerTeamId: number
+  decision: 'bat' | 'bowl'
+  text: string
+}
+
+export interface MatchGround {
+  name: string
+  amenities: string[]
+}
+
+export interface InningsScore {
+  runs: number
+  wickets: number
+  legalBalls: number
+  oversLabel: string
+  endReason: string | null
+}
+
+// Scorecard rows (server/src/domain/matchSummary/buildInningsSummary.js).
+// `publicPlayerId` can be null (an "Unknown Player" fallback the server
+// emits when a match_player row can't be resolved) — never navigate on null.
+export interface ScorecardPlayerRef {
+  publicPlayerId: string | null
+  name: string
+  teamId?: number | null
+  isCaptain?: boolean
+  isWicketkeeper?: boolean
+}
+
+export interface MatchBattingRow {
+  player: ScorecardPlayerRef
+  runs: number | null
+  balls: number | null
+  fours: number | null
+  sixes: number | null
+  strikeRate: number | null
+  status: 'OUT' | 'NOT_OUT' | 'DNB' | 'YTB'
+  dismissalText: string | null
+}
+
+export interface MatchBowlingRow {
+  player: ScorecardPlayerRef
+  oversLabel: string
+  maidens: number
+  runs: number
+  wickets: number
+  economy: number | null
+  wides: number
+  noBalls: number
+}
+
+export interface FallOfWicket {
+  wicketNumber: number
+  score: number
+  overBall: string
+  player: ScorecardPlayerRef
+}
+
+export interface InningsExtras {
+  wides: number
+  noBalls: number
+  byes: number
+  legByes: number
+  total: number
+}
+
+export interface InningsTotal {
+  runs: number
+  wickets: number
+  oversLabel: string
+  runRate: number
+}
+
+// buildInningsSummary#buildPartnerships
+export interface Partnership {
+  batsmen: ScorecardPlayerRef[]
+  runs: number
+  balls: number
+  endWicketNumber: number | null
+  unbeaten: boolean
+}
+
+// buildInningsSummary#serializeDelivery
+export interface OverDelivery {
+  id: number
+  over: number
+  ball: number
+  striker: ScorecardPlayerRef
+  nonStriker: ScorecardPlayerRef
+  bowler: ScorecardPlayerRef
+  batRuns: number
+  illegal: { type: string; runs: number } | null
+  extra: { type: string; runs: number } | null
+  totalRuns: number
+  isLegalDelivery: boolean
+  isFreeHit: boolean
+  isDeadBall: boolean
+  voided: boolean
+  wicket: { type: string; player: ScorecardPlayerRef; dismissalText: string | null } | null
+}
+
+// buildInningsSummary#buildOvers
+export interface MatchOver {
+  over: number
+  bowler: ScorecardPlayerRef
+  runs: number
+  wickets: number
+  scoreAfter: string
+  deliveries: OverDelivery[]
+}
+
+export interface MatchInningsDetail {
+  inningsId: number
+  inningsNumber: number
+  status: string
+  battingTeamId: number
+  bowlingTeamId: number
+  score: InningsScore
+  target: number | null
+  chase: MatchChase | null
+  // Present on GET /matches/:id/summary (buildInningsSummary). Optional here
+  // only because a few other code paths reuse this interface with the
+  // lighter live-card shape.
+  batting?: MatchBattingRow[]
+  bowling?: MatchBowlingRow[]
+  fallOfWickets?: FallOfWicket[]
+  extras?: InningsExtras
+  total?: InningsTotal
+  partnerships?: Partnership[]
+  overs?: MatchOver[]
+}
+
+export interface PlayingXiEntry {
+  player: { publicPlayerId: string; name: string }
+  isCaptain: boolean
+  isWicketkeeper: boolean
 }
 
 export interface MatchSummary {
-  match: Match
-  teamA: Team
-  teamB: Team
-  innings?: Innings[]
-  tossWinner?: Team
-  result?: string
-  commentary?: string
-}
-
-export interface Innings {
-  id: number
-  matchId: number
-  inningsNumber: number
-  battingTeamId: number
-  bowlingTeamId: number
-  runs: number
-  wickets: number
-  overs: number
-  status: string
+  match: MatchSummaryInfo
+  teams: { teamA: MatchTeamRef; teamB: MatchTeamRef }
+  toss: MatchToss | null
+  result: MatchResult | null
+  ground: MatchGround | null
+  innings: MatchInningsDetail[]
+  playingXi: { teamA: PlayingXiEntry[]; teamB: PlayingXiEntry[] }
+  tournamentContext: unknown
 }
 
 export interface MatchLiveState {
@@ -247,13 +527,6 @@ export interface MatchLiveState {
   currentBatter?: string
   currentBowler?: string
   recentDelivery?: string
-}
-
-export interface MatchDiscoverResponse {
-  matches: Match[]
-  teamMap: Record<number, Team>
-  total: number
-  hasMore: boolean
 }
 
 export interface MfaStatus {
@@ -293,6 +566,7 @@ export interface BookingRequest {
   contactPhone?: string
   contactEmail?: string
   clientActionId?: string
+  publicGroundId?: string
 }
 
 export interface Booking {

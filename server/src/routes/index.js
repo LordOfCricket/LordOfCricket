@@ -24,6 +24,7 @@ import meGroundStaffRoutes from './meGroundStaff.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
+import { playerFollowRoutes, teamFollowRoutes, meFollowingRoutes } from './follow.routes.js'
 import groundBookingRoutes from './groundBooking.routes.js'
 import teamBookingRoutes from './teamBooking.routes.js'
 import matchProposalRoutes from './matchProposal.routes.js'
@@ -116,6 +117,13 @@ router.use('/tournaments', tournamentAnalyticsRoutes)
 router.use('/players', playerStatsRoutes)
 router.use('/me', meStatsRoutes)
 router.use('/stats', leaderboardRoutes)
+
+// Priority 1 — Follow Players / Teams. Each only adds a `/follow` sub-path
+// (an extra segment), so mount order relative to the base resource routers
+// doesn't matter — the same reasoning as match/tournament analytics above.
+router.use('/players', playerFollowRoutes)
+router.use('/teams', teamFollowRoutes)
+router.use('/me', meFollowingRoutes)
 // Umpire Intelligence & Scale 2.0 — deliberately a separate route, never
 // merged into the player leaderboard's own :metric space.
 router.use('/stats', topUmpiresRoutes)

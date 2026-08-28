@@ -84,6 +84,14 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={styles.registerLink}
+          onPress={() => router.push('/(auth)/register' as any)}
+          disabled={loading}
+        >
+          <Text style={styles.registerLinkText}>New here? Create an account</Text>
+        </TouchableOpacity>
       </View>
     </View>
   )
@@ -149,5 +157,14 @@ const styles = StyleSheet.create({
   error: {
     color: Colors.error,
     fontSize: Typography.fontSize.sm,
+  },
+  registerLink: {
+    marginTop: Spacing.xl,
+    alignItems: 'center',
+  },
+  registerLinkText: {
+    color: Colors.primary,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.medium,
   },
 })

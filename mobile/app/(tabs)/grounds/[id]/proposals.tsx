@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   RefreshControl,
   Alert,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '../../../../src/hooks/useAuth'
 import { useOpenProposalsForGround } from '../../../../src/hooks/useMatchProposals'
 import { Colors, Spacing, Typography } from '../../../../src/constants/colors'
@@ -20,6 +20,7 @@ import { MatchProposal } from '../../../../src/types'
 
 export default function ProposalsScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const { user } = useAuth()
   const [refreshing, setRefreshing] = useState(false)
@@ -39,14 +40,14 @@ export default function ProposalsScreen() {
 
   if (!id) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <ErrorScreen
           title="Error"
           message="Ground ID is required"
           onRetry={() => router.back()}
           retryLabel="Go Back"
         />
-      </SafeAreaView>
+      </View>
     )
   }
 
@@ -68,8 +69,8 @@ export default function ProposalsScreen() {
   const openProposals = proposals.filter((p) => p.status === 'OPEN')
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
@@ -102,7 +103,7 @@ export default function ProposalsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         />
       )}
-    </SafeAreaView>
+    </View>
   )
 }
 

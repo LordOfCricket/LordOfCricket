@@ -14,6 +14,9 @@ import { extractBowlingPerformance, aggregateBowling, bowlingEconomy } from '../
 import { aggregateFielding } from '../domain/statistics/fieldingStats.js'
 import { LEADERBOARD_METRICS, isValidMetric } from '../domain/statistics/leaderboardConfig.js'
 import { rankPlayers } from '../domain/statistics/ranking.js'
+import { buildTeamRecord } from '../domain/team/teamRecord.js'
+import { computeCareerAchievements } from '../domain/statistics/careerMilestones.js'
+import { buildCareerTimeline } from '../domain/statistics/careerTimeline.js'
 
 const MAX_MATCH_HISTORY_LIMIT = 50
 const DEFAULT_RECENT_FORM_COUNT = 5
@@ -36,6 +39,47 @@ function wonFor(participationRow) {
   if (participationRow.result_type === 'TIE') return null
   if (participationRow.winner_team_id == null) return null
   return participationRow.winner_team_id === participationRow.team_id
+}
+
+/**
+ * Groups this player's finalized-match participation by the team they
+ * represented in EACH match (match_players.team_id — an immutable per-match
+ * snapshot; a later roster transfer never rewrites it, see
+ * teamRoster.service.js's own comment on why team_id assignment is "one team
+ * at a time... never a separate join table"). This is genuine historical
+ * team participation derived from real match records, NOT a membership
+ * table (none exists) — a player legitimately appears here for more than
+ * one team only if they've actually played finalized matches for more than
+ * one. Reuses teamRecord.js#buildTeamRecord (the same function a team's own
+ * public profile record uses) so the per-team win/loss/tie numbers here are
+ * computed identically, just grouped from the player's side instead of the
+ * team's side. Sorted most-recently-played-for first.
+ */
+function buildTeamHistory(participation) {
+  const rowsByTeam = new Map()
+  for (const p of participation) {
+    if (!rowsByTeam.has(p.team_id)) rowsByTeam.set(p.team_id, [])
+    rowsByTeam.get(p.team_id).push(p)
+  }
+
+  const history = []
+  for (const [teamId, rows] of rowsByTeam) {
+    const first = rows[0]
+    const isTeamA = teamId === first.team_a_id
+    const sortedNewestFirst = rows.slice().sort((a, b) => new Date(b.match_date) - new Date(a.match_date))
+    history.push({
+      teamId,
+      name: isTeamA ? first.team_a_name : first.team_b_name,
+      shortName: isTeamA ? first.team_a_short : first.team_b_short,
+      logoUrl: isTeamA ? first.team_a_logo : first.team_b_logo,
+      record: buildTeamRecord(rows, teamId),
+      firstMatchDate: sortedNewestFirst[sortedNewestFirst.length - 1].match_date,
+      lastMatchDate: sortedNewestFirst[0].match_date,
+    })
+  }
+
+  history.sort((a, b) => new Date(b.lastMatchDate) - new Date(a.lastMatchDate))
+  return history
 }
 
 /**
@@ -79,6 +123,9 @@ async function buildMatchPerformances(participation, inningsByMatch) {
       matchId: p.match_id,
       date: p.match_date,
       venue: p.venue,
+      // Immutable per-match team snapshot (match_players.team_id) — the same
+      // source buildTeamHistory uses; never the player's CURRENT team.
+      teamId: p.team_id,
       opponent: opponentFor(p),
       result: p.result,
       won: wonFor(p),
@@ -120,6 +167,13 @@ export async function getPlayerCareerStats(playerId, { matchHistoryLimit = 10, m
     fielding,
   }
 
+  const teamHistory = buildTeamHistory(participation)
+  // `performances` is newest-first; achievements/timeline both need it
+  // oldest-first (cumulative milestone crossing, chronological year buckets).
+  const chronoPerformances = performances.slice().reverse()
+  const achievements = computeCareerAchievements({ career, chronoPerformances })
+  const careerTimeline = buildCareerTimeline({ chronoPerformances, teamHistory, earnedAchievements: achievements.earned })
+
   return {
     player: { id: player.id, publicPlayerId: player.public_player_id, name: player.name, role: player.role },
     career,
@@ -134,6 +188,18 @@ export async function getPlayerCareerStats(playerId, { matchHistoryLimit = 10, m
       highestScore: career.batting.highestScore,
       bestBowling: career.bowling.bestBowling,
     },
+    // Real per-team history derived from match_players — see buildTeamHistory's
+    // own comment. Independent of players.team_id (the current-roster FK);
+    // a player who has only ever played for their current team will simply
+    // have exactly one entry here.
+    teamHistory,
+    // Deterministic career milestones + a year-by-year timeline, both derived
+    // from the same finalized-match history above (no cache, no fabricated
+    // dates — see the two domain modules). Public-safe: only match ids/dates,
+    // opponent team names and this player's own team names/logos, all of
+    // which already appear in matchHistory/teamHistory.
+    achievements,
+    careerTimeline,
   }
 }
 

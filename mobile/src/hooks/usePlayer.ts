@@ -112,3 +112,19 @@ export function usePublicPlayerStats(
     enabled: enabled && !!publicPlayerId,
   })
 }
+
+/**
+ * Player directory/search (GET /players).
+ * No authentication required. An empty `query` lists all players
+ * (directory behavior); a non-empty one filters by the backend's own
+ * case-insensitive name/publicPlayerId match — the caller is responsible
+ * for debouncing `query` before passing it in, so this doesn't fire a
+ * request per keystroke.
+ */
+export function usePlayerSearch(query: string, limit: number = 20, offset: number = 0) {
+  return useQuery({
+    queryKey: playerKeys.search(query, limit, offset),
+    queryFn: () => playerApi.searchPlayers(query, limit, offset),
+    staleTime: 1000 * 60, // 1 minute
+  })
+}

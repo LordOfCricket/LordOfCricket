@@ -1,14 +1,18 @@
 import api from './api'
-import { Match, MatchSummary, MatchLiveState, MatchDiscoverResponse } from '../types'
+import { Match, MatchSummary, MatchLiveState, MatchDiscoverResponse, HomeFeedResponse } from '../types'
 
-export async function discoverMatches(category: 'LIVE' | 'UPCOMING' | 'RESULTS', limit = 20, offset = 0) {
-  const response = await api.get('/matches/discover', {
+export async function discoverMatches(
+  category: 'LIVE' | 'UPCOMING' | 'RESULTS',
+  limit = 20,
+  offset = 0
+): Promise<MatchDiscoverResponse> {
+  const response = await api.get<MatchDiscoverResponse>('/matches/discover', {
     params: { category, limit, offset },
   })
   return response.data
 }
 
-export async function getHomeFeed() {
+export async function getHomeFeed(): Promise<HomeFeedResponse> {
   // TEMPORARY DEBUG: Log exact request details
   const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'
   const endpoint = '/matches/home'
@@ -20,7 +24,7 @@ export async function getHomeFeed() {
   console.log('METHOD: GET')
 
   try {
-    const response = await api.get('/matches/home')
+    const response = await api.get<HomeFeedResponse>('/matches/home')
     console.log('[LOC HOME DEBUG - SUCCESS]')
     console.log('STATUS:', response.status)
     console.log('RESPONSE KEYS:', Object.keys(response.data || {}))

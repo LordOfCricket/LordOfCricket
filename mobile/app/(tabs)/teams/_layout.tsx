@@ -9,6 +9,7 @@ export default function TeamsLayout() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen name="create" />
+      <Stack.Screen name="compare" />
       <Stack.Screen name="[id]" />
     </Stack>
   )

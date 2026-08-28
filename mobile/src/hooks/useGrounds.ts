@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import * as groundApi from '../services/groundApi'
 
+export function useFeaturedGrounds(limit = 8, enabled = true) {
+  return useQuery({
+    queryKey: ['grounds', 'featured', limit],
+    queryFn: () => groundApi.getFeaturedGrounds(limit),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled,
+  })
+}
+
 export function useNearbyGrounds(latitude: number, longitude: number, radiusKm = 10) {
   return useQuery({
     queryKey: ['grounds', 'nearby', latitude, longitude, radiusKm],
@@ -28,10 +37,10 @@ export function useGroundDetail(publicGroundId: string) {
   })
 }
 
-export function useGroundAvailability(date: string) {
+export function useGroundAvailability(date: string, publicGroundId?: string) {
   return useQuery({
-    queryKey: ['grounds', 'availability', date],
-    queryFn: () => groundApi.getAvailability(date),
+    queryKey: ['grounds', 'availability', date, publicGroundId],
+    queryFn: () => groundApi.getAvailability(date, publicGroundId),
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: !!date,
   })

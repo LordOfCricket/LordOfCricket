@@ -13,9 +13,12 @@ import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchPlayerInsight } from '../../services/aiInsightApi.js'
 import PlayerAnalyticsSection from '../../components/analytics/PlayerAnalyticsSection.jsx'
+import PlayerAchievements from '../../components/player/PlayerAchievements.jsx'
+import CareerTimeline from '../../components/player/CareerTimeline.jsx'
+import FollowButton from '../../components/common/FollowButton.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 
-const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ANALYTICS']
+const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ACHIEVEMENTS', 'TIMELINE', 'ANALYTICS']
 
 function Field({ label, value }) {
   return (
@@ -92,13 +95,16 @@ export default function PublicPlayerProfilePage() {
         {!playerLoading && !playerError && player && (
           <>
             <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
-              <div className="flex items-center gap-5">
-                <Avatar name={player.name} photoUrl={player.photoUrl} size="lg" />
-                <div>
-                  <h1 className="text-2xl font-bold text-white sm:text-3xl">{player.name}</h1>
-                  <p className="mt-1 text-sm font-semibold text-emerald-300">{player.publicPlayerId}</p>
-                  <p className="text-sm text-slate-300">{roleLabel(player.role) || 'Playing role not set'}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-5">
+                  <Avatar name={player.name} photoUrl={player.photoUrl} size="lg" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-white sm:text-3xl">{player.name}</h1>
+                    <p className="mt-1 text-sm font-semibold text-emerald-300">{player.publicPlayerId}</p>
+                    <p className="text-sm text-slate-300">{roleLabel(player.role) || 'Playing role not set'}</p>
+                  </div>
                 </div>
+                <FollowButton type="player" id={publicPlayerId} />
               </div>
 
               <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -157,7 +163,15 @@ export default function PublicPlayerProfilePage() {
                   {tab === 'BATTING' && <BattingStatsPanel matches={stats.career.matches} batting={stats.career.batting} />}
                   {tab === 'BOWLING' && <BowlingStatsPanel bowling={stats.career.bowling} />}
                   {tab === 'FIELDING' && <FieldingStatsPanel fielding={stats.career.fielding} />}
-                  {tab === 'MATCHES' && <MatchHistoryPanel matchHistory={stats.matchHistory} onLoadMore={loadMoreMatchHistory} />}
+                  {tab === 'MATCHES' && (
+                    <MatchHistoryPanel
+                      matchHistory={stats.matchHistory}
+                      onLoadMore={loadMoreMatchHistory}
+                      teamNamesById={Object.fromEntries((stats.teamHistory ?? []).map((t) => [t.teamId, t.shortName || t.name]))}
+                    />
+                  )}
+                  {tab === 'ACHIEVEMENTS' && <PlayerAchievements achievements={stats.achievements} />}
+                  {tab === 'TIMELINE' && <CareerTimeline timeline={stats.careerTimeline} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/summary`)} />}
                   {tab === 'ANALYTICS' && <PlayerAnalyticsSection publicPlayerId={publicPlayerId} />}
                 </>
               )}

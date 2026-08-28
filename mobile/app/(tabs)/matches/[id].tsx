@@ -8,7 +8,10 @@ import {
   RefreshControl,
   AppState,
   AppStateStatus,
+  Share,
 } from 'react-native'
+import * as Linking from 'expo-linking'
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useMatchDetail } from '../../../src/hooks/useMatches'
 import { useLiveMatch } from '../../../src/hooks/useSocketMatches'
@@ -20,6 +23,7 @@ import { LiveIndicator } from '../../../src/components/LiveIndicator'
 import { CurrentPlayers } from '../../../src/components/CurrentPlayers'
 import { RecentDeliveries } from '../../../src/components/RecentDeliveries'
 import { LiveCommentary } from '../../../src/components/LiveCommentary'
+import { MatchScorecard } from '../../../src/components/match/MatchScorecard'
 
 export default function MatchDetailsScreen() {
   const router = useRouter()
@@ -62,6 +66,22 @@ export default function MatchDetailsScreen() {
     setRefreshing(false)
   }
 
+  // Deep link into THIS match via the app's registered scheme (app.json
+  // "scheme": "loc-mobile"). The /(tabs)/matches/[id] route is public — no
+  // auth is needed to open it.
+  const handleShare = async () => {
+    if (!match) return
+    const url = Linking.createURL(`/matches/${matchId}`)
+    const a = match.teams.teamA.name
+    const b = match.teams.teamB.name
+    const line = match.result?.text || (match.match.status === 'live' ? 'Live now' : 'on Lord Of Cricket')
+    try {
+      await Share.share({ message: `${a} vs ${b} — ${line}\n${url}`, url })
+    } catch {
+      // user dismissed / share sheet unavailable — nothing to do
+    }
+  }
+
   if (!id) {
     return (
       <ErrorScreen
@@ -98,7 +118,7 @@ export default function MatchDetailsScreen() {
     )
   }
 
-  const matchDate = new Date(match.match?.match_date)
+  const matchDate = new Date(match.match.matchDate)
   const dateStr = matchDate.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -114,44 +134,30 @@ export default function MatchDetailsScreen() {
     : match
 
   // Determine actual status (prefer live data)
-  const actualStatus = displayMatch?.match?.status || match?.match?.status
+  const actualStatus = displayMatch?.match?.status || match.match.status
 
-  // Get team scores — prefer live data if available
+  // Get team scores — prefer live data if available, else the most recent
+  // REST innings that team batted in (buildInningsSummary's score object).
   const getTeamScore = (teamId: number) => {
+    const restInningsForTeam = match.innings.filter((inn) => inn.battingTeamId === teamId)
+    const latestRestInnings = restInningsForTeam[restInningsForTeam.length - 1] || null
+
     if (!liveMatch.data?.currentInnings) {
-      // Use HTTP data
-      if (teamId === match?.match?.team_a_id) {
-        return {
-          runs: match?.match?.team_a_runs,
-          wickets: match?.match?.team_a_wickets,
-          overs: match?.match?.team_a_overs,
-        }
-      } else {
-        return {
-          runs: match?.match?.team_b_runs,
-          wickets: match?.match?.team_b_wickets,
-          overs: match?.match?.team_b_overs,
-        }
+      if (!latestRestInnings) return { runs: null, wickets: null, overs: null }
+      return {
+        runs: latestRestInnings.score.runs,
+        wickets: latestRestInnings.score.wickets,
+        overs: latestRestInnings.score.oversLabel,
       }
     }
 
-    // Use live data for current innings
-    const teamBattingInCurrent =
-      liveMatch.data.currentInnings.battingTeamId === teamId
+    const teamBattingInCurrent = liveMatch.data.currentInnings.battingTeamId === teamId
     if (!teamBattingInCurrent) {
-      // This team hasn't batted yet or already finished — use HTTP data
-      if (teamId === match?.match?.team_a_id) {
-        return {
-          runs: match?.match?.team_a_runs,
-          wickets: match?.match?.team_a_wickets,
-          overs: match?.match?.team_a_overs,
-        }
-      } else {
-        return {
-          runs: match?.match?.team_b_runs,
-          wickets: match?.match?.team_b_wickets,
-          overs: match?.match?.team_b_overs,
-        }
+      if (!latestRestInnings) return { runs: null, wickets: null, overs: null }
+      return {
+        runs: latestRestInnings.score.runs,
+        wickets: latestRestInnings.score.wickets,
+        overs: latestRestInnings.score.oversLabel,
       }
     }
 
@@ -163,6 +169,9 @@ export default function MatchDetailsScreen() {
     }
   }
 
+  const teamAScore = getTeamScore(match.teams.teamA.id)
+  const teamBScore = getTeamScore(match.teams.teamB.id)
+
   return (
     <ScrollView
       style={styles.container}
@@ -172,73 +181,99 @@ export default function MatchDetailsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <LiveIndicator
-          status={(actualStatus as 'live' | 'upcoming' | 'completed' | 'finalized' | 'cancelled') || 'upcoming'}
-          isConnected={liveMatch.connected}
-        />
+        <View style={styles.headerRight}>
+          <LiveIndicator
+            status={(actualStatus as 'live' | 'upcoming' | 'completed' | 'finalized' | 'cancelled') || 'upcoming'}
+            isConnected={liveMatch.connected}
+          />
+          <TouchableOpacity onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share this match" hitSlop={8}>
+            <MaterialCommunityIcons name="share-variant" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Match Info */}
       <View style={styles.card}>
         <Text style={styles.dateText}>{dateStr}</Text>
-        {match.match?.venue && <Text style={styles.venueText}>{match.match.venue}</Text>}
+        {match.match.venue && <Text style={styles.venueText}>{match.match.venue}</Text>}
       </View>
 
-      {/* Teams with Live Score */}
+      {/* Teams with Live Score — team names navigate to the Team Profile
+          (real numeric team id from the match summary DTO). */}
       <View style={styles.card}>
         <View style={styles.teamContainer}>
           <View style={styles.team}>
-            <Text style={styles.teamName}>{match.teamA?.name || 'Team A'}</Text>
-            {getTeamScore(match.match?.team_a_id)?.runs !== null && (
+            <TouchableOpacity
+              onPress={() => router.push(`/(tabs)/teams/${match.teams.teamA.id}` as any)}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${match.teams.teamA.name} team profile`}
+            >
+              <Text style={[styles.teamName, styles.teamNameLink]} numberOfLines={2}>
+                {match.teams.teamA.name}
+              </Text>
+            </TouchableOpacity>
+            {teamAScore.runs !== null && (
               <Text style={styles.score}>
-                {getTeamScore(match.match?.team_a_id)?.runs || 0}/
-                {getTeamScore(match.match?.team_a_id)?.wickets || 0}
+                {teamAScore.runs}/{teamAScore.wickets}
               </Text>
             )}
-            {getTeamScore(match.match?.team_a_id)?.overs && (
-              <Text style={styles.overs}>
-                {getTeamScore(match.match?.team_a_id)?.overs} overs
-              </Text>
-            )}
+            {teamAScore.overs && <Text style={styles.overs}>{teamAScore.overs} overs</Text>}
           </View>
 
           <Text style={styles.vs}>vs</Text>
 
           <View style={styles.team}>
-            <Text style={styles.teamName}>{match.teamB?.name || 'Team B'}</Text>
-            {getTeamScore(match.match?.team_b_id)?.runs !== null && (
+            <TouchableOpacity
+              onPress={() => router.push(`/(tabs)/teams/${match.teams.teamB.id}` as any)}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${match.teams.teamB.name} team profile`}
+            >
+              <Text style={[styles.teamName, styles.teamNameLink]} numberOfLines={2}>
+                {match.teams.teamB.name}
+              </Text>
+            </TouchableOpacity>
+            {teamBScore.runs !== null && (
               <Text style={styles.score}>
-                {getTeamScore(match.match?.team_b_id)?.runs || 0}/
-                {getTeamScore(match.match?.team_b_id)?.wickets || 0}
+                {teamBScore.runs}/{teamBScore.wickets}
               </Text>
             )}
-            {getTeamScore(match.match?.team_b_id)?.overs && (
-              <Text style={styles.overs}>
-                {getTeamScore(match.match?.team_b_id)?.overs} overs
-              </Text>
-            )}
+            {teamBScore.overs && <Text style={styles.overs}>{teamBScore.overs} overs</Text>}
           </View>
         </View>
       </View>
 
-      {/* Chase Information (if available) */}
+      {/* Chase Information (if available). Every value is straight off the
+          live socket payload — target/runsNeeded/ballsRemaining/RRR and the
+          current run rate, none derived here. */}
       {liveMatch.data?.currentInnings?.chase && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Chase</Text>
           <View style={styles.chaseInfo}>
+            {liveMatch.data.target != null && (
+              <View style={styles.chaseItem}>
+                <Text style={styles.chaseLabel}>Target</Text>
+                <Text style={styles.chaseValue}>{liveMatch.data.target}</Text>
+              </View>
+            )}
             <View style={styles.chaseItem}>
-              <Text style={styles.chaseLabel}>Target</Text>
+              <Text style={styles.chaseLabel}>Runs Needed</Text>
               <Text style={styles.chaseValue}>{liveMatch.data.currentInnings.chase.runsNeeded}</Text>
             </View>
-            {liveMatch.data.currentInnings.chase.ballsRemaining && (
+            {liveMatch.data.currentInnings.chase.ballsRemaining != null && (
               <View style={styles.chaseItem}>
-                <Text style={styles.chaseLabel}>Balls Remaining</Text>
+                <Text style={styles.chaseLabel}>Balls Left</Text>
                 <Text style={styles.chaseValue}>
                   {liveMatch.data.currentInnings.chase.ballsRemaining}
                 </Text>
               </View>
             )}
-            {liveMatch.data.currentInnings.chase.requiredRunRate && (
+            {liveMatch.data.currentInnings.currentRunRate != null && (
+              <View style={styles.chaseItem}>
+                <Text style={styles.chaseLabel}>Current RR</Text>
+                <Text style={styles.chaseValue}>{liveMatch.data.currentInnings.currentRunRate.toFixed(2)}</Text>
+              </View>
+            )}
+            {liveMatch.data.currentInnings.chase.requiredRunRate != null && (
               <View style={styles.chaseItem}>
                 <Text style={styles.chaseLabel}>Required RR</Text>
                 <Text style={styles.chaseValue}>
@@ -267,39 +302,48 @@ export default function MatchDetailsScreen() {
       )}
 
       {/* Result/Toss Info */}
-      {(liveMatch.data?.result || match.match?.result) && (
+      {(liveMatch.data?.result || match.result) && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Result</Text>
           <Text style={styles.resultText}>
-            {liveMatch.data?.result?.text || match.match?.result}
+            {liveMatch.data?.result?.text || match.result?.text}
           </Text>
         </View>
       )}
 
-      {match.match?.toss_winner_id && (
+      {match.toss && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Toss Winner</Text>
-          <Text style={styles.infoText}>
-            {match.tossWinner?.name ||
-              (match.match.toss_winner_id === match.match.team_a_id
-                ? match.teamA?.name
-                : match.teamB?.name)}
-          </Text>
+          <Text style={styles.cardTitle}>Toss</Text>
+          <Text style={styles.infoText}>{match.toss.text}</Text>
         </View>
       )}
 
-      {/* Innings Details */}
-      {match.innings && match.innings.length > 0 && (
+      {/* Innings Details — lightweight scorelines when the full scorecard
+          isn't available yet (e.g. an upcoming match); otherwise the full
+          per-innings scorecard below replaces this. */}
+      {match.innings.length > 0 && !match.innings.some((inn) => Array.isArray(inn.batting)) && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Innings</Text>
-          {match.innings.map((innings: any, idx: number) => (
-            <View key={innings.id} style={styles.inningsDetail}>
+          {match.innings.map((innings, idx) => (
+            <View key={innings.inningsId} style={styles.inningsDetail}>
               <Text style={styles.inningsLabel}>Innings {idx + 1}</Text>
               <Text style={styles.inningsStats}>
-                {innings.runs}/{innings.wickets} in {innings.overs} overs
+                {innings.score.runs}/{innings.score.wickets} in {innings.score.oversLabel} overs
               </Text>
             </View>
           ))}
+        </View>
+      )}
+
+      {/* Full scorecard — batting/bowling/fall-of-wickets/playing XI/match
+          info, all from the GET /matches/:id/summary payload already
+          fetched by useMatchDetail. Only shown once there's real content
+          (an innings has begun, or a playing XI has been named). */}
+      {(match.innings.some((inn) => Array.isArray(inn.batting)) ||
+        match.playingXi.teamA.length > 0 ||
+        match.playingXi.teamB.length > 0) && (
+        <View style={styles.scorecardWrap}>
+          <MatchScorecard summary={match} />
         </View>
       )}
 
@@ -318,6 +362,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  scorecardWrap: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -330,6 +378,11 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     color: Colors.primary,
     fontWeight: Typography.fontWeight.semibold,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   statusBadge: {
     paddingHorizontal: Spacing.md,
@@ -372,6 +425,10 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
     marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  teamNameLink: {
+    color: Colors.primary,
   },
   score: {
     fontSize: Typography.fontSize['2xl'],

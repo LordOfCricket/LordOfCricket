@@ -11,7 +11,7 @@ import {
 import { useRouter } from 'expo-router'
 import { useDiscoverTeams } from '../../../src/hooks/useTeams'
 import { useAuth } from '../../../src/hooks/useAuth'
-import { Colors, Spacing, Typography } from '../../../src/constants/colors'
+import { Colors, Spacing, Typography, BorderRadius } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { EmptyState } from '../../../src/components/EmptyState'
@@ -58,15 +58,30 @@ export default function TeamsScreen() {
             <Text style={styles.title}>Teams</Text>
             <Text style={styles.subtitle}>Browse cricket teams</Text>
           </View>
-          {user?.role === 'player' && (
+          <View style={styles.headerActions}>
+            {/* Player Discovery entry point — Teams is this app's other
+                "browse people" screen, and already has this exact header
+                action pattern, so a new player-directory link belongs here
+                rather than as a 6th bottom tab. The /(tabs)/players route
+                itself already exists (hidden from the tab bar). */}
             <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => router.push('/(tabs)/teams/create')}
-              accessibilityLabel="Create new team"
+              style={styles.playersButton}
+              onPress={() => router.push('/(tabs)/players' as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Browse players"
             >
-              <Text style={styles.createButtonText}>+ Create</Text>
+              <Text style={styles.playersButtonText}>Players</Text>
             </TouchableOpacity>
-          )}
+            {user?.role === 'player' && (
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => router.push('/(tabs)/teams/create')}
+                accessibilityLabel="Create new team"
+              >
+                <Text style={styles.createButtonText}>+ Create</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
@@ -79,6 +94,20 @@ export default function TeamsScreen() {
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
+      </View>
+
+      {/* Team Comparison entry — mirrors the "Compare Players" affordance on
+          the Players directory; the /(tabs)/teams/compare route is a static
+          sibling of /(tabs)/teams/[id]. */}
+      <View style={styles.compareRow}>
+        <TouchableOpacity
+          style={styles.compareButton}
+          onPress={() => router.push('/(tabs)/teams/compare' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Compare two teams"
+        >
+          <Text style={styles.compareButtonText}>Compare Teams</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Teams List */}
@@ -149,6 +178,23 @@ const styles = StyleSheet.create({
     color: Colors.white,
     opacity: 0.9,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  playersButton: {
+    borderWidth: 1,
+    borderColor: Colors.white,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 6,
+  },
+  playersButtonText: {
+    color: Colors.white,
+    fontWeight: Typography.fontWeight.semibold,
+    fontSize: Typography.fontSize.sm,
+  },
   createButton: {
     backgroundColor: Colors.white,
     paddingHorizontal: Spacing.md,
@@ -159,6 +205,25 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: Typography.fontWeight.bold,
     fontSize: Typography.fontSize.sm,
+  },
+  compareRow: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  compareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.backgroundAlt,
+  },
+  compareButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.text,
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,

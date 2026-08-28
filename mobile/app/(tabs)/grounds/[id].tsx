@@ -6,21 +6,35 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Image,
+  ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGroundDetail, useGroundAvailability } from '../../../src/hooks/useGrounds'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { groundTodayDateStr } from '../../../src/utils/groundTime'
+
+function formatSlotTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 export default function GroundDetailsScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [refreshing, setRefreshing] = useState(false)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = groundTodayDateStr()
   const { data: ground, isLoading, isError, error, refetch: refetchGround } = useGroundDetail(id || '')
-  const { data: availability, refetch: refetchAvailability } = useGroundAvailability(today)
+  const {
+    data: availability,
+    isLoading: isAvailabilityLoading,
+    isError: isAvailabilityError,
+    refetch: refetchAvailability,
+  } = useGroundAvailability(today, id)
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -64,51 +78,85 @@ export default function GroundDetailsScreen() {
     )
   }
 
-  const availableSlots = availability?.slots?.filter((s: any) => s.status === 'AVAILABLE').length || 0
+  const slots = availability?.slots || []
 
   return (
     <ScrollView
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.lg }]}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
       </View>
 
       {/* Ground Info */}
+      {ground.primaryPhoto && (
+        <Image source={{ uri: ground.primaryPhoto }} style={styles.groundImage} />
+      )}
       <View style={styles.card}>
         <Text style={styles.groundName}>{ground.name}</Text>
         {ground.city && <Text style={styles.location}>📍 {ground.city}</Text>}
-        {ground.address_line && <Text style={styles.address}>{ground.address_line}</Text>}
+        {ground.addressLine && <Text style={styles.address}>{ground.addressLine}</Text>}
         {ground.state && <Text style={styles.state}>{ground.state}</Text>}
       </View>
 
-      {/* Availability Summary */}
-      {availability && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Today's Availability</Text>
-          <View style={styles.availabilityContainer}>
-            <View style={styles.availabilityItem}>
-              <Text style={styles.availabilityNumber}>{availableSlots}</Text>
-              <Text style={styles.availabilityLabel}>Available Slots</Text>
-            </View>
-            <View style={styles.availabilityItem}>
-              <Text style={styles.availabilityNumber}>{availability.slots?.length || 0}</Text>
-              <Text style={styles.availabilityLabel}>Total Slots</Text>
-            </View>
+      {/* Today's Availability */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Today's Availability</Text>
+
+        {isAvailabilityLoading ? (
+          <ActivityIndicator color={Colors.primary} style={styles.inlineLoader} />
+        ) : isAvailabilityError ? (
+          <View style={styles.availabilityErrorRow}>
+            <Text style={styles.availabilityErrorText}>Could not load availability.</Text>
+            <TouchableOpacity onPress={() => refetchAvailability()}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-      )}
+        ) : slots.length === 0 ? (
+          <Text style={styles.emptySubtext}>No slots available for today.</Text>
+        ) : (
+          <View style={styles.slotsList}>
+            {slots.map((slot: any, idx: number) => {
+              const isAvailable = slot.status === 'AVAILABLE'
+              return (
+                <View
+                  key={idx}
+                  style={[styles.slotRow, isAvailable ? styles.slotRowAvailable : styles.slotRowUnavailable]}
+                >
+                  <Text style={styles.slotRowTime}>
+                    {formatSlotTime(slot.startTime)} - {formatSlotTime(slot.endTime)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.slotRowStatus,
+                      isAvailable ? styles.slotRowStatusAvailable : styles.slotRowStatusUnavailable,
+                    ]}
+                  >
+                    {isAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
+        )}
+      </View>
 
       {/* Action Buttons */}
       <View style={styles.actionSection}>
-        {availableSlots > 0 && (
-          <TouchableOpacity style={styles.bookButton}>
-            <Text style={styles.bookButtonText}>Book a Slot</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={styles.bookButton}
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)/bookings/new',
+              params: { publicGroundId: id, groundName: ground.name },
+            } as any)
+          }
+        >
+          <Text style={styles.bookButtonText}>Book a Slot</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.proposalsButton}
           onPress={() => router.push(`/(tabs)/grounds/${id}/proposals`)}
@@ -117,33 +165,6 @@ export default function GroundDetailsScreen() {
           <Text style={styles.proposalsButtonText}>View Proposals</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Slot Grid */}
-      {availability && availability.slots && availability.slots.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Available Time Slots</Text>
-          <View style={styles.slotsGrid}>
-            {availability.slots.map((slot: any, idx: number) => (
-              <View
-                key={idx}
-                style={[
-                  styles.slot,
-                  slot.status === 'AVAILABLE' ? styles.slotAvailable : styles.slotUnavailable,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.slotTime,
-                    slot.status === 'AVAILABLE' ? styles.slotTimeAvailable : styles.slotTimeUnavailable,
-                  ]}
-                >
-                  {slot.time}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
     </ScrollView>
   )
 }
@@ -162,6 +183,11 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     color: Colors.primary,
     fontWeight: Typography.fontWeight.semibold,
+  },
+  groundImage: {
+    width: '100%',
+    height: 200,
+    marginBottom: Spacing.md,
   },
   card: {
     marginHorizontal: Spacing.lg,
@@ -197,22 +223,63 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: Spacing.md,
   },
-  availabilityContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  inlineLoader: {
+    marginVertical: Spacing.md,
   },
-  availabilityItem: {
+  availabilityErrorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  availabilityNumber: {
-    fontSize: Typography.fontSize['2xl'],
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.primary,
+  availabilityErrorText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.error,
+    flex: 1,
   },
-  availabilityLabel: {
-    fontSize: Typography.fontSize.sm,
+  retryText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.primary,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  emptySubtext: {
+    fontSize: Typography.fontSize.base,
     color: Colors.textSecondary,
-    marginTop: Spacing.xs,
+  },
+  slotsList: {
+    gap: Spacing.sm,
+  },
+  slotRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  slotRowAvailable: {
+    backgroundColor: Colors.success,
+    opacity: 0.15,
+    borderColor: Colors.success,
+  },
+  slotRowUnavailable: {
+    backgroundColor: Colors.gray[100],
+    borderColor: Colors.gray[300],
+  },
+  slotRowTime: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.text,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  slotRowStatus: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  slotRowStatusAvailable: {
+    color: Colors.statusOngoing,
+  },
+  slotRowStatusUnavailable: {
+    color: Colors.textTertiary,
   },
   actionSection: {
     marginHorizontal: Spacing.lg,
@@ -242,38 +309,5 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
-  },
-  slotsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-    justifyContent: 'space-between',
-  },
-  slot: {
-    width: '30%',
-    paddingVertical: Spacing.md,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  slotAvailable: {
-    backgroundColor: Colors.success,
-    opacity: 0.2,
-    borderColor: Colors.success,
-  },
-  slotUnavailable: {
-    backgroundColor: Colors.gray[300],
-    opacity: 0.3,
-    borderColor: Colors.gray[400],
-  },
-  slotTime: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.semibold,
-  },
-  slotTimeAvailable: {
-    color: Colors.statusOngoing,
-  },
-  slotTimeUnavailable: {
-    color: Colors.textTertiary,
   },
 })

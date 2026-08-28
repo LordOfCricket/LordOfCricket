@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native'
+import { useRouter } from 'expo-router'
 import { useUpcomingMatches, useLiveMatches, useCompletedMatches } from '../../../src/hooks/useMatches'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
@@ -18,6 +19,7 @@ import { MatchCard } from '../../../src/components/MatchCard'
 type MatchCategory = 'LIVE' | 'UPCOMING' | 'COMPLETED'
 
 export default function MatchesScreen() {
+  const router = useRouter()
   const [category, setCategory] = useState<MatchCategory>('UPCOMING')
   const [refreshing, setRefreshing] = useState(false)
 
@@ -59,14 +61,25 @@ export default function MatchesScreen() {
     )
   }
 
-  const matches = data?.matches || []
-  const teamMap = data?.teamMap || {}
+  const matches = data?.items || []
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Matches</Text>
-        <Text style={styles.subtitle}>Browse cricket matches</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Matches</Text>
+            <Text style={styles.subtitle}>Browse cricket matches</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.tournamentsLink}
+            onPress={() => router.push('/(tabs)/tournaments' as any)}
+            accessibilityRole="button"
+            accessibilityLabel="Browse tournaments"
+          >
+            <Text style={styles.tournamentsLinkText}>Tournaments</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Category Filter */}
@@ -95,16 +108,11 @@ export default function MatchesScreen() {
           data={matches}
           renderItem={({ item }) => (
             <View style={styles.matchItem}>
-              <MatchCard
-                match={item}
-                teamAName={teamMap[item.team_a_id]?.name || 'Team A'}
-                teamBName={teamMap[item.team_b_id]?.name || 'Team B'}
-              />
+              <MatchCard match={item} />
             </View>
           )}
           keyExtractor={(item) => `${item.id}`}
           contentContainerStyle={styles.listContent}
-          scrollEnabled={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         />
       ) : (
@@ -131,6 +139,23 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     paddingTop: Spacing['3xl'],
     backgroundColor: Colors.primary,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  tournamentsLink: {
+    borderWidth: 1,
+    borderColor: Colors.white,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 6,
+  },
+  tournamentsLinkText: {
+    color: Colors.white,
+    fontWeight: Typography.fontWeight.semibold,
+    fontSize: Typography.fontSize.sm,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],
