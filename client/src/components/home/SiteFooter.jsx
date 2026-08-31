@@ -12,6 +12,7 @@ const LOC_LINKS = [
   { label: 'Matches', to: '/matches' },
   { label: 'Tournaments', to: '/tournaments' },
   { label: 'Leaderboards', to: '/leaderboards' },
+  { label: 'Records', to: '/records' },
 ]
 
 export default function SiteFooter() {

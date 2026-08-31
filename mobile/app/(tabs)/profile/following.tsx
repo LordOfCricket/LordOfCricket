@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { useFollowing } from '../../../src/hooks/useFollow'
-import { FollowedPlayer, FollowedTeam } from '../../../src/services/followApi'
+import { FollowedPlayer, FollowedTeam, FollowedGround } from '../../../src/services/followApi'
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
@@ -46,14 +46,15 @@ export default function FollowingScreen() {
 
   const players = query.data?.players.items ?? []
   const teams = query.data?.teams.items ?? []
+  const grounds = query.data?.grounds?.items ?? []
 
   return (
     <View style={styles.container}>
       {header}
-      {players.length === 0 && teams.length === 0 ? (
+      {players.length === 0 && teams.length === 0 && grounds.length === 0 ? (
         <EmptyState
           title="Not Following Anyone"
-          message="Tap Follow on a player or team profile to keep them here."
+          message="Tap Follow on a player, team or ground to keep them here."
         />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -120,6 +121,42 @@ export default function FollowingScreen() {
                       {!!t.shortName && (
                         <Text style={styles.rowSub} numberOfLines={1}>
                           {t.shortName}
+                        </Text>
+                      )}
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textTertiary} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {grounds.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Grounds ({query.data?.grounds.total})</Text>
+              <View style={styles.list}>
+                {grounds.map((g: FollowedGround, i) => (
+                  <TouchableOpacity
+                    key={g.publicGroundId}
+                    style={[styles.row, i > 0 && styles.rowDivider]}
+                    onPress={() => router.push(`/(tabs)/grounds/${g.publicGroundId}` as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${g.name}`}
+                  >
+                    {g.primaryPhoto ? (
+                      <Image source={{ uri: g.primaryPhoto }} style={styles.avatar} />
+                    ) : (
+                      <View style={styles.avatarFallback}>
+                        <MaterialCommunityIcons name="map-marker" size={20} color={Colors.white} />
+                      </View>
+                    )}
+                    <View style={styles.rowInfo}>
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {g.name}
+                      </Text>
+                      {(g.city || g.state) && (
+                        <Text style={styles.rowSub} numberOfLines={1}>
+                          {[g.city, g.state].filter(Boolean).join(', ')}
                         </Text>
                       )}
                     </View>

@@ -7,6 +7,9 @@ import {
   getTeamFollowState,
   followTeam,
   unfollowTeam,
+  getGroundFollowState,
+  followGround,
+  unfollowGround,
   getFollowing,
   FollowState,
   FollowingResponse,
@@ -16,6 +19,7 @@ export const followKeys = {
   all: ['follow'] as const,
   player: (publicPlayerId: string) => [...followKeys.all, 'player', publicPlayerId] as const,
   team: (teamId: number) => [...followKeys.all, 'team', teamId] as const,
+  ground: (publicGroundId: string) => [...followKeys.all, 'ground', publicGroundId] as const,
   following: () => [...followKeys.all, 'following'] as const,
 }
 
@@ -97,6 +101,49 @@ export function useTeamFollow(teamId: number | null) {
     },
     onSuccess: (data) => {
       if (teamId != null) qc.setQueryData(followKeys.team(teamId), data)
+      qc.invalidateQueries({ queryKey: followKeys.following() })
+    },
+  })
+
+  return {
+    available: enabled,
+    following: query.data?.following ?? null,
+    loading: query.isPending && enabled,
+    pending: mutation.isPending,
+    toggle: () => {
+      if (!enabled || mutation.isPending) return
+      mutation.mutate(!(query.data?.following ?? false))
+    },
+  }
+}
+
+export function useGroundFollow(publicGroundId: string | null) {
+  const authed = useIsAuthed()
+  const qc = useQueryClient()
+  const enabled = authed && !!publicGroundId
+
+  const query = useQuery<FollowState>({
+    queryKey: publicGroundId ? followKeys.ground(publicGroundId) : [],
+    queryFn: () => getGroundFollowState(publicGroundId as string),
+    enabled,
+    staleTime: 1000 * 60,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) =>
+      next ? followGround(publicGroundId as string) : unfollowGround(publicGroundId as string),
+    onMutate: async (next) => {
+      if (!publicGroundId) return
+      await qc.cancelQueries({ queryKey: followKeys.ground(publicGroundId) })
+      const prev = qc.getQueryData<FollowState>(followKeys.ground(publicGroundId))
+      qc.setQueryData(followKeys.ground(publicGroundId), { following: next })
+      return { prev }
+    },
+    onError: (_e, _next, ctx) => {
+      if (publicGroundId && ctx?.prev) qc.setQueryData(followKeys.ground(publicGroundId), ctx.prev)
+    },
+    onSuccess: (data) => {
+      if (publicGroundId) qc.setQueryData(followKeys.ground(publicGroundId), data)
       qc.invalidateQueries({ queryKey: followKeys.following() })
     },
   })

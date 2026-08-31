@@ -106,10 +106,12 @@ const RealScorerPage = lazy(() => import('../pages/scorer/RealScorerPage.jsx'))
 const PlayersDiscoveryPage = lazy(() => import('../pages/players/PlayersDiscoveryPage.jsx'))
 const PublicPlayerProfilePage = lazy(() => import('../pages/players/PublicPlayerProfilePage.jsx'))
 const LeaderboardsPage = lazy(() => import('../pages/leaderboards/LeaderboardsPage.jsx'))
+const RecordsPage = lazy(() => import('../pages/leaderboards/RecordsPage.jsx'))
 const TopUmpiresPage = lazy(() => import('../pages/leaderboards/TopUmpiresPage.jsx'))
 
 // Advanced Cricket Analytics: player/team comparison (public reads)
 const PlayerComparePage = lazy(() => import('../pages/players/PlayerComparePage.jsx'))
+const PlayerHeadToHeadPage = lazy(() => import('../pages/players/PlayerHeadToHeadPage.jsx'))
 const TeamComparePage = lazy(() => import('../pages/teams/TeamComparePage.jsx'))
 
 // Public match summary/scorecard (public read, no auth wall)
@@ -274,9 +276,11 @@ const router = createBrowserRouter([
       // Player discovery, public profiles, leaderboards (public reads, no auth wall)
       { path: '/players', element: withSuspense(<PlayersDiscoveryPage />) },
       { path: '/players/compare', element: withSuspense(<PlayerComparePage />) },
+      { path: '/players/head-to-head', element: withSuspense(<PlayerHeadToHeadPage />) },
       { path: '/players/:publicPlayerId', element: withSuspense(<PublicPlayerProfilePage />) },
       { path: '/leaderboards', element: withSuspense(<LeaderboardsPage />) },
       { path: '/leaderboards/umpires', element: withSuspense(<TopUmpiresPage />) },
+      { path: '/records', element: withSuspense(<RecordsPage />) },
 
       // Public match discovery
       { path: '/matches', element: withSuspense(<MatchesPage />) },

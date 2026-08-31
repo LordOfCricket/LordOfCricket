@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Search, Users } from 'lucide-react'
+import { Search, Users, Swords } from 'lucide-react'
 import { searchPlayers } from '../../services/statisticsApi.js'
 import { fetchTeams } from '../../services/playerApi.js'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
@@ -171,14 +171,21 @@ export default function PlayersDiscoveryPage() {
           </div>
         </div>
 
-        {/* Compare Players Link */}
-        <div className="mb-8 flex justify-center">
+        {/* Compare Players / Head-to-Head Links */}
+        <div className="mb-8 flex flex-wrap justify-center gap-2">
           <Link
             to="/players/compare"
             className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-stadium px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-all duration-200 hover:bg-loc-stadium-hover"
           >
             <Users className="h-4 w-4" />
             Compare Players
+          </Link>
+          <Link
+            to="/players/head-to-head"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-stadium px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-all duration-200 hover:bg-loc-stadium-hover"
+          >
+            <Swords className="h-4 w-4" />
+            Head-to-Head
           </Link>
         </div>
 

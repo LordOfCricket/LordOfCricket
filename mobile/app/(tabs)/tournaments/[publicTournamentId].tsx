@@ -8,6 +8,8 @@ import {
   TournamentFixture,
   StandingsRow,
   TournamentStandings,
+  TournamentTopRunScorer,
+  TournamentTopWicketTaker,
 } from '../../../src/services/tournamentApi'
 import {
   formatLabel,
@@ -22,11 +24,35 @@ import {
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
+import { shareEntity } from '../../../src/lib/shareEntity'
 
 type SectionKey = 'Overview' | 'Fixtures' | 'Results' | 'Standings' | 'Bracket' | 'Teams' | 'Stats'
 
 function num(v: number | null | undefined, digits = 1): string {
   return v == null ? '—' : v.toFixed(digits)
+}
+
+// Best single innings / best figures among the tournament's leading players —
+// real values already on every topRunScorers[].highestScore /
+// topWicketTakers[].bestBowling (shown nowhere until now). Sorting mirrors
+// leaderboardConfig.js: highest score by runs desc; best bowling by wickets
+// desc then runs asc.
+function bestTournamentInnings(top: TournamentTopRunScorer[]): TournamentTopRunScorer | null {
+  return top.reduce<TournamentTopRunScorer | null>((best, p) => {
+    if (!p.highestScore) return best
+    if (!best || !best.highestScore || p.highestScore.runs > best.highestScore.runs) return p
+    return best
+  }, null)
+}
+function bestTournamentFigures(top: TournamentTopWicketTaker[]): TournamentTopWicketTaker | null {
+  return top.reduce<TournamentTopWicketTaker | null>((best, p) => {
+    if (!p.bestBowling) return best
+    if (!best || !best.bestBowling) return p
+    const a = p.bestBowling
+    const b = best.bestBowling
+    if (a.wickets > b.wickets || (a.wickets === b.wickets && a.runs < b.runs)) return p
+    return best
+  }, null)
 }
 
 function hasStandings(s: TournamentStandings): boolean {
@@ -86,7 +112,29 @@ export default function TournamentDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Header onBack={() => router.back()} title="Tournament" />
+      <Header
+        onBack={() => router.back()}
+        title="Tournament"
+        right={
+          <TouchableOpacity
+            onPress={() =>
+              shareEntity({
+                title: tournament.name,
+                message:
+                  tournament.status === 'COMPLETED' && tournament.championTeamName
+                    ? `${tournament.name} — won by ${tournament.championTeamName} on Lord Of Cricket`
+                    : `${tournament.name} on Lord Of Cricket`,
+                path: `/tournaments/${tournament.publicTournamentId}`,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Share this tournament"
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons name="share-variant" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero */}
@@ -230,6 +278,52 @@ export default function TournamentDetailScreen() {
                   <Tile label="Lowest Total" value={analytics.lowestTeamTotal == null ? '—' : String(analytics.lowestTeamTotal)} />
                 </View>
               </View>
+              {(() => {
+                const bestInn = bestTournamentInnings(analytics.topRunScorers)
+                const bestFig = bestTournamentFigures(analytics.topWicketTakers)
+                if (analytics.highestTeamTotal == null && !bestInn && !bestFig) return null
+                return (
+                  <View>
+                    <Text style={styles.blockTitle}>Tournament Records</Text>
+                    <Text style={styles.recordsNote}>From this tournament&apos;s finalized matches and leading players.</Text>
+                    <View style={styles.recordsList}>
+                      <View style={styles.recordRow}>
+                        <Text style={styles.recordLabel}>Highest Team Total</Text>
+                        <Text style={styles.recordValue}>
+                          {analytics.highestTeamTotal == null ? '—' : String(analytics.highestTeamTotal)}
+                        </Text>
+                      </View>
+                      <View style={styles.recordRow}>
+                        <Text style={styles.recordLabel}>Highest Score</Text>
+                        {bestInn && bestInn.highestScore ? (
+                          <Text style={styles.recordValue}>
+                            {bestInn.highestScore.runs}
+                            {bestInn.highestScore.notOut ? '*' : ''}{' '}
+                            <Text style={styles.recordName} onPress={() => openPlayer(bestInn.player.publicPlayerId)}>
+                              {bestInn.player.name}
+                            </Text>
+                          </Text>
+                        ) : (
+                          <Text style={styles.recordValue}>—</Text>
+                        )}
+                      </View>
+                      <View style={styles.recordRow}>
+                        <Text style={styles.recordLabel}>Best Bowling</Text>
+                        {bestFig && bestFig.bestBowling ? (
+                          <Text style={styles.recordValue}>
+                            {bestFig.bestBowling.wickets}/{bestFig.bestBowling.runs}{' '}
+                            <Text style={styles.recordName} onPress={() => openPlayer(bestFig.player.publicPlayerId)}>
+                              {bestFig.player.name}
+                            </Text>
+                          </Text>
+                        ) : (
+                          <Text style={styles.recordValue}>—</Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                )
+              })()}
               <View>
                 <Text style={styles.blockTitle}>Top Run Scorers</Text>
                 {analytics.topRunScorers.length === 0 ? (
@@ -272,14 +366,14 @@ export default function TournamentDetailScreen() {
   )
 }
 
-function Header({ onBack, title }: { onBack: () => void; title: string }) {
+function Header({ onBack, title, right }: { onBack: () => void; title: string; right?: React.ReactNode }) {
   return (
     <View style={styles.header}>
       <TouchableOpacity onPress={onBack} accessibilityRole="button" accessibilityLabel="Go back">
         <MaterialCommunityIcons name="arrow-left" size={22} color={Colors.text} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>{title}</Text>
-      <View style={{ width: 22 }} />
+      <View style={{ width: 22, alignItems: 'flex-end' }}>{right ?? null}</View>
     </View>
   )
 }
@@ -649,6 +743,39 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   tileValue: { fontSize: Typography.fontSize.base, fontWeight: Typography.fontWeight.bold, color: Colors.text },
+  recordsNote: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginBottom: Spacing.sm },
+  recordsList: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.backgroundAlt,
+    paddingHorizontal: Spacing.md,
+  },
+  recordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  recordLabel: {
+    fontSize: 10,
+    fontWeight: Typography.fontWeight.medium,
+    color: Colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    flexShrink: 0,
+  },
+  recordValue: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  recordName: { color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
   bracketRow: { gap: Spacing.md, paddingVertical: Spacing.sm, paddingRight: Spacing.lg },
   bracketCol: { width: 190, gap: Spacing.md, justifyContent: 'center' },
   bracketStage: {

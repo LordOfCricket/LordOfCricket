@@ -16,6 +16,7 @@ import PlayerAnalyticsSection from '../../components/analytics/PlayerAnalyticsSe
 import PlayerAchievements from '../../components/player/PlayerAchievements.jsx'
 import CareerTimeline from '../../components/player/CareerTimeline.jsx'
 import FollowButton from '../../components/common/FollowButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 
 const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ACHIEVEMENTS', 'TIMELINE', 'ANALYTICS']
@@ -104,7 +105,27 @@ export default function PublicPlayerProfilePage() {
                     <p className="text-sm text-slate-300">{roleLabel(player.role) || 'Playing role not set'}</p>
                   </div>
                 </div>
-                <FollowButton type="player" id={publicPlayerId} />
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <FollowButton type="player" id={publicPlayerId} />
+                    <ShareButton
+                      size="sm"
+                      title={player.name}
+                      text={
+                        stats && stats.career.matches > 0
+                          ? `${player.name} — ${stats.career.batting.runs} career runs on Lord Of Cricket`
+                          : `${player.name} on Lord Of Cricket`
+                      }
+                      path={`/players/${publicPlayerId}`}
+                    />
+                  </div>
+                  <Link
+                    to={`/players/head-to-head?p1=${publicPlayerId}`}
+                    className="text-xs font-semibold text-emerald-300 hover:text-emerald-200"
+                  >
+                    Head-to-Head →
+                  </Link>
+                </div>
               </div>
 
               <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">

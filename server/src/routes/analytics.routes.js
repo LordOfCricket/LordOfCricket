@@ -7,6 +7,7 @@ import {
   getMatchAnalytics,
   getTournamentAnalytics,
   comparePlayers,
+  playerHeadToHead,
   compareTeams,
 } from '../controllers/analytics.controller.js'
 
@@ -28,6 +29,9 @@ import {
 
 export const playerAnalyticsRoutes = Router()
 playerAnalyticsRoutes.get('/compare', analyticsLimiter, comparePlayers)
+// Priority 2 — real batter-vs-bowler encounters. Static segment, registered
+// before `/:publicPlayerId/analytics` for the same reason as `/compare`.
+playerAnalyticsRoutes.get('/head-to-head', analyticsLimiter, playerHeadToHead)
 playerAnalyticsRoutes.get('/:publicPlayerId/analytics', analyticsLimiter, getPlayerAnalytics)
 
 export const teamAnalyticsRoutes = Router()

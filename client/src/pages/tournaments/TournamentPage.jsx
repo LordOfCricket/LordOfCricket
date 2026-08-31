@@ -9,6 +9,7 @@ import BracketView from '../../components/tournaments/BracketView.jsx'
 import OrganizerPanel from '../../components/tournaments/OrganizerPanel.jsx'
 import TournamentAnalyticsPanel from '../../components/tournaments/TournamentAnalyticsPanel.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
 
 const TABS_BASE = ['Overview', 'Fixtures', 'Results', 'Teams', 'Statistics']
 
@@ -130,7 +131,19 @@ export default function TournamentPage() {
               <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">{tournament.name}</h1>
               {tournament.description && <p className="mt-2 max-w-xl text-sm text-slate-300">{tournament.description}</p>}
             </div>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-200">{statusLabel(tournament.status)}</span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-200">{statusLabel(tournament.status)}</span>
+              <ShareButton
+                size="sm"
+                title={tournament.name}
+                text={
+                  tournament.status === 'COMPLETED' && tournament.championTeamName
+                    ? `${tournament.name} — won by ${tournament.championTeamName} on Lord Of Cricket`
+                    : `${tournament.name} on Lord Of Cricket`
+                }
+                path={`/tournaments/${tournament.publicTournamentId}`}
+              />
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-300">

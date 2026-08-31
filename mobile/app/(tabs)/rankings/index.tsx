@@ -96,7 +96,13 @@ export default function RankingsScreen() {
           <MaterialCommunityIcons name="arrow-left" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Rankings</Text>
-        <View style={{ width: 22 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/rankings/records' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Cricket records"
+        >
+          <Text style={styles.headerLink}>Records</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -278,6 +284,11 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
+  },
+  headerLink: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.primary,
   },
   scrollContent: { padding: Spacing.lg, paddingBottom: Spacing['3xl'] },
   subtitle: {

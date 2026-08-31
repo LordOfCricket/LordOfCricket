@@ -1,20 +1,22 @@
 import React from 'react'
 import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, View } from 'react-native'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
-import { usePlayerFollow, useTeamFollow } from '../hooks/useFollow'
+import { usePlayerFollow, useTeamFollow, useGroundFollow } from '../hooks/useFollow'
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/colors'
 
 // Follow / Following toggle. Renders nothing for a logged-out visitor
 // (following is authenticated-only; the public profile stays fully visible).
 // State is server-authoritative via useFollow.
 type Props =
-  | { type: 'player'; publicPlayerId: string | null; teamId?: never }
-  | { type: 'team'; teamId: number | null; publicPlayerId?: never }
+  | { type: 'player'; publicPlayerId: string | null; teamId?: never; publicGroundId?: never }
+  | { type: 'team'; teamId: number | null; publicPlayerId?: never; publicGroundId?: never }
+  | { type: 'ground'; publicGroundId: string | null; publicPlayerId?: never; teamId?: never }
 
 export function FollowButton(props: Props) {
   const player = usePlayerFollow(props.type === 'player' ? props.publicPlayerId ?? null : null)
   const team = useTeamFollow(props.type === 'team' ? props.teamId ?? null : null)
-  const f = props.type === 'player' ? player : team
+  const ground = useGroundFollow(props.type === 'ground' ? props.publicGroundId ?? null : null)
+  const f = props.type === 'player' ? player : props.type === 'team' ? team : ground
 
   if (!f.available) return null
 

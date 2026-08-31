@@ -175,6 +175,25 @@ test('CANCELLATION: cancelling an already-cancelled booking is rejected, not a s
   }
 })
 
+test('MY BOOKINGS (Priority 4): listMyBookings carries the ground identity each booking was made at', async () => {
+  const user = await makeUser('My Bookings Ground User')
+  try {
+    const ground = await findDefaultGround()
+    await bookingService.createBooking({ dateStr: TEST_DATE_2, hour: 14, minute: 0, userId: user.id, customerName: user.name })
+
+    const rows = await bookingService.listMyBookings(user.id)
+    assert.equal(rows.length, 1)
+    // The repo now LEFT JOINs grounds; the serializer turns these aliased
+    // columns into a public-safe { publicGroundId, name, city } block.
+    assert.equal(rows[0].ground_public_id, ground.public_ground_id)
+    assert.equal(rows[0].ground_name, ground.name)
+    assert.ok(!('email' in rows[0]) || rows[0].email == null) // no ground-owner private data leaked in
+  } finally {
+    await cleanupBookingsOnDates([TEST_DATE_2])
+    await cleanupUsers([user.id])
+  }
+})
+
 test('IDEMPOTENCY: retrying the same clientActionId returns the original booking, never a duplicate', async () => {
   const user = await makeUser('Idempotency User')
   const clientActionId = '11111111-1111-4111-8111-111111111111'

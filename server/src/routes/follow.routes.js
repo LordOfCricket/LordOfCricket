@@ -8,6 +8,9 @@ import {
   followTeamHandler,
   unfollowTeamHandler,
   teamFollowStateHandler,
+  followGroundHandler,
+  unfollowGroundHandler,
+  groundFollowStateHandler,
   listFollowingHandler,
 } from '../controllers/follow.controller.js'
 
@@ -27,6 +30,15 @@ export const teamFollowRoutes = Router()
 teamFollowRoutes.get('/:id/follow', requireIntParam('id'), requireAuth, teamFollowStateHandler)
 teamFollowRoutes.post('/:id/follow', requireIntParam('id'), requireAuth, followTeamHandler)
 teamFollowRoutes.delete('/:id/follow', requireIntParam('id'), requireAuth, unfollowTeamHandler)
+
+// Mounted at /api/grounds. Priority 5 — Favorite Grounds. `/:publicGroundId/
+// follow` is an extra segment past the public `/:publicGroundId` profile
+// route (ground.routes.js), so mount order doesn't matter — same reasoning
+// as the player/team follow routers above.
+export const groundFollowRoutes = Router()
+groundFollowRoutes.get('/:publicGroundId/follow', requireAuth, groundFollowStateHandler)
+groundFollowRoutes.post('/:publicGroundId/follow', requireAuth, followGroundHandler)
+groundFollowRoutes.delete('/:publicGroundId/follow', requireAuth, unfollowGroundHandler)
 
 // Mounted at /api/me
 export const meFollowingRoutes = Router()

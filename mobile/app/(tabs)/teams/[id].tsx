@@ -17,6 +17,9 @@ import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { MatchCard } from '../../../src/components/MatchCard'
 import { FollowButton } from '../../../src/components/FollowButton'
+import { AIInsightSection } from '../../../src/components/AIInsightSection'
+import { useTeamInsight } from '../../../src/hooks/useAIInsight'
+import { shareEntity } from '../../../src/lib/shareEntity'
 import { formatRole } from '../../../src/utils/playerFormatting'
 
 const FORM_COLOR: Record<TeamRecentFormEntry['result'], string> = {
@@ -42,6 +45,7 @@ export default function TeamDetailsScreen() {
   // shape publicTeamService.mapPublicSquadPlayer backs — reusing useTeamDetail
   // here means no redundant request and it works without auth too.
   const { data: team, isLoading: teamLoading, isError: teamError, refetch: refetchTeam } = useTeamDetail(teamId)
+  const aiInsight = useTeamInsight(teamId > 0 ? teamId : null)
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -88,7 +92,25 @@ export default function TeamDetailsScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <FollowButton type="team" teamId={team.team.id} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() =>
+              shareEntity({
+                title: team.team.name,
+                message: record && record.matches > 0
+                  ? `${team.team.name} — ${record.wins}W / ${record.losses}L on Lord Of Cricket`
+                  : `${team.team.name} on Lord Of Cricket`,
+                path: `/teams/${team.team.id}`,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${team.team.name}`}
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons name="share-variant" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <FollowButton type="team" teamId={team.team.id} />
+        </View>
       </View>
 
       {/* Team Header */}
@@ -152,6 +174,18 @@ export default function TeamDetailsScreen() {
           <Text style={styles.emptyLine}>No official results yet.</Text>
         )}
       </View>
+
+      {record && record.matches > 0 && (
+        <View style={styles.aiWrap}>
+          <AIInsightSection
+            title="AI Team Insight"
+            kind="person"
+            result={aiInsight.data}
+            loading={aiInsight.isPending}
+            error={aiInsight.isError}
+          />
+        </View>
+      )}
 
       {/* Top Performers — all-time, while representing THIS team. Tappable to
           the public player profile. */}
@@ -295,6 +329,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -358,6 +397,10 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     backgroundColor: Colors.backgroundAlt,
     borderRadius: 8,
+  },
+  aiWrap: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   cardTitle: {
     fontSize: Typography.fontSize.base,

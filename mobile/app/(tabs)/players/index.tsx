@@ -129,7 +129,16 @@ export default function PlayersDirectoryScreen() {
           accessibilityLabel="Compare two players"
         >
           <MaterialCommunityIcons name="compare-horizontal" size={16} color={Colors.text} />
-          <Text style={styles.actionButtonText}>Compare Players</Text>
+          <Text style={styles.actionButtonText} numberOfLines={1}>Compare</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => router.push('/(tabs)/players/head-to-head' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Player head-to-head"
+        >
+          <MaterialCommunityIcons name="sword-cross" size={16} color={Colors.text} />
+          <Text style={styles.actionButtonText} numberOfLines={1}>Head-to-Head</Text>
         </TouchableOpacity>
       </View>
 

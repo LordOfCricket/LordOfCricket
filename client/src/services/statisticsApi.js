@@ -30,3 +30,11 @@ export async function fetchLeaderboard(metric, { role, teamId, limit, offset } =
   const { data } = await api.get(`/stats/leaderboards/${metric}`, { params: { role, teamId, limit, offset } })
   return data
 }
+
+// LOC Cricket Records — match & team records (highest team total, highest
+// match aggregate, biggest wins by runs / by wickets, highest successful
+// chase) across all finalized matches. Server-derived; nothing computed here.
+export async function fetchCricketRecords() {
+  const { data } = await api.get('/stats/records')
+  return data
+}

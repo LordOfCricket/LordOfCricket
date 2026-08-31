@@ -49,6 +49,15 @@ function serializeBooking(row) {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     customerName: row.customer_name,
+    // Priority 4 — which ground this booking is for. Only present on rows
+    // that came through listByUser's LEFT JOIN (My Bookings); create/cancel/
+    // staff-schedule responses select ground_bookings alone, so this stays
+    // undefined there rather than a fabricated null object. Public-safe:
+    // publicGroundId + name + city are the same fields the ground card and
+    // ground discovery already expose to anyone.
+    ...(row.ground_public_id
+      ? { ground: { publicGroundId: row.ground_public_id, name: row.ground_name, city: row.ground_city } }
+      : {}),
   }
 }
 

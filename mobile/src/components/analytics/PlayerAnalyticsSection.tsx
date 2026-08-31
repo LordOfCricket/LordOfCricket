@@ -1,5 +1,5 @@
-import React from 'react'
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native'
+import React, { useState } from 'react'
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { usePlayerAnalytics } from '../../hooks/usePlayerAnalytics'
 import { AnalyticsTrendPoint } from '../../services/analyticsApi'
@@ -20,8 +20,13 @@ function num(v: number | null | undefined, digits = 0): string {
   return v == null ? '—' : v.toFixed(digits)
 }
 
+type BatMetric = 'runs' | 'strikeRate'
+type BowlMetric = 'wickets' | 'economy'
+
 export function PlayerAnalyticsSection({ publicPlayerId }: { publicPlayerId: string }) {
   const { data, isPending, error } = usePlayerAnalytics(publicPlayerId)
+  const [batMetric, setBatMetric] = useState<BatMetric>('runs')
+  const [bowlMetric, setBowlMetric] = useState<BowlMetric>('wickets')
 
   // Match the website: analytics is a bounded, best-effort section — on a
   // hard error it simply doesn't render rather than showing an error card
@@ -61,14 +66,71 @@ export function PlayerAnalyticsSection({ publicPlayerId }: { publicPlayerId: str
       <Text style={styles.windowNote}>Trends based on the last {data.recentMatchesConsidered} matches.</Text>
 
       {data.battingTrend.length > 0 && (
-        <Card title={`Batting Trend — Last ${data.battingTrend.length} Innings`}>
-          <TrendBars points={data.battingTrend} valueKey="runs" caption="Runs per innings" barColor={Colors.success} />
+        <Card
+          title={`Batting Trend — Last ${data.battingTrend.length} Innings`}
+          right={
+            <MiniToggle
+              options={[
+                { key: 'runs', label: 'Runs' },
+                { key: 'strikeRate', label: 'SR' },
+              ]}
+              value={batMetric}
+              onChange={setBatMetric}
+            />
+          }
+        >
+          <TrendBars
+            points={data.battingTrend}
+            valueKey={batMetric}
+            caption={batMetric === 'runs' ? 'Runs per innings' : 'Strike rate per innings'}
+            format={batMetric === 'runs' ? (v) => String(v) : (v) => v.toFixed(1)}
+            barColor={Colors.success}
+          />
         </Card>
       )}
 
       {data.bowlingTrend.length > 0 && (
-        <Card title={`Bowling Trend — Last ${data.bowlingTrend.length} Innings`}>
-          <TrendBars points={data.bowlingTrend} valueKey="wickets" caption="Wickets per innings" barColor={Colors.secondary} />
+        <Card
+          title={`Bowling Trend — Last ${data.bowlingTrend.length} Innings`}
+          right={
+            <MiniToggle
+              options={[
+                { key: 'wickets', label: 'Wkts' },
+                { key: 'economy', label: 'Econ' },
+              ]}
+              value={bowlMetric}
+              onChange={setBowlMetric}
+            />
+          }
+        >
+          <TrendBars
+            points={data.bowlingTrend}
+            valueKey={bowlMetric}
+            caption={bowlMetric === 'wickets' ? 'Wickets per innings' : 'Economy per innings'}
+            format={bowlMetric === 'wickets' ? (v) => String(v) : (v) => v.toFixed(2)}
+            barColor={Colors.secondary}
+          />
+        </Card>
+      )}
+
+      {data.careerVsRecent && data.careerVsRecent.recent.matches > 0 && (
+        <Card title="Career vs Recent">
+          <View style={styles.cvrHeadRow}>
+            <Text style={[styles.cvrCell, styles.cvrLabelCell]} />
+            <Text style={[styles.cvrCell, styles.cvrHead]}>Career ({data.careerVsRecent.career.matches})</Text>
+            <Text style={[styles.cvrCell, styles.cvrHead]}>Last {data.careerVsRecent.recent.matches}</Text>
+          </View>
+          <CvrRow label="Runs" career={String(data.careerVsRecent.career.batting.runs)} recent={String(data.careerVsRecent.recent.batting.runs)} />
+          <CvrRow label="Bat Avg" career={num(data.careerVsRecent.career.batting.average, 2)} recent={num(data.careerVsRecent.recent.batting.average, 2)} />
+          <CvrRow label="Strike Rate" career={num(data.careerVsRecent.career.batting.strikeRate, 2)} recent={num(data.careerVsRecent.recent.batting.strikeRate, 2)} />
+          <CvrRow
+            label="50s / 100s"
+            career={`${data.careerVsRecent.career.batting.fifties} / ${data.careerVsRecent.career.batting.hundreds}`}
+            recent={`${data.careerVsRecent.recent.batting.fifties} / ${data.careerVsRecent.recent.batting.hundreds}`}
+          />
+          <CvrRow label="Wickets" career={String(data.careerVsRecent.career.bowling.wickets)} recent={String(data.careerVsRecent.recent.bowling.wickets)} />
+          <CvrRow label="Economy" career={num(data.careerVsRecent.career.bowling.economy, 2)} recent={num(data.careerVsRecent.recent.bowling.economy, 2)} />
+          <CvrRow label="Bowl Avg" career={num(data.careerVsRecent.career.bowling.average, 2)} recent={num(data.careerVsRecent.recent.bowling.average, 2)} />
         </Card>
       )}
 
@@ -96,6 +158,8 @@ export function PlayerAnalyticsSection({ publicPlayerId }: { publicPlayerId: str
           <Tile label="Median Runs" value={num(data.consistency.medianRuns, 1)} />
           <Tile label="30+ Scores" value={String(data.consistency.thirtyPlusCount)} />
           <Tile label="50+ Scores" value={String(data.consistency.fiftyPlusCount)} />
+          <Tile label="Not Outs" value={String(data.consistency.notOuts)} />
+          <Tile label="Dismissals" value={String(data.consistency.dismissals)} />
         </View>
       </Card>
 
@@ -145,11 +209,52 @@ function SectionTitle({ title }: { title: string }) {
   )
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+      <View style={styles.cardHeadRow}>
+        <Text style={[styles.cardTitle, styles.cardTitleFlex]} numberOfLines={2}>
+          {title}
+        </Text>
+        {right}
+      </View>
       {children}
+    </View>
+  )
+}
+
+function MiniToggle<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: T; label: string }[]
+  value: T
+  onChange: (k: T) => void
+}) {
+  return (
+    <View style={styles.toggle}>
+      {options.map((o) => (
+        <TouchableOpacity
+          key={o.key}
+          onPress={() => onChange(o.key)}
+          style={[styles.toggleBtn, value === o.key && styles.toggleBtnActive]}
+          accessibilityRole="button"
+          accessibilityState={{ selected: value === o.key }}
+        >
+          <Text style={[styles.toggleText, value === o.key && styles.toggleTextActive]}>{o.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  )
+}
+
+function CvrRow({ label, career, recent }: { label: string; career: string; recent: string }) {
+  return (
+    <View style={styles.cvrRow}>
+      <Text style={[styles.cvrCell, styles.cvrLabelCell]}>{label}</Text>
+      <Text style={[styles.cvrCell, styles.cvrValue]}>{career}</Text>
+      <Text style={[styles.cvrCell, styles.cvrValue, styles.cvrRecent]}>{recent}</Text>
     </View>
   )
 }
@@ -171,11 +276,13 @@ function TrendBars({
   points,
   valueKey,
   caption,
+  format,
   barColor,
 }: {
   points: AnalyticsTrendPoint[]
-  valueKey: 'runs' | 'wickets'
+  valueKey: 'runs' | 'wickets' | 'strikeRate' | 'economy'
   caption: string
+  format: (v: number) => string
   barColor: string
 }) {
   const values = points.map((p) => (p[valueKey] ?? 0) as number)
@@ -187,7 +294,7 @@ function TrendBars({
           const v = values[i]
           return (
             <View key={p.matchId} style={styles.barColumn}>
-              <Text style={styles.barValue}>{v}</Text>
+              <Text style={styles.barValue}>{format(v)}</Text>
               <View style={styles.barTrack}>
                 <View
                   style={[
@@ -254,12 +361,50 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.md,
   },
+  cardHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
   cardTitle: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
-    marginBottom: Spacing.md,
   },
+  cardTitleFlex: { flex: 1 },
+  toggle: {
+    flexDirection: 'row',
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    padding: 2,
+  },
+  toggleBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: BorderRadius.full },
+  toggleBtnActive: { backgroundColor: Colors.primary },
+  toggleText: { fontSize: 11, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
+  toggleTextActive: { color: Colors.white },
+  cvrHeadRow: { flexDirection: 'row', paddingBottom: Spacing.xs },
+  cvrRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  cvrCell: { flex: 1, fontSize: Typography.fontSize.sm },
+  cvrLabelCell: { color: Colors.textSecondary, fontSize: Typography.fontSize.xs, textTransform: 'uppercase', letterSpacing: 0.3 },
+  cvrHead: {
+    textAlign: 'right',
+    fontSize: 10,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textTertiary,
+    textTransform: 'uppercase',
+  },
+  cvrValue: { textAlign: 'right', fontWeight: Typography.fontWeight.bold, color: Colors.text },
+  cvrRecent: { color: Colors.primary },
   tileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

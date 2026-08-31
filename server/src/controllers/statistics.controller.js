@@ -103,6 +103,15 @@ export async function getLeaderboard(req, res, next) {
   }
 }
 
+export async function getCricketRecords(req, res, next) {
+  try {
+    const records = await statisticsService.getCricketRecords()
+    res.json(records)
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function searchPlayersHandler(req, res, next) {
   try {
     const limit = Number(req.query.limit)

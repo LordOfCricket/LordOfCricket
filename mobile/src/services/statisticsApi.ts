@@ -90,3 +90,68 @@ export function formatLeaderboardValue(value: LeaderboardValue): string {
   if ('wickets' in value) return `${value.wickets}/${value.runs}`
   return `${value.runs}${value.notOut ? '*' : ''}`
 }
+
+// --- LOC Cricket Records (GET /stats/records) -----------------------------
+// Match & team records across all finalized matches — the team/match-side
+// counterpart to the per-player leaderboards above. Same public endpoint and
+// shape the website's RecordsPage.jsx uses (statistics.service.js#
+// getCricketRecords). Every runs/wickets/margin is an authoritative
+// innings.runs / matches.result_margin value; nothing is computed on the
+// client. Empty arrays => honest "no records yet" state.
+
+export interface RecordTeamRef {
+  id: number
+  name: string
+  shortName: string | null
+}
+
+export interface TeamTotalRecord {
+  runs: number
+  wickets: number
+  legalBalls: number
+  team: RecordTeamRef | null
+  opponent: RecordTeamRef | null
+  matchId: number
+  matchDate: string
+}
+
+export interface MatchAggregateRecord {
+  totalRuns: number
+  teamA: RecordTeamRef | null
+  teamB: RecordTeamRef | null
+  matchId: number
+  matchDate: string
+}
+
+export interface VictoryMarginRecord {
+  margin: number
+  marginUnit: 'runs' | 'wickets'
+  winner: RecordTeamRef | null
+  loser: RecordTeamRef | null
+  resultText: string | null
+  matchId: number
+  matchDate: string
+}
+
+export interface SuccessfulChaseRecord {
+  runs: number
+  wickets: number
+  legalBalls: number
+  chaser: RecordTeamRef | null
+  defender: RecordTeamRef | null
+  matchId: number
+  matchDate: string
+}
+
+export interface CricketRecords {
+  highestTeamTotals: TeamTotalRecord[]
+  highestMatchAggregates: MatchAggregateRecord[]
+  biggestWinsByRuns: VictoryMarginRecord[]
+  biggestWinsByWickets: VictoryMarginRecord[]
+  highestSuccessfulChases: SuccessfulChaseRecord[]
+}
+
+export async function fetchCricketRecords(): Promise<CricketRecords> {
+  const response = await api.get<CricketRecords>('/stats/records')
+  return response.data
+}

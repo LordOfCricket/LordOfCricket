@@ -1,6 +1,7 @@
 import * as followRepo from '../repositories/follow.repository.js'
 import { findPlayerByPublicId } from '../models/player.model.js'
 import { findTeamById } from '../models/team.model.js'
+import { findPublicActiveGroundByPublicId } from '../models/ground.model.js'
 
 const MAX_LIST_LIMIT = 100
 const DEFAULT_LIST_LIMIT = 50
@@ -33,6 +34,14 @@ async function resolveTeam(teamId) {
   const team = await findTeamById(teamId)
   if (!team) throw notFound('Team not found.')
   return team
+}
+
+async function resolveGround(publicGroundId) {
+  // Same lookup the public ground profile route uses — resolves only ACTIVE
+  // grounds, never a raw internal id trusted from the client.
+  const ground = await findPublicActiveGroundByPublicId(publicGroundId)
+  if (!ground) throw notFound('Ground not found.')
+  return ground
 }
 
 export async function followPlayer(userId, publicPlayerId) {
@@ -71,21 +80,41 @@ export async function getTeamFollowState(userId, teamId) {
   return { following: await followRepo.isFollowingTeam(userId, team.id) }
 }
 
+export async function followGround(userId, publicGroundId) {
+  const ground = await resolveGround(publicGroundId)
+  await followRepo.followGround(userId, ground.id)
+  return { following: true }
+}
+
+export async function unfollowGround(userId, publicGroundId) {
+  const ground = await resolveGround(publicGroundId)
+  await followRepo.unfollowGround(userId, ground.id)
+  return { following: false }
+}
+
+export async function getGroundFollowState(userId, publicGroundId) {
+  const ground = await resolveGround(publicGroundId)
+  return { following: await followRepo.isFollowingGround(userId, ground.id) }
+}
+
 /**
  * The authenticated user's "Following" list — both entity types in one
  * response (the screen shows both). Each list is independently paginated and
  * hard-capped at MAX_LIST_LIMIT; at LOC's club scale a personal follow list
  * never approaches that, and the cap keeps the query bounded regardless.
  */
-export async function listFollowing(userId, { playersLimit, playersOffset, teamsLimit, teamsOffset } = {}) {
+export async function listFollowing(userId, { playersLimit, playersOffset, teamsLimit, teamsOffset, groundsLimit, groundsOffset } = {}) {
   const pLimit = clamp(playersLimit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT)
   const pOffset = clamp(playersOffset, 0, Number.MAX_SAFE_INTEGER)
   const tLimit = clamp(teamsLimit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT)
   const tOffset = clamp(teamsOffset, 0, Number.MAX_SAFE_INTEGER)
+  const gLimit = clamp(groundsLimit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT)
+  const gOffset = clamp(groundsOffset, 0, Number.MAX_SAFE_INTEGER)
 
-  const [players, teams] = await Promise.all([
+  const [players, teams, grounds] = await Promise.all([
     followRepo.listFollowedPlayers(userId, { limit: pLimit, offset: pOffset }),
     followRepo.listFollowedTeams(userId, { limit: tLimit, offset: tOffset }),
+    followRepo.listFollowedGrounds(userId, { limit: gLimit, offset: gOffset }),
   ])
 
   return {
@@ -107,6 +136,17 @@ export async function listFollowing(userId, { playersLimit, playersOffset, teams
         name: r.name,
         shortName: r.short_name,
         logoUrl: r.logo_url,
+        followedAt: r.followed_at,
+      })),
+    },
+    grounds: {
+      total: grounds.total,
+      items: grounds.rows.map((r) => ({
+        publicGroundId: r.public_ground_id,
+        name: r.name,
+        city: r.city,
+        state: r.state,
+        primaryPhoto: r.primary_photo,
         followedAt: r.followed_at,
       })),
     },

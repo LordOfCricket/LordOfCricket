@@ -2847,3 +2847,32 @@ CREATE TABLE IF NOT EXISTS user_follows (
 CREATE INDEX IF NOT EXISTS idx_user_follows_user ON user_follows(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_follows_player ON user_follows(player_id) WHERE player_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_user_follows_team ON user_follows(team_id) WHERE team_id IS NOT NULL;
+
+-- ----------------------------------------------------------------------------
+-- Priority 5 — Favorite Grounds. user_follows gains a THIRD optional target
+-- (ground_id), keeping the "exactly one target per row" invariant. Purely
+-- additive: existing player/team rows are untouched (ground_id defaults NULL,
+-- and num_nonnulls(...) = 1 already holds for every one of them).
+-- ----------------------------------------------------------------------------
+ALTER TABLE user_follows ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id) ON DELETE CASCADE;
+
+-- Widen the XOR check to "exactly one of three". Drop-then-add, guarded so the
+-- whole-file replay is idempotent — same pattern as ground_bookings_no_overlap
+-- above (a plain CHECK here, so information_schema can be used to detect it).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'user_follows' AND constraint_name = 'user_follows_exactly_one_target'
+  ) THEN
+    ALTER TABLE user_follows DROP CONSTRAINT user_follows_exactly_one_target;
+  END IF;
+END $$;
+ALTER TABLE user_follows ADD CONSTRAINT user_follows_exactly_one_target
+  CHECK (num_nonnulls(player_id, team_id, ground_id) = 1);
+
+-- At most one row per (user, ground) — mirrors the player/team unique
+-- constraints (NULLs distinct, so team-only / player-only rows never collide).
+ALTER TABLE user_follows DROP CONSTRAINT IF EXISTS user_follows_unique_ground;
+ALTER TABLE user_follows ADD CONSTRAINT user_follows_unique_ground UNIQUE (user_id, ground_id);
+CREATE INDEX IF NOT EXISTS idx_user_follows_ground ON user_follows(ground_id) WHERE ground_id IS NOT NULL;

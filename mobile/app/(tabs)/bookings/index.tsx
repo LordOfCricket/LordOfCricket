@@ -1,14 +1,5 @@
-import React, { useState } from 'react'
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from 'react-native'
-import DateTimePicker from '@react-native-community/datetimepicker'
+import React from 'react'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useMyBookings } from '../../../src/hooks/useBooking'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
@@ -17,10 +8,13 @@ import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { EmptyState } from '../../../src/components/EmptyState'
 import { Booking } from '../../../src/types'
 
+function formatPrice(n: number) {
+  return `₹${Number(n).toLocaleString('en-IN')}`
+}
+
 export default function BookingsScreen() {
   const router = useRouter()
   const { data: bookings = [], isLoading, isError, error, refetch } = useMyBookings()
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const handleNewBooking = () => {
     router.push('/(tabs)/bookings/new')
@@ -35,7 +29,7 @@ export default function BookingsScreen() {
   }
 
   const isPast = (booking: Booking) => {
-    return new Date(booking.endTime) <= new Date()
+    return new Date(booking.endTime) <= new Date() && booking.status === 'CONFIRMED'
   }
 
   const upcomingBookings = bookings.filter(isUpcoming)
@@ -85,10 +79,6 @@ export default function BookingsScreen() {
               key={booking.publicBookingId}
               booking={booking}
               onPress={() => handleViewBooking(booking.publicBookingId)}
-              isExpanded={expandedId === booking.publicBookingId}
-              onToggleExpand={() =>
-                setExpandedId(expandedId === booking.publicBookingId ? null : booking.publicBookingId)
-              }
             />
           ))}
         </View>
@@ -102,10 +92,6 @@ export default function BookingsScreen() {
               key={booking.publicBookingId}
               booking={booking}
               onPress={() => handleViewBooking(booking.publicBookingId)}
-              isExpanded={expandedId === booking.publicBookingId}
-              onToggleExpand={() =>
-                setExpandedId(expandedId === booking.publicBookingId ? null : booking.publicBookingId)
-              }
             />
           ))}
         </View>
@@ -119,10 +105,6 @@ export default function BookingsScreen() {
               key={booking.publicBookingId}
               booking={booking}
               onPress={() => handleViewBooking(booking.publicBookingId)}
-              isExpanded={expandedId === booking.publicBookingId}
-              onToggleExpand={() =>
-                setExpandedId(expandedId === booking.publicBookingId ? null : booking.publicBookingId)
-              }
             />
           ))}
         </View>
@@ -134,11 +116,15 @@ export default function BookingsScreen() {
 interface BookingCardProps {
   booking: Booking
   onPress: () => void
-  isExpanded: boolean
-  onToggleExpand: () => void
 }
 
-function BookingCard({ booking, onPress, isExpanded, onToggleExpand }: BookingCardProps) {
+function statusColorFor(displayStatus: Booking['displayStatus']): string {
+  if (displayStatus === 'APPROVED') return Colors.success
+  if (displayStatus === 'CANCELLED') return Colors.error
+  return Colors.textSecondary // COMPLETED
+}
+
+function BookingCard({ booking, onPress }: BookingCardProps) {
   const startDate = new Date(booking.startTime)
   const endDate = new Date(booking.endTime)
 
@@ -156,10 +142,7 @@ function BookingCard({ booking, onPress, isExpanded, onToggleExpand }: BookingCa
     minute: '2-digit',
   })}`
 
-  const statusColor =
-    booking.status === 'CONFIRMED' ? Colors.success :
-    booking.status === 'CANCELLED' ? Colors.danger :
-    Colors.warning
+  const statusColor = statusColorFor(booking.displayStatus)
 
   return (
     <TouchableOpacity
@@ -168,6 +151,12 @@ function BookingCard({ booking, onPress, isExpanded, onToggleExpand }: BookingCa
     >
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
+          {booking.ground ? (
+            <Text style={styles.bookingGround} numberOfLines={1}>
+              {booking.ground.name}
+              {booking.ground.city ? ` · ${booking.ground.city}` : ''}
+            </Text>
+          ) : null}
           <Text style={styles.bookingDate}>{dateStr}</Text>
           <Text style={styles.bookingTime}>{timeStr}</Text>
           {booking.purpose && <Text style={styles.bookingPurpose}>{booking.purpose}</Text>}
@@ -175,17 +164,12 @@ function BookingCard({ booking, onPress, isExpanded, onToggleExpand }: BookingCa
         <Text style={[styles.bookingStatus, { color: statusColor }]}>{booking.displayStatus}</Text>
       </View>
 
-      {booking.expectedPlayers && (
-        <Text style={styles.bookingDetail}>👥 {booking.expectedPlayers} players</Text>
-      )}
-
-      {booking.contactPhone && (
-        <Text style={styles.bookingDetail}>📞 {booking.contactPhone}</Text>
-      )}
-
-      {isExpanded && booking.notes && (
-        <Text style={styles.bookingNotes}>{booking.notes}</Text>
-      )}
+      <View style={styles.bookingMetaRow}>
+        {booking.amount != null && <Text style={styles.bookingAmount}>{formatPrice(booking.amount)}</Text>}
+        {booking.expectedPlayers ? (
+          <Text style={styles.bookingDetail}>👥 {booking.expectedPlayers} players</Text>
+        ) : null}
+      </View>
     </TouchableOpacity>
   )
 }
@@ -203,7 +187,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   title: {
-    ...Typography.title,
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
   },
   newBookingBtn: {
@@ -213,21 +198,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   newBookingText: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.white,
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   section: {
     marginBottom: Spacing.lg,
   },
   sectionTitle: {
-    ...Typography.body1,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.textSecondary,
     marginBottom: Spacing.md,
   },
   bookingCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.backgroundAlt,
     borderRadius: 12,
     padding: Spacing.md,
     marginBottom: Spacing.md,
@@ -240,37 +225,45 @@ const styles = StyleSheet.create({
   },
   bookingInfo: {
     flex: 1,
+    marginRight: Spacing.sm,
+  },
+  bookingGround: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+    marginBottom: 2,
   },
   bookingDate: {
-    ...Typography.body1,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
     color: Colors.text,
   },
   bookingTime: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
     marginTop: 4,
   },
   bookingPurpose: {
-    ...Typography.caption,
+    fontSize: Typography.fontSize.xs,
     color: Colors.textSecondary,
     marginTop: 4,
   },
   bookingStatus: {
-    ...Typography.body2,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  bookingMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  bookingAmount: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.secondary,
   },
   bookingDetail: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  bookingNotes: {
-    ...Typography.body2,
-    color: Colors.textSecondary,
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
   },
 })

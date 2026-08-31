@@ -7,11 +7,15 @@ import {
   fetchTeamFollowState,
   followTeam,
   unfollowTeam,
+  fetchGroundFollowState,
+  followGround,
+  unfollowGround,
 } from '../services/followApi.js'
 
 const API = {
   player: { fetch: fetchPlayerFollowState, follow: followPlayer, unfollow: unfollowPlayer },
   team: { fetch: fetchTeamFollowState, follow: followTeam, unfollow: unfollowTeam },
+  ground: { fetch: fetchGroundFollowState, follow: followGround, unfollow: unfollowGround },
 }
 
 /**

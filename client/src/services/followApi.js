@@ -30,7 +30,22 @@ export async function unfollowTeam(teamId) {
   return data
 }
 
+// Priority 5 — Favorite Grounds. Same authenticated `/follow` sub-path as
+// player/team, keyed by the public ground id.
+export async function fetchGroundFollowState(publicGroundId) {
+  const { data } = await api.get(`/grounds/${publicGroundId}/follow`)
+  return data
+}
+export async function followGround(publicGroundId) {
+  const { data } = await api.post(`/grounds/${publicGroundId}/follow`)
+  return data
+}
+export async function unfollowGround(publicGroundId) {
+  const { data } = await api.delete(`/grounds/${publicGroundId}/follow`)
+  return data
+}
+
 export async function fetchFollowing() {
   const { data } = await api.get('/me/following')
-  return data // { players: { total, items }, teams: { total, items } }
+  return data // { players: { total, items }, teams: { total, items }, grounds: { total, items } }
 }

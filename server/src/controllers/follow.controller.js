@@ -48,6 +48,30 @@ export async function teamFollowStateHandler(req, res, next) {
   }
 }
 
+export async function followGroundHandler(req, res, next) {
+  try {
+    res.json(await followService.followGround(req.user.id, req.params.publicGroundId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function unfollowGroundHandler(req, res, next) {
+  try {
+    res.json(await followService.unfollowGround(req.user.id, req.params.publicGroundId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function groundFollowStateHandler(req, res, next) {
+  try {
+    res.json(await followService.getGroundFollowState(req.user.id, req.params.publicGroundId))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function listFollowingHandler(req, res, next) {
   try {
     res.json(
@@ -56,6 +80,8 @@ export async function listFollowingHandler(req, res, next) {
         playersOffset: req.query.playersOffset,
         teamsLimit: req.query.teamsLimit,
         teamsOffset: req.query.teamsOffset,
+        groundsLimit: req.query.groundsLimit,
+        groundsOffset: req.query.groundsOffset,
       })
     )
   } catch (err) {

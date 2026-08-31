@@ -94,3 +94,85 @@ export async function listTournamentsForTeam(teamId, client = pool) {
   )
   return rows
 }
+
+// Priority 2 — Player Head-to-Head. Real batter-vs-bowler ENCOUNTERS
+// (never career totals): finalized matches where both players' match_players
+// rows exist, then a pure aggregate over the ball-by-ball `deliveries`
+// (indexed on striker_match_player_id / bowler_match_player_id) + `wickets`.
+// No replay pass, no N+1 — every number is a SUM/COUNT the DB already has
+// the columns for. Balls-faced convention matches replay.js exactly (a wide
+// is never a ball faced, a no-ball is); runs-conceded excludes byes/leg-byes
+// (extra_runs) but keeps wide/no-ball extras, mirroring bowlingStats.js.
+
+/** The finalized matches where BOTH players appeared, newest first, with the
+ * team each player represented in that match. */
+export async function listSharedFinalizedMatches(playerIdA, playerIdB, client = pool) {
+  const { rows } = await client.query(
+    `SELECT m.id AS match_id, m.match_date, m.winner_team_id, m.result_type, m.result_margin, m.result,
+            ta.id AS team_a_id, ta.name AS team_a_name,
+            tb.id AS team_b_id, tb.name AS team_b_name,
+            mpa.team_id AS player_a_team_id, mpb.team_id AS player_b_team_id
+     FROM matches m
+     JOIN match_players mpa ON mpa.match_id = m.id AND mpa.player_id = $1
+     JOIN match_players mpb ON mpb.match_id = m.id AND mpb.player_id = $2
+     JOIN teams ta ON ta.id = m.team_a_id
+     JOIN teams tb ON tb.id = m.team_b_id
+     WHERE m.status = 'finalized'
+     ORDER BY m.match_date DESC, m.id DESC`,
+    [playerIdA, playerIdB]
+  )
+  return rows
+}
+
+/**
+ * One aggregate row for every delivery in the shared finalized matches where
+ * `strikerPlayerId` faced `bowlerPlayerId`. Returns BOTH a batting view (for
+ * the striker) and a bowling view (for the bowler) over the same ball set.
+ */
+export async function aggregateHeadToHeadDeliveries(strikerPlayerId, bowlerPlayerId, client = pool) {
+  const { rows } = await client.query(
+    `WITH shared AS (
+       SELECT m.id AS match_id, mps.id AS striker_mp, mpb.id AS bowler_mp
+       FROM matches m
+       JOIN match_players mps ON mps.match_id = m.id AND mps.player_id = $1
+       JOIN match_players mpb ON mpb.match_id = m.id AND mpb.player_id = $2
+       WHERE m.status = 'finalized'
+     ),
+     d AS (
+       SELECT del.*, m.balls_per_over
+       FROM shared s
+       JOIN matches m ON m.id = s.match_id
+       JOIN innings i ON i.match_id = s.match_id
+       JOIN deliveries del ON del.innings_id = i.id
+         AND del.striker_match_player_id = s.striker_mp
+         AND del.bowler_match_player_id = s.bowler_mp
+         AND del.voided = false
+         AND del.is_dead_ball = false
+     )
+     SELECT
+       -- batting view (the striker vs this bowler)
+       COALESCE(SUM(d.bat_runs), 0)::int AS bat_runs,
+       COUNT(*) FILTER (WHERE d.illegal_type IS DISTINCT FROM 'wide')::int AS balls_faced,
+       COUNT(*) FILTER (WHERE d.bat_runs = 4)::int AS fours,
+       COUNT(*) FILTER (WHERE d.bat_runs = 6)::int AS sixes,
+       COUNT(*) FILTER (WHERE d.illegal_type IS DISTINCT FROM 'wide' AND d.bat_runs = 0)::int AS batting_dots,
+       -- bowling view (the bowler vs this striker)
+       COALESCE(SUM(d.total_runs - COALESCE(d.extra_runs, 0)), 0)::int AS runs_conceded,
+       COUNT(*) FILTER (WHERE d.is_legal_delivery = true)::int AS legal_balls,
+       -- equivalent overs under each match's own balls_per_over (mixed-format
+       -- safe, mirrors bowlingStats.js#aggregateBowling)
+       COALESCE(SUM(CASE WHEN d.is_legal_delivery = true THEN 1.0 / d.balls_per_over ELSE 0 END), 0)::float AS equivalent_overs,
+       COUNT(*) FILTER (WHERE d.is_legal_delivery = true AND d.total_runs - COALESCE(d.extra_runs, 0) = 0)::int AS bowling_dots,
+       -- dismissals of THIS striker credited to THIS bowler (run-outs excluded).
+       -- Every row of d already has this striker as striker_match_player_id,
+       -- so the wicket must have dismissed that same match_player.
+       COUNT(w.id) FILTER (
+         WHERE w.dismissed_match_player_id = d.striker_match_player_id
+           AND w.dismissal_type IN ('bowled','caught','lbw','stumped','hit-wicket')
+       )::int AS dismissals
+     FROM d
+     LEFT JOIN wickets w ON w.delivery_id = d.id`,
+    [strikerPlayerId, bowlerPlayerId]
+  )
+  return rows[0]
+}

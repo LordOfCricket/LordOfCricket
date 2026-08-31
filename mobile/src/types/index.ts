@@ -580,11 +580,18 @@ export interface Booking {
   purpose?: string
   expectedPlayers?: number
   notes?: string
+  // Server-computed, immutable price snapshot (₹). null only for a
+  // STAFF_BLOCK — a CUSTOMER booking always carries one.
+  amount?: number | null
   contactPhone?: string
   contactEmail?: string
   customerName: string
   createdAt: string
   cancelledAt?: string
+  // Priority 4 — the ground this booking is for. Present on the
+  // GET /bookings/my list (LEFT JOIN grounds); absent on create/cancel
+  // responses, which select ground_bookings alone.
+  ground?: { publicGroundId: string; name: string; city: string | null } | null
 }
 
 export interface Notification {

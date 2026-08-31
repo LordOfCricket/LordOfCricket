@@ -1,12 +1,60 @@
 import api from './api'
 
+export interface GroundPhoto {
+  title: string | null
+  imageUrl: string
+  sortOrder: number
+  isFeatured: boolean
+}
+
+export interface GroundAmenity {
+  key?: string
+  name: string
+  icon?: string | null
+  imageUrl?: string | null
+}
+
+export interface GroundPricingSlot {
+  startTime: string
+  endTime: string
+  price: number
+}
+
+export interface GroundCanteen {
+  publicCanteenId: string
+  name: string
+  isActive: boolean
+}
+
+// Full public ground profile — GET /grounds/:publicGroundId returns every
+// field below (ground.controller.js#getGroundProfile). The website's
+// GroundHomePage already renders all of it; the mobile screen previously
+// discarded everything except name/address/city/state/photo.
 export interface GroundDetail {
   publicGroundId: string
+  slug: string | null
   name: string
+  description: string | null
   addressLine: string | null
   city: string | null
   state: string | null
+  country: string | null
+  postalCode: string | null
+  latitude: number | string | null
+  longitude: number | string | null
+  phone: string | null
+  email: string | null
+  website: string | null
+  openingHour: number | null
+  closingHour: number | null
+  ratingAvg: number | null
+  ratingCount: number
   primaryPhoto: string | null
+  photos: GroundPhoto[]
+  amenities: GroundAmenity[]
+  amenityCatalog: GroundAmenity[]
+  pricingSlots: GroundPricingSlot[]
+  canteens: GroundCanteen[]
 }
 
 export interface FeaturedGround {
@@ -43,18 +91,37 @@ export async function getNearbyGrounds(latitude: number, longitude: number, radi
   return response.data
 }
 
+interface GroundProfileResponse {
+  ground: Omit<
+    GroundDetail,
+    'primaryPhoto' | 'photos' | 'amenities' | 'amenityCatalog' | 'pricingSlots' | 'canteens'
+  >
+  photos?: GroundPhoto[]
+  amenities?: GroundAmenity[]
+  amenityCatalog?: GroundAmenity[]
+  pricingSlots?: GroundPricingSlot[]
+  canteens?: GroundCanteen[]
+}
+
 /**
  * GET /grounds/:publicGroundId
- * Response is { ground: {...}, photos: [...], ... } — unwrap `ground`
- * and attach the first photo as `primaryPhoto` for convenience.
+ * Response is { ground, photos, amenities, amenityCatalog, pricingSlots,
+ * canteens } — flattened here into one GroundDetail so the screen has the
+ * whole public profile (same data the website's GroundHomePage renders).
+ * `primaryPhoto` = the featured photo, else the first.
  */
 export async function getGroundById(publicGroundId: string): Promise<GroundDetail> {
-  const response = await api.get<{ ground: GroundDetail; photos: { imageUrl: string }[] }>(
-    `/grounds/${publicGroundId}`
-  )
+  const response = await api.get<GroundProfileResponse>(`/grounds/${publicGroundId}`)
+  const { ground, photos = [], amenities = [], amenityCatalog = [], pricingSlots = [], canteens = [] } = response.data
+  const featured = photos.find((p) => p.isFeatured) ?? photos[0]
   return {
-    ...response.data.ground,
-    primaryPhoto: response.data.photos?.[0]?.imageUrl ?? null,
+    ...ground,
+    photos,
+    amenities,
+    amenityCatalog,
+    pricingSlots,
+    canteens,
+    primaryPhoto: featured?.imageUrl ?? null,
   }
 }
 

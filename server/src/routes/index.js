@@ -24,7 +24,7 @@ import meGroundStaffRoutes from './meGroundStaff.routes.js'
 import teamRoutes from './team.routes.js'
 import { matchScoringRoutes, inningsScoringRoutes } from './scoring.routes.js'
 import { playerStatsRoutes, meStatsRoutes, leaderboardRoutes } from './statistics.routes.js'
-import { playerFollowRoutes, teamFollowRoutes, meFollowingRoutes } from './follow.routes.js'
+import { playerFollowRoutes, teamFollowRoutes, groundFollowRoutes, meFollowingRoutes } from './follow.routes.js'
 import groundBookingRoutes from './groundBooking.routes.js'
 import teamBookingRoutes from './teamBooking.routes.js'
 import matchProposalRoutes from './matchProposal.routes.js'
@@ -123,6 +123,9 @@ router.use('/stats', leaderboardRoutes)
 // doesn't matter — the same reasoning as match/tournament analytics above.
 router.use('/players', playerFollowRoutes)
 router.use('/teams', teamFollowRoutes)
+// Priority 5 — Favorite Grounds. `/grounds/:publicGroundId/follow`; extra
+// segment past the public ground profile route, so mount order is free.
+router.use('/grounds', groundFollowRoutes)
 router.use('/me', meFollowingRoutes)
 // Umpire Intelligence & Scale 2.0 — deliberately a separate route, never
 // merged into the player leaderboard's own :metric space.

@@ -56,8 +56,19 @@ export async function listConfirmedInRange(fromUtc, toUtc, groundId = null) {
 }
 
 export async function listByUser(userId) {
+  // Priority 4 — the customer's own booking history now carries the ground it
+  // was made at. LEFT JOIN because ground_id is nullable on pre-multi-ground
+  // rows (schema.sql Phase 24 ALTER) — those simply come back with null
+  // ground_* and the serializer omits the `ground` field for them.
   const { rows } = await pool.query(
-    `SELECT * FROM ground_bookings WHERE user_id = $1 AND booking_type = 'CUSTOMER' ORDER BY start_time DESC`,
+    `SELECT gb.*,
+            g.public_ground_id AS ground_public_id,
+            g.name AS ground_name,
+            g.city AS ground_city
+     FROM ground_bookings gb
+     LEFT JOIN grounds g ON g.id = gb.ground_id
+     WHERE gb.user_id = $1 AND gb.booking_type = 'CUSTOMER'
+     ORDER BY gb.start_time DESC`,
     [userId]
   )
   return rows

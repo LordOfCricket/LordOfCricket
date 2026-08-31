@@ -25,9 +25,19 @@ export interface FollowedTeam {
   followedAt: string
 }
 
+export interface FollowedGround {
+  publicGroundId: string
+  name: string
+  city: string | null
+  state: string | null
+  primaryPhoto: string | null
+  followedAt: string
+}
+
 export interface FollowingResponse {
   players: { total: number; items: FollowedPlayer[] }
   teams: { total: number; items: FollowedTeam[] }
+  grounds: { total: number; items: FollowedGround[] }
 }
 
 export async function getPlayerFollowState(publicPlayerId: string): Promise<FollowState> {
@@ -53,6 +63,19 @@ export async function followTeam(teamId: number): Promise<FollowState> {
 }
 export async function unfollowTeam(teamId: number): Promise<FollowState> {
   const { data } = await api.delete<FollowState>(`/teams/${teamId}/follow`)
+  return data
+}
+
+export async function getGroundFollowState(publicGroundId: string): Promise<FollowState> {
+  const { data } = await api.get<FollowState>(`/grounds/${publicGroundId}/follow`)
+  return data
+}
+export async function followGround(publicGroundId: string): Promise<FollowState> {
+  const { data } = await api.post<FollowState>(`/grounds/${publicGroundId}/follow`)
+  return data
+}
+export async function unfollowGround(publicGroundId: string): Promise<FollowState> {
+  const { data } = await api.delete<FollowState>(`/grounds/${publicGroundId}/follow`)
   return data
 }
 

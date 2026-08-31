@@ -87,6 +87,14 @@ export interface TournamentBreakdown {
   }
 }
 
+// Career vs Recent — both blocks are the SAME aggregateBatting /
+// aggregateBowling shape the career-stats endpoint returns (one formula).
+export interface CvrSide {
+  matches: number
+  batting: CareerStats['batting']
+  bowling: CareerStats['bowling']
+}
+
 export interface PlayerAnalytics {
   player: { publicPlayerId: string; name: string; role: string | null }
   recentMatchesConsidered: number
@@ -95,6 +103,7 @@ export interface PlayerAnalytics {
   bowlingTrend: AnalyticsTrendPoint[]
   consistency: BattingConsistency
   boundaryAnalysis: BoundaryAnalysis
+  careerVsRecent: { recentMatches: number; career: CvrSide; recent: CvrSide }
   dotBallAnalysis: DotBallAnalysis
   dismissalBreakdown: DismissalBreakdownEntry[]
   tournamentBreakdown: TournamentBreakdown | null
@@ -132,6 +141,54 @@ export interface PlayerComparison {
  */
 export async function fetchPlayerComparison(p1: string, p2: string): Promise<PlayerComparison> {
   const response = await api.get<PlayerComparison>('/players/compare', { params: { p1, p2 } })
+  return response.data
+}
+
+// --- Player Head-to-Head ----------------------------------------------
+// Real batter-vs-bowler ENCOUNTERS in the finalized matches where both
+// players appeared — distinct from fetchPlayerComparison (career totals).
+
+export interface H2HBatting {
+  runs: number
+  ballsFaced: number
+  fours: number
+  sixes: number
+  dots: number
+  dismissals: number
+  average: number | null
+  strikeRate: number | null
+}
+export interface H2HBowling {
+  runsConceded: number
+  legalBalls: number
+  wickets: number
+  dots: number
+  economy: number | null
+  average: number | null
+  strikeRate: number | null
+}
+export interface H2HMeeting {
+  matchId: number
+  date: string
+  teamAName: string
+  teamBName: string
+  resultType: string | null
+  winnerTeamId: number | null
+  resultText: string | null
+  playerATeam: string | null
+  playerBTeam: string | null
+}
+export interface PlayerHeadToHead {
+  playerA: { publicPlayerId: string; name: string; role: string | null }
+  playerB: { publicPlayerId: string; name: string; role: string | null }
+  matchesPlayed: number
+  meetings: H2HMeeting[]
+  aVsB: { batting: H2HBatting; bowling: H2HBowling }
+  bVsA: { batting: H2HBatting; bowling: H2HBowling }
+}
+
+export async function fetchPlayerHeadToHead(p1: string, p2: string): Promise<PlayerHeadToHead> {
+  const response = await api.get<PlayerHeadToHead>('/players/head-to-head', { params: { p1, p2 } })
   return response.data
 }
 

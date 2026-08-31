@@ -13,6 +13,7 @@ import { extractBattingPerformance, aggregateBatting, battingStrikeRate } from '
 import { extractBowlingPerformance, aggregateBowling, bowlingEconomy } from '../domain/statistics/bowlingStats.js'
 import { aggregateFielding } from '../domain/statistics/fieldingStats.js'
 import { LEADERBOARD_METRICS, isValidMetric } from '../domain/statistics/leaderboardConfig.js'
+import { CRICKET_RECORD_LIMIT, buildCricketRecords } from '../domain/statistics/matchRecords.js'
 import { rankPlayers } from '../domain/statistics/ranking.js'
 import { buildTeamRecord } from '../domain/team/teamRecord.js'
 import { computeCareerAchievements } from '../domain/statistics/careerMilestones.js'
@@ -256,6 +257,24 @@ export async function getLeaderboard(metric, { limit = DEFAULT_LEADERBOARD_LIMIT
       secondary: metricConfig.secondary(item.career),
     })),
   }
+}
+
+/**
+ * Priority 3 — LOC Cricket Records. Match & team records across ALL finalized
+ * matches, the team/match-side counterpart to the per-player career
+ * leaderboards above. Every figure is an authoritative innings.runs /
+ * matches.result_margin column value (five cheap SQL aggregates, no replay,
+ * no N+1 — see statistics.repository.js#getCricketRecordRows); this service
+ * only maps snake_case rows to a public-safe DTO (team id/name/shortName,
+ * matchId, matchDate, runs/wickets/margin — never a private field). Empty
+ * arrays when no finalized match qualifies; the client shows an honest empty
+ * state, nothing is fabricated. "Best individual batting/bowling performance"
+ * is deliberately NOT duplicated here — it is already the #1 row of the
+ * existing `highest-score` / `best-bowling` leaderboards.
+ */
+export async function getCricketRecords() {
+  const rows = await statsRepo.getCricketRecordRows(CRICKET_RECORD_LIMIT)
+  return buildCricketRecords(rows)
 }
 
 /**

@@ -11,6 +11,7 @@ import TeamTopPerformers from '../../components/teams/TeamTopPerformers.jsx'
 import TeamMatchSection from '../../components/teams/TeamMatchSection.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 import FollowButton from '../../components/common/FollowButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
 import MatchCard from '../../components/matches/MatchCard.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchTeamInsight } from '../../services/aiInsightApi.js'
@@ -57,7 +58,19 @@ export default function TeamProfilePage() {
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex items-center justify-between gap-3">
           <BackButton fallback="/teams" />
-          <FollowButton type="team" id={team.id} />
+          <div className="flex items-center gap-2">
+            <FollowButton type="team" id={team.id} />
+            <ShareButton
+              size="sm"
+              title={team.name}
+              text={
+                record && record.matches > 0
+                  ? `${team.name} — ${record.wins}W / ${record.losses}L on Lord Of Cricket`
+                  : `${team.name} on Lord Of Cricket`
+              }
+              path={`/teams/${team.id}`}
+            />
+          </div>
         </div>
 
         <TeamHero team={team} squadCount={squad.length} />

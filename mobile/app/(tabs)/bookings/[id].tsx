@@ -1,19 +1,15 @@
 import React, { useState } from 'react'
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useCancelBooking, useMyBookings } from '../../../src/hooks/useBooking'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
 import { LoadingScreen } from '../../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { Booking } from '../../../src/types'
+
+function formatPrice(n: number) {
+  return `₹${Number(n).toLocaleString('en-IN')}`
+}
 
 export default function BookingDetailsScreen() {
   const router = useRouter()
@@ -41,8 +37,7 @@ export default function BookingDetailsScreen() {
 
   const startDate = new Date(booking.startTime)
   const endDate = new Date(booking.endTime)
-  const isUpcoming =
-    startDate > new Date() && booking.status === 'CONFIRMED'
+  const isUpcoming = startDate > new Date() && booking.status === 'CONFIRMED'
   const canCancel = isUpcoming
 
   const handleCancelConfirm = async () => {
@@ -76,6 +71,19 @@ export default function BookingDetailsScreen() {
           </Text>
         </View>
 
+        {booking.ground ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Ground</Text>
+            <TouchableOpacity
+              onPress={() => router.push(`/(tabs)/grounds/${booking.ground!.publicGroundId}` as any)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.groundLink}>{booking.ground.name}</Text>
+            </TouchableOpacity>
+            {booking.ground.city ? <Text style={styles.detailValue}>{booking.ground.city}</Text> : null}
+          </View>
+        ) : null}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Date & Time</Text>
           <DetailRow
@@ -102,6 +110,13 @@ export default function BookingDetailsScreen() {
           />
         </View>
 
+        {booking.amount != null && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Price</Text>
+            <DetailRow label="Amount" value={formatPrice(booking.amount)} />
+          </View>
+        )}
+
         {booking.purpose && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Purpose</Text>
@@ -120,11 +135,8 @@ export default function BookingDetailsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contact</Text>
             <DetailRow label="Phone" value={booking.contactPhone} />
+            {booking.contactEmail && <DetailRow label="Email" value={booking.contactEmail} />}
           </View>
-        )}
-
-        {booking.contactEmail && (
-          <DetailRow label="Email" value={booking.contactEmail} />
         )}
 
         {booking.notes && (
@@ -137,23 +149,14 @@ export default function BookingDetailsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Booking Info</Text>
           <DetailRow label="Booking ID" value={booking.publicBookingId} />
-          <DetailRow
-            label="Created"
-            value={new Date(booking.createdAt).toLocaleDateString('en-IN')}
-          />
+          <DetailRow label="Created" value={new Date(booking.createdAt).toLocaleDateString('en-IN')} />
           {booking.cancelledAt && (
-            <DetailRow
-              label="Cancelled"
-              value={new Date(booking.cancelledAt).toLocaleDateString('en-IN')}
-            />
+            <DetailRow label="Cancelled" value={new Date(booking.cancelledAt).toLocaleDateString('en-IN')} />
           )}
         </View>
 
         {canCancel && (
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => setShowCancelDialog(true)}
-          >
+          <TouchableOpacity style={styles.cancelButton} onPress={() => setShowCancelDialog(true)}>
             <Text style={styles.cancelButtonText}>Cancel Booking</Text>
           </TouchableOpacity>
         )}
@@ -229,7 +232,7 @@ function getStatusColor(status: string): string {
     case 'COMPLETED':
       return Colors.textSecondary
     case 'CANCELLED':
-      return Colors.danger
+      return Colors.error
     default:
       return Colors.text
   }
@@ -247,42 +250,50 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   backButton: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.primary,
+    fontWeight: Typography.fontWeight.semibold,
     marginRight: Spacing.md,
   },
   headerTitle: {
-    ...Typography.title,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
     flex: 1,
   },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.backgroundAlt,
     borderRadius: 12,
     padding: Spacing.lg,
   },
   statusBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.border,
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: 20,
     marginBottom: Spacing.lg,
   },
   statusText: {
-    ...Typography.body2,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
   },
   section: {
     marginBottom: Spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    paddingBottom: Spacing.md,
   },
   sectionTitle: {
-    ...Typography.body2,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.textSecondary,
     marginBottom: Spacing.md,
+  },
+  groundLink: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.primary,
   },
   detailRow: {
     flexDirection: 'row',
@@ -291,25 +302,25 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   detailLabel: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
   },
   detailValue: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.text,
-    fontWeight: '500',
+    fontWeight: Typography.fontWeight.medium,
   },
   cancelButton: {
-    backgroundColor: Colors.danger,
+    backgroundColor: Colors.error,
     borderRadius: 12,
     paddingVertical: Spacing.lg,
     marginTop: Spacing.lg,
   },
   cancelButtonText: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.white,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   dialogOverlay: {
     position: 'absolute',
@@ -322,18 +333,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dialogContent: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.backgroundAlt,
     borderRadius: 12,
     padding: Spacing.lg,
     width: '85%',
   },
   dialogTitle: {
-    ...Typography.title,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
     marginBottom: Spacing.md,
   },
   dialogMessage: {
-    ...Typography.body2,
+    fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
     marginBottom: Spacing.lg,
   },
@@ -350,18 +362,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
   },
   dialogButtonDanger: {
-    backgroundColor: Colors.danger,
+    backgroundColor: Colors.error,
   },
   dialogButtonTextSecondary: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.text,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
   dialogButtonTextDanger: {
-    ...Typography.body1,
+    fontSize: Typography.fontSize.base,
     color: Colors.white,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: Typography.fontWeight.bold,
   },
 })

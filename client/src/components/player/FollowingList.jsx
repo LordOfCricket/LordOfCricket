@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Users2 } from 'lucide-react'
+import { Users2, MapPin } from 'lucide-react'
 import { fetchFollowing } from '../../services/followApi.js'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
@@ -39,12 +39,13 @@ export default function FollowingList() {
 
   const players = data?.players?.items ?? []
   const teams = data?.teams?.items ?? []
+  const grounds = data?.grounds?.items ?? []
 
-  if (players.length === 0 && teams.length === 0) {
+  if (players.length === 0 && teams.length === 0 && grounds.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center">
         <Users2 className="h-8 w-8 text-slate-500" />
-        <p className="text-sm text-slate-300">You're not following anyone yet. Tap “Follow” on a player or team profile.</p>
+        <p className="text-sm text-slate-300">You're not following anyone yet. Tap “Follow” on a player, team or ground.</p>
       </div>
     )
   }
@@ -93,6 +94,35 @@ export default function FollowingList() {
                   </span>
                 )}
                 <p className="truncate text-sm font-bold text-white">{t.name}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {grounds.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Grounds ({data.grounds.total})</p>
+          <div className="space-y-2">
+            {grounds.map((g) => (
+              <Link
+                key={g.publicGroundId}
+                to={`/grounds/${g.publicGroundId}`}
+                className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3 transition-colors hover:bg-white/10"
+              >
+                {g.primaryPhoto ? (
+                  <img src={g.primaryPhoto} alt={g.name} className="h-8 w-8 rounded-full object-cover" />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-200">
+                    <MapPin className="h-4 w-4" />
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-white">{g.name}</p>
+                  {(g.city || g.state) && (
+                    <p className="truncate text-xs text-slate-400">{[g.city, g.state].filter(Boolean).join(', ')}</p>
+                  )}
+                </div>
               </Link>
             ))}
           </div>

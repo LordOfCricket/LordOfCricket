@@ -15,6 +15,8 @@ import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
 import GroundAbout from '../../components/ground/GroundAbout.jsx'
+import FollowButton from '../../components/common/FollowButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
 import LocationMap from '../../components/ground/LocationMap.jsx'
 import GroundNotFound from '../../components/ground/GroundNotFound.jsx'
 import GalleryModal from '../../components/ground/GalleryModal.jsx'
@@ -172,6 +174,14 @@ export default function GroundHomePage() {
                 <span className="text-[#F5F7F5]/50">No reviews yet</span>
               )}
             </p>
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
+              <FollowButton type="ground" id={ground.publicGroundId} />
+              <ShareButton
+                title={ground.name}
+                text={`${ground.name}${location ? ` — ${location}` : ''} on Lord Of Cricket`}
+                path={`/grounds/${ground.publicGroundId}`}
+              />
+            </div>
             <div className="flex items-center gap-3">
               <div className="h-1.5 w-8 rounded-full bg-[#D4AF37]" />
               <div className="h-1.5 w-20 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#064B38]" />

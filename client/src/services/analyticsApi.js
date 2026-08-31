@@ -30,6 +30,13 @@ export async function fetchPlayerComparison(p1, p2) {
   return data
 }
 
+// Real batter-vs-bowler ENCOUNTERS in the finalized matches where both
+// players appeared — distinct from fetchPlayerComparison (career totals).
+export async function fetchPlayerHeadToHead(p1, p2) {
+  const { data } = await api.get('/players/head-to-head', { params: { p1, p2 } })
+  return data
+}
+
 export async function fetchTeamComparison(t1, t2) {
   const { data } = await api.get('/teams/compare', { params: { t1, t2 } })
   return data

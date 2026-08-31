@@ -143,8 +143,11 @@ export default function LeaderboardsPage() {
           <p className="max-w-2xl text-loc-text2-dark">All-time official rankings, derived from finalized LOC matches.</p>
         </ScrollReveal>
 
-        {/* Top Umpires Link */}
-        <div className="flex justify-center">
+        {/* Cross-links */}
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link to="/records" className="rounded-full bg-loc-stadium px-4 py-2.5 text-xs font-bold uppercase text-loc-warmwhite transition-all hover:bg-loc-stadium-hover">
+            Cricket Records →
+          </Link>
           <Link to="/leaderboards/umpires" className="rounded-full bg-loc-stadium px-4 py-2.5 text-xs font-bold uppercase text-loc-warmwhite transition-all hover:bg-loc-stadium-hover">
             Top Umpires →
           </Link>

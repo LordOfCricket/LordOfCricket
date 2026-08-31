@@ -8,10 +8,9 @@ import {
   RefreshControl,
   AppState,
   AppStateStatus,
-  Share,
 } from 'react-native'
-import * as Linking from 'expo-linking'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
+import { shareEntity } from '../../../src/lib/shareEntity'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useMatchDetail } from '../../../src/hooks/useMatches'
 import { useLiveMatch } from '../../../src/hooks/useSocketMatches'
@@ -24,6 +23,8 @@ import { CurrentPlayers } from '../../../src/components/CurrentPlayers'
 import { RecentDeliveries } from '../../../src/components/RecentDeliveries'
 import { LiveCommentary } from '../../../src/components/LiveCommentary'
 import { MatchScorecard } from '../../../src/components/match/MatchScorecard'
+import { AIInsightSection } from '../../../src/components/AIInsightSection'
+import { useMatchInsight } from '../../../src/hooks/useAIInsight'
 
 export default function MatchDetailsScreen() {
   const router = useRouter()
@@ -33,6 +34,10 @@ export default function MatchDetailsScreen() {
   const [appState, setAppState] = useState<AppStateStatus>('active')
 
   const { data: match, isLoading, isError, error, refetch } = useMatchDetail(matchId)
+
+  // AI match insight is generated only for FINALIZED matches (server returns
+  // INSUFFICIENT_DATA otherwise) — don't even request it before then.
+  const aiInsight = useMatchInsight(matchId && match?.match?.status === 'finalized' ? matchId : null)
 
   // Subscribe to realtime match state (enabled when match is live)
   const liveMatch = useLiveMatch(matchId && match?.match?.status === 'live' ? matchId : null, {
@@ -66,20 +71,14 @@ export default function MatchDetailsScreen() {
     setRefreshing(false)
   }
 
-  // Deep link into THIS match via the app's registered scheme (app.json
-  // "scheme": "loc-mobile"). The /(tabs)/matches/[id] route is public — no
-  // auth is needed to open it.
+  // Share the PUBLIC web match-summary URL (opens in any browser), not the
+  // app-scheme deep link. The /matches/:id/summary page is a public read.
   const handleShare = async () => {
     if (!match) return
-    const url = Linking.createURL(`/matches/${matchId}`)
     const a = match.teams.teamA.name
     const b = match.teams.teamB.name
     const line = match.result?.text || (match.match.status === 'live' ? 'Live now' : 'on Lord Of Cricket')
-    try {
-      await Share.share({ message: `${a} vs ${b} — ${line}\n${url}`, url })
-    } catch {
-      // user dismissed / share sheet unavailable — nothing to do
-    }
+    await shareEntity({ title: `${a} vs ${b}`, message: `${a} vs ${b} — ${line}`, path: `/matches/${matchId}/summary` })
   }
 
   if (!id) {
@@ -347,6 +346,19 @@ export default function MatchDetailsScreen() {
         </View>
       )}
 
+      {match.match.status === 'finalized' && (
+        <View style={styles.aiWrap}>
+          <AIInsightSection
+            title="AI Match Insight"
+            kind="match"
+            result={aiInsight.data}
+            loading={aiInsight.isPending}
+            error={aiInsight.isError}
+            onOpenPlayer={(pid) => router.push(`/(tabs)/players/${pid}` as any)}
+          />
+        </View>
+      )}
+
       {/* Live Commentary */}
       <LiveCommentary
         entries={commentary.entries}
@@ -364,6 +376,10 @@ const styles = StyleSheet.create({
   },
   scorecardWrap: {
     marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  aiWrap: {
+    marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
   },
   header: {

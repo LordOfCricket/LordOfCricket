@@ -14,6 +14,9 @@ import { filterPerformancesForRange, findBestBattingPerformance, findBestBowling
 import { PlayerAnalyticsSection } from "../../../src/components/analytics/PlayerAnalyticsSection"
 import { PlayerAchievements } from "../../../src/components/player/PlayerAchievements"
 import { FollowButton } from "../../../src/components/FollowButton"
+import { AIInsightSection } from "../../../src/components/AIInsightSection"
+import { usePlayerInsight } from "../../../src/hooks/useAIInsight"
+import { shareEntity } from "../../../src/lib/shareEntity"
 
 // Public player profile — GET /players/:publicPlayerId + GET /players/:publicPlayerId/stats
 // (both already existed and were already public/unauthenticated; this
@@ -33,6 +36,7 @@ export default function PublicPlayerProfileScreen() {
   // hard max) — same reasoning: lets "last 10 matches" performance insights
   // be derived client-side with a single request, no extra API call.
   const statsQuery = usePublicPlayerStats(publicPlayerId ?? null, 50, 0)
+  const aiInsight = usePlayerInsight(publicPlayerId ?? null)
   // Same existing hooks the authenticated Profile's Recognition section
   // already uses — just filtered by THIS route's publicPlayerId instead of
   // the logged-in user's own.
@@ -157,6 +161,29 @@ export default function PublicPlayerProfileScreen() {
 
           <View style={styles.followRow}>
             <FollowButton type="player" publicPlayerId={profile.publicPlayerId} />
+            <TouchableOpacity
+              onPress={() =>
+                shareEntity({
+                  title: profile.name,
+                  message: career && career.matches > 0
+                    ? `${profile.name} — ${career.batting.runs} career runs on Lord Of Cricket`
+                    : `${profile.name} on Lord Of Cricket`,
+                  path: `/players/${profile.publicPlayerId}`,
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Share ${profile.name}`}
+              hitSlop={8}
+            >
+              <MaterialCommunityIcons name="share-variant" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push(`/(tabs)/players/head-to-head?p1=${profile.publicPlayerId}&n1=${encodeURIComponent(profile.name)}` as any)}
+              accessibilityRole="button"
+              accessibilityLabel={`Head-to-head with ${profile.name}`}
+            >
+              <Text style={styles.h2hLink}>Head-to-Head →</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -351,6 +378,18 @@ export default function PublicPlayerProfileScreen() {
             finalized-match history (the section otherwise just repeats the
             "no statistics yet" message shown below). */}
         {hasEverPlayed && <PlayerAnalyticsSection publicPlayerId={profile.publicPlayerId} />}
+
+        {hasEverPlayed && (
+          <View style={styles.section}>
+            <AIInsightSection
+              title="AI Performance Insight"
+              kind="person"
+              result={aiInsight.data}
+              loading={aiInsight.isPending}
+              error={aiInsight.isError}
+            />
+          </View>
+        )}
 
         {/* Current Team / Team History — reuses the existing team public
             page route (already used elsewhere in the app). */}
@@ -619,6 +658,13 @@ const styles = StyleSheet.create({
   },
   followRow: {
     marginTop: Spacing.md,
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  h2hLink: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.primary,
   },
   roleChip: {
     borderWidth: 1,
