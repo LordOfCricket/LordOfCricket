@@ -53,6 +53,41 @@ anyone forge a valid token for any user. Fixed: the module now throws at load ti
 `NODE_ENV=production` and `JWT_SECRET` is unset. Dev/test behavior is unchanged. Covered by
 `server/src/utils/jwt.test.js`.
 
+**RESOLVED — canteen's Socket.IO rooms (`join-staff-room`/`join-user-room`/`join-order-room`) had
+NO authentication at all.** `server.js`'s original inline connection handler trusted whatever the
+client emitted — any connected socket, unauthenticated, could `join-user-room` with **any** user id
+and silently receive that user's private order events (`order-created`/`order-status-updated`/
+`order-completed` — name, items, seat, status), or `join-staff-room` and receive every staff
+broadcast. This was the one place the REST layer's existing ownership check
+(`getActiveOrder`/`getOrderHistory`'s `req.user.id !== userId && req.user.role !== 'staff'` → 403,
+`canteenOrder.controller.js`) had no Socket.IO equivalent. Fixed by extracting the cookie-based
+socket authentication `matchChatRealtime.js` (Phase 8) already established for this exact class of
+problem into a shared `server/src/realtime/socketAuth.js` helper, and moving the three handlers into
+their own `server/src/realtime/canteenRealtime.js` (matching the `register*Realtime(io)` convention
+`cricketRealtime.js`/`bookingRealtime.js`/`matchChatRealtime.js` already use) so they authenticate the
+same way every other route does: HttpOnly session cookie primary, legacy JWT bearer fallback (read
+from the standard `socket.handshake.auth.token`, since these three events keep their existing
+primitive payloads unchanged). `join-order-room` additionally checks the order's actual owner via a
+new canteen-agnostic `findOrderByPublicId` (reuses `findOrderById`'s row-fetch shape — see that
+model's own comment on why no `canteen_id` filter is needed there). `cricketRealtime.js`'s
+`match:{id}` and `bookingRealtime.js`'s `booking:{date}` rooms are untouched — both are intentionally
+public per those files' own comments. Covered by
+`server/src/tests/integration/canteenRealtime.integration.test.js` (unauthenticated connect still
+works; wrong-user/no-credential joins are rejected and never receive a leaked event; the real
+owner/staff still receive them; the legacy JWT fallback still works). The frontend's two canteen
+socket hooks (`useCanteenOrderStatus.js`, `useCanteenStaffDashboard.js`) now connect with
+`withCredentials: true`, matching `useMatchChat.js`'s existing option — without it the browser never
+attaches the session cookie to the handshake and both joins would be silently rejected.
+
+*Correction to this file's own P2 entry below ("OTP/Twilio is not implemented... Auth is plain email
++ password + JWT"):* that description is stale — Phase 3 replaced password login with OTP (email or
+phone) as the only reachable login path, and Phase 8 removed the password `/auth/login`/`/auth/signup`
+routes entirely. JWT bearer auth still exists in `middlewares/auth.js#requireAuth` but only as a
+fallback no real user can obtain a token for anymore (kept alive purely because the integration test
+suite mints one directly via `signToken({id})` as an auth-fixture shortcut across 51 files). See
+`docs/AUTH.md` for the current, accurate picture — that document, not the paragraph below, is
+authoritative on auth going forward.
+
 ## P1 — Important
 
 **RESOLVED (Phase 14 Part 1) — no per-match player availability/RSVP.** Fixed: `match_availability`
@@ -378,6 +413,14 @@ above: `matches.match_date` has no end time. Phase 18 only improved the LABEL (r
 tournament context instead of a bare flag); a real per-match time range would need a real
 `match_date` + duration/end-time column on `matches`, unchanged since Phase 14 first documented
 this gap.
+
+**Registration's pre-check and account creation are not atomic with each other (Phase 4).**
+`POST /auth/register/player`/`/register/umpire` 409s if the identifier already has a real account, but
+that check and the actual account creation (at OTP-verify time) aren't one atomic operation — a second
+registration attempt for the same identifier in the gap between them won't see the first attempt's account
+yet. Handled defensively (`otpAuthService.verifyLoginOtp` re-checks for this race and falls back to an
+ordinary login rather than double-creating or erroring, verified directly), not a data-integrity risk, but
+worth knowing about. See `docs/ACCOUNT_CREATION.md`'s "Known limitation" section.
 
 ## P3 — Future
 

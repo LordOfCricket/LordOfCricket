@@ -1,11 +1,11 @@
 import TeamBadge from './TeamBadge.jsx'
 
-// Phase 10 Part 2 — team identity header. Only real, stored fields (Part 16):
+// Team identity header. Only real, stored fields:
 // no fabricated "Founded 2026" — teams.created_at is the one timestamp that
 // actually exists, shown as a neutral "Registered" fact rather than implying
 // club history the data doesn't carry. No location (not a stored column) and
 // no permanent captain (only match-level match_players.is_captain exists —
-// Part 2's audited decision, documented in the Phase 10 Part 2 completion report).
+// an audited decision).
 function formatRegisteredDate(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }

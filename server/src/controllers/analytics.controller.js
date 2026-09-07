@@ -57,6 +57,15 @@ export async function comparePlayers(req, res, next) {
   }
 }
 
+export async function playerHeadToHead(req, res, next) {
+  try {
+    const result = await comparisonAnalyticsService.headToHeadPlayers(req.query.p1, req.query.p2)
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function compareTeams(req, res, next) {
   try {
     const result = await comparisonAnalyticsService.compareTeams(req.query.t1, req.query.t2)

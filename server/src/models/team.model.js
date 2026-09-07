@@ -1,11 +1,11 @@
 import { pool } from '../config/db.js'
 
-export async function createTeam({ name, shortName, logoUrl = null }) {
+export async function createTeam({ name, shortName, logoUrl = null, ownerId = null }) {
   const { rows } = await pool.query(
-    `INSERT INTO teams (name, short_name, logo_url)
-     VALUES ($1, $2, $3)
+    `INSERT INTO teams (name, short_name, logo_url, owner_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [name, shortName, logoUrl]
+    [name, shortName, logoUrl, ownerId]
   )
   return rows[0]
 }

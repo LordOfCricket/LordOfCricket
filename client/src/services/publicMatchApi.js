@@ -1,6 +1,6 @@
-// Phase 10 Part 1 — public match discovery client. Every number here comes
+// Public match discovery client. Every number here comes
 // straight from the server's read model; React never computes a score,
-// target, or required run rate itself (Part 73).
+// target, or required run rate itself.
 import api from './api.js'
 
 export async function fetchPublicMatches({ category, limit, offset } = {}) {

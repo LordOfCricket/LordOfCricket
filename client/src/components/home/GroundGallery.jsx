@@ -1,47 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronLeft, ChevronRight, ImageIcon, ArrowRight } from 'lucide-react'
-import { useGroundGallery } from '../../hooks/useGroundGallery.js'
-import { GROUND_ADDRESS } from '../../models/homepage.model.js'
 import { EASE } from '../../lib/motion.js'
-import usePointerCapability from '../../hooks/usePointerCapability.js'
+import useTiltHover from '../../hooks/useTiltHover.js'
 
 const AUTO_ADVANCE_MS = 5500
-
-// Local to this file, deliberately not routed through the shared Hero
-// parallax context — this needs bounds/resolution scoped to the gallery
-// region itself (hover-to-inspect-the-photo), not the whole Hero viewport.
-function useGalleryTilt(maxTiltDeg = 5, maxScale = 1.015) {
-  const enabled = usePointerCapability()
-  const rotateX = useMotionValue(0)
-  const rotateY = useMotionValue(0)
-  const scale = useMotionValue(1)
-  const spring = { stiffness: 200, damping: 20, mass: 0.4 }
-  const springRotateX = useSpring(rotateX, spring)
-  const springRotateY = useSpring(rotateY, spring)
-  const springScale = useSpring(scale, spring)
-
-  const onPointerMove = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const px = (event.clientX - rect.left) / rect.width
-    const py = (event.clientY - rect.top) / rect.height
-    rotateY.set((px - 0.5) * 2 * maxTiltDeg)
-    rotateX.set((0.5 - py) * 2 * maxTiltDeg)
-    scale.set(maxScale)
-  }
-  const onPointerLeave = () => {
-    rotateX.set(0)
-    rotateY.set(0)
-    scale.set(1)
-  }
-
-  return {
-    enabled,
-    style: { rotateX: springRotateX, rotateY: springRotateY, scale: springScale, transformPerspective: 800 },
-    onPointerMove,
-    onPointerLeave,
-  }
-}
 
 function GalleryFrame({ children, className = '' }) {
   return (
@@ -53,32 +16,33 @@ function GalleryFrame({ children, className = '' }) {
   )
 }
 
-function GalleryOverlay({ showViewAll = true }) {
+function GalleryOverlay({ groundName, address, showViewAll = true, onViewGallery }) {
   return (
     <>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-linear-to-t from-black/85 via-black/25 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-4 sm:p-6">
         <div className="min-w-0">
           <p className="font-loc-display text-[11px] font-bold tracking-[0.18em] text-loc-gold uppercase">
-            Lord Of Cricket Ground
+            {groundName}
           </p>
-          <p className="mt-0.5 truncate font-loc-body text-xs text-loc-warmwhite/75 sm:text-sm">{GROUND_ADDRESS}</p>
+          {address && <p className="mt-0.5 truncate font-loc-body text-xs text-loc-warmwhite/75 sm:text-sm">{address}</p>}
         </div>
-        {showViewAll && (
-          <a
-            href="#gallery"
+        {showViewAll && onViewGallery && (
+          <button
+            type="button"
+            onClick={onViewGallery}
             className="inline-flex shrink-0 items-center gap-1.5 font-loc-display text-xs font-semibold tracking-wide text-loc-warmwhite/90 uppercase transition-colors hover:text-loc-gold"
           >
             View Gallery
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </a>
+          </button>
         )}
       </div>
     </>
   )
 }
 
-function EmptyGallery({ className = '' }) {
+function EmptyGallery({ className = '', groundName }) {
   return (
     <GalleryFrame className={className}>
       <img
@@ -92,18 +56,26 @@ function EmptyGallery({ className = '' }) {
         <ImageIcon className="h-8 w-8 text-loc-text2-dark" aria-hidden="true" />
         <p className="font-loc-body text-sm text-loc-text2-dark">Ground photos coming soon</p>
       </div>
-      <GalleryOverlay showViewAll={false} />
+      <GalleryOverlay groundName={groundName} showViewAll={false} />
     </GalleryFrame>
   )
 }
 
-export default function GroundGallery({ className = '' }) {
-  const { photos, loading } = useGroundGallery()
+// Takes ground-scoped photos as a prop (GET
+// /api/grounds/:publicGroundId's `photos` array) instead of
+// self-fetching the GLOBAL Cloudinary gallery (category=ground) the way
+// this component used to. That old source (useGroundGallery.js/`/gallery`)
+// is gallery_images, which was deliberately left un-scoped by ground
+// — showing it here would leak every ground's photos onto
+// whichever ground's page happened to render first. ground_photos, by
+// contrast, genuinely has a ground_id now, so this is a real fix, not a
+// workaround: same carousel, same animations, correct data source.
+export default function GroundGallery({ className = '', photos = [], groundName = '', onViewGallery }) {
   const reduceMotion = useReducedMotion()
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const count = photos?.length ?? 0
-  const tilt = useGalleryTilt()
+  const tilt = useTiltHover()
 
   useEffect(() => {
     if (reduceMotion || paused || count <= 1) return undefined
@@ -111,16 +83,8 @@ export default function GroundGallery({ className = '' }) {
     return () => clearInterval(id)
   }, [reduceMotion, paused, count])
 
-  if (loading) {
-    return (
-      <GalleryFrame className={`animate-pulse ${className}`}>
-        <div className="absolute inset-0 bg-white/5" />
-      </GalleryFrame>
-    )
-  }
-
-  if (!photos || count === 0) {
-    return <EmptyGallery className={className} />
+  if (count === 0) {
+    return <EmptyGallery className={className} groundName={groundName} />
   }
 
   const goTo = (i) => setIndex((i + count) % count)
@@ -147,9 +111,9 @@ export default function GroundGallery({ className = '' }) {
       >
         <AnimatePresence initial={false}>
           <motion.img
-            key={current.id}
+            key={current.imageUrl}
             src={current.imageUrl}
-            alt={current.alt}
+            alt={current.title ? `${current.title} — ${groundName}` : groundName}
             className="absolute inset-0 h-full w-full object-cover"
             initial={reduceMotion ? false : { opacity: 0, scale: 1 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1.04 }}
@@ -162,7 +126,7 @@ export default function GroundGallery({ className = '' }) {
           />
         </AnimatePresence>
 
-        <GalleryOverlay />
+        <GalleryOverlay groundName={groundName} onViewGallery={onViewGallery} />
 
         {count > 1 && (
           <>
@@ -186,7 +150,7 @@ export default function GroundGallery({ className = '' }) {
             <div className="absolute inset-x-0 top-4 flex items-center justify-center gap-2" role="tablist" aria-label="Choose ground photo">
               {photos.map((photo, i) => (
                 <button
-                  key={photo.id}
+                  key={photo.imageUrl}
                   type="button"
                   role="tab"
                   aria-selected={i === index}

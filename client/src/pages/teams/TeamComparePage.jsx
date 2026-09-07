@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Shield } from 'lucide-react'
+import { useSearchParams, Link } from 'react-router-dom'
+import { Shield } from 'lucide-react'
 import { fetchPublicTeams } from '../../services/publicTeamApi.js'
 import { fetchTeamComparison } from '../../services/analyticsApi.js'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 function TeamPicker({ label, value, onSelect }) {
   const [query, setQuery] = useState('')
@@ -70,7 +71,6 @@ function metricRow(label, a, b, formatter = (v) => v ?? '—') {
 }
 
 export default function TeamComparePage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [teamA, setTeamA] = useState(null)
   const [teamB, setTeamB] = useState(null)
@@ -116,10 +116,7 @@ export default function TeamComparePage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-3xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/teams" />
 
         <h1 className="mt-4 flex items-center gap-2 text-2xl font-bold text-white">
           <Shield className="h-6 w-6 text-emerald-300" />

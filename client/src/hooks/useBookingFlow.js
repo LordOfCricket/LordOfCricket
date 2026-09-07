@@ -3,12 +3,16 @@ import { useAuth } from './useAuth.js'
 import { fetchAvailability, createBooking } from '../services/bookingApi.js'
 import { todayDateInputValue } from '../models/booking.model.js'
 
-// Phase 14 Part 3 — the homepage booking modal's state machine. Every step
-// re-fetches from the server (Part 9/18) — nothing here decides availability
+// The homepage booking modal's state machine. Every step
+// re-fetches from the server — nothing here decides availability
 // itself, and CONFIRM always sends the exact `startTime` instant the server
 // already told this client about (never client-computed date+hour+minute
 // math — see groundBooking.controller.js#resolveSlotInput).
-export function useBookingFlow() {
+// `publicGroundId` is optional (Ground Time-Slot Pricing) — when the caller
+// knows which ground this flow is for (e.g. GroundHomePage), availability
+// and the eventual booking are both scoped to that ground; omitted, this
+// keeps the exact previous platform-default-ground behavior.
+export function useBookingFlow(publicGroundId = null) {
   const { user } = useAuth()
   const [step, setStep] = useState('date') // date | slots | form | success | conflict
   const [dateStr, setDateStr] = useState(todayDateInputValue())
@@ -26,7 +30,7 @@ export function useBookingFlow() {
     setLoadingSlots(true)
     setError('')
     try {
-      const result = await fetchAvailability(date)
+      const result = await fetchAvailability(date, publicGroundId)
       setSlots(result)
       setStep('slots')
     } catch (err) {
@@ -71,11 +75,22 @@ export function useBookingFlow() {
         expectedPlayers: form.expectedPlayers ? Number(form.expectedPlayers) : null,
         contactPhone: form.contactPhone || null,
         clientActionId,
+        publicGroundId: publicGroundId || undefined,
       })
       setConfirmedBooking(booking)
       setStep('success')
     } catch (err) {
-      if (err.response?.status === 409) {
+      // Ground Pricing UX Polish — PRICE_UNAVAILABLE is also a 409 (same
+      // "current state blocks this action" convention as BOOKING_CONFLICT),
+      // but it's not a scheduling conflict — no alternatives to suggest, and
+      // the 'conflict' step's copy would be misleading here. Checked by code,
+      // not status, so it never gets swept into the generic 409 branch. This
+      // is a defense-in-depth path only: the slot picker already hides
+      // unpriced slots, so a real user hits this only via a race (owner
+      // deactivated pricing between availability fetch and confirm).
+      if (err.response?.data?.code === 'PRICE_UNAVAILABLE') {
+        setError(err.response.data.message)
+      } else if (err.response?.status === 409) {
         setAlternatives(err.response.data.details?.alternatives || [])
         setStep('conflict')
       } else {

@@ -16,6 +16,7 @@ export default function MenuPage() {
     setDetailsOrder,
     loadingDetails,
     error,
+    placing,
     orderCount,
     groupedHistory,
     addItem,
@@ -214,8 +215,8 @@ export default function MenuPage() {
                   Cancel
                 </button>
 
-                <Button className="flex-1" onClick={handlePlaceOrder}>
-                  Place Order
+                <Button className="flex-1" disabled={placing} onClick={handlePlaceOrder}>
+                  {placing ? 'Placing Order…' : 'Place Order'}
                 </Button>
               </div>
             </div>

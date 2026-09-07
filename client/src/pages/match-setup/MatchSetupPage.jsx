@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { fetchTeams } from '../../services/playerApi.js'
 import { createMatch } from '../../services/matchApi.js'
 import Input from '../../components/ui/Input.jsx'
 import Button from '../../components/ui/Button.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 function Select({ label, value, onChange, children }) {
   return (
@@ -68,14 +68,10 @@ export default function MatchSetupPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.78), rgba(2,6,23,0.78)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-2xl">
-        <button
-          type="button"
-          onClick={() => navigate('/player/dashboard')}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </button>
+        {/* This route is super_admin-only (RequireStaffRole) — the real
+            workspace to return to is the admin dashboard, not the player
+            one the old hardcoded destination pointed at. */}
+        <BackButton label="Back to Dashboard" fallback="/admin/dashboard" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">New Match</h1>
         <p className="mt-1 text-sm text-slate-300">Set up a real, officially scored LOC match.</p>

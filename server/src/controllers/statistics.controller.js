@@ -29,12 +29,17 @@ function roundPerformance(perf) {
   }
 }
 
+function roundTeamHistoryEntry(entry) {
+  return { ...entry, record: { ...entry.record, winPercentage: round2(entry.record.winPercentage) } }
+}
+
 function serializeStats(stats) {
   return {
     ...stats,
     career: { ...stats.career, batting: roundBatting(stats.career.batting), bowling: roundBowling(stats.career.bowling) },
     recentForm: stats.recentForm.map(roundPerformance),
     matchHistory: { ...stats.matchHistory, items: stats.matchHistory.items.map(roundPerformance) },
+    teamHistory: stats.teamHistory.map(roundTeamHistoryEntry),
   }
 }
 
@@ -93,6 +98,15 @@ export async function getLeaderboard(req, res, next) {
       teamId: req.query.teamId ? Number(req.query.teamId) : null,
     })
     res.json({ ...leaderboard, items: leaderboard.items.map(roundLeaderboardItem) })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function getCricketRecords(req, res, next) {
+  try {
+    const records = await statisticsService.getCricketRecords()
+    res.json(records)
   } catch (err) {
     next(err)
   }

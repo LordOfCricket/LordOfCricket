@@ -16,6 +16,7 @@ import * as wicketRepo from '../repositories/wicket.repository.js'
 import * as wagonWheelRepo from '../repositories/wagonWheel.repository.js'
 import * as matchPlayerRepo from '../repositories/matchPlayer.repository.js'
 import * as matchModel from '../models/match.model.js'
+import { markSlotsCompletedForMatch, insertAssignmentEvent } from '../models/matchUmpireSlot.model.js'
 
 // Exported so correction.service.js (Phase 4/6) reuses exactly the same
 // format/seed resolution instead of a second copy that could drift.
@@ -82,6 +83,15 @@ export async function maybeCompleteInnings(client, innings, format, stateAfter) 
     },
     client
   )
+
+  // Officiating credit (Phase 23) — the scoring-engine auto-completion path,
+  // same hook match.service.js#completeMatchManually uses for the manual
+  // "Match is Over" path, kept in this same transaction so the match result
+  // and the umpires' COMPLETED credit can never diverge.
+  const completedSlots = await markSlotsCompletedForMatch(innings.match_id, client)
+  for (const slot of completedSlots) {
+    await insertAssignmentEvent({ slotId: slot.id, matchId: innings.match_id, umpireUserId: slot.umpire_user_id, eventType: 'COMPLETED' }, client)
+  }
 
   return { match, result }
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 import { useCareerStats } from '../../hooks/useCareerStats.js'
 import { fetchTeam } from '../../services/playerApi.js'
 import Avatar from '../../components/ui/Avatar.jsx'
 import Button from '../../components/ui/Button.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 import { roleLabel, battingStyleLabel, bowlingStyleLabel, statPriorityForRole } from '../../models/player.model.js'
 import { StatsLoadingGrid, StatsErrorState, StatsEmptyState } from '../../components/stats/StatsStates.jsx'
 import BattingStatsPanel from '../../components/stats/BattingStatsPanel.jsx'
@@ -13,8 +13,14 @@ import BowlingStatsPanel from '../../components/stats/BowlingStatsPanel.jsx'
 import FieldingStatsPanel from '../../components/stats/FieldingStatsPanel.jsx'
 import MatchHistoryPanel from '../../components/stats/MatchHistoryPanel.jsx'
 import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
+import PlayerAchievements from '../../components/player/PlayerAchievements.jsx'
+import CareerTimeline from '../../components/player/CareerTimeline.jsx'
+import FollowingList from '../../components/player/FollowingList.jsx'
 
-const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'TEAMS']
+const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ACHIEVEMENTS', 'TIMELINE', 'FOLLOWING', 'TEAMS']
+// Tabs whose content doesn't depend on the career-stats load (their own
+// data source), so the stats loading/empty/error gating is skipped for them.
+const NON_STATS_TABS = ['TEAMS', 'FOLLOWING']
 
 function Field({ label, value }) {
   return (
@@ -26,7 +32,7 @@ function Field({ label, value }) {
 }
 
 // Batting panel is visually primary unless the player's role says otherwise
-// (Part 46: role changes presentation emphasis, never which stats are true).
+// (role changes presentation emphasis, never which stats are true).
 function OverviewPanels({ role, matches, batting, bowling }) {
   const primary = statPriorityForRole(role)[0]
   const bowlingFirst = primary === 'wickets' || primary === 'economy'
@@ -80,14 +86,7 @@ export default function ProfilePage() {
       }}
     >
       <div className="mx-auto max-w-5xl">
-        <button
-          type="button"
-          onClick={() => navigate('/player/dashboard')}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </button>
+        <BackButton label="Back to Dashboard" fallback="/player/dashboard" />
 
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-6">
@@ -130,12 +129,12 @@ export default function ProfilePage() {
         </div>
 
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
-          {tab !== 'TEAMS' && loading && <StatsLoadingGrid tiles={tab === 'FIELDING' ? 3 : 8} />}
-          {tab !== 'TEAMS' && !loading && noPlayerProfile && (
+          {!NON_STATS_TABS.includes(tab) && loading && <StatsLoadingGrid tiles={tab === 'FIELDING' ? 3 : 8} />}
+          {!NON_STATS_TABS.includes(tab) && !loading && noPlayerProfile && (
             <StatsEmptyState label={tab === 'OVERVIEW' ? 'Your career overview' : `Your ${tab.toLowerCase()} statistics`} />
           )}
-          {tab !== 'TEAMS' && !loading && !noPlayerProfile && error && <StatsErrorState message={error} onRetry={retry} />}
-          {tab !== 'TEAMS' && !loading && !noPlayerProfile && !error && stats && stats.career.matches === 0 && (
+          {!NON_STATS_TABS.includes(tab) && !loading && !noPlayerProfile && error && <StatsErrorState message={error} onRetry={retry} />}
+          {!NON_STATS_TABS.includes(tab) && !loading && !noPlayerProfile && !error && stats && stats.career.matches === 0 && (
             <StatsEmptyState label={tab === 'OVERVIEW' ? 'Your career overview' : `Your ${tab.toLowerCase()} statistics`} />
           )}
           {tab !== 'TEAMS' && !loading && !noPlayerProfile && !error && stats && stats.career.matches > 0 && (
@@ -154,9 +153,18 @@ export default function ProfilePage() {
               {tab === 'BATTING' && <BattingStatsPanel matches={stats.career.matches} batting={stats.career.batting} />}
               {tab === 'BOWLING' && <BowlingStatsPanel bowling={stats.career.bowling} />}
               {tab === 'FIELDING' && <FieldingStatsPanel fielding={stats.career.fielding} />}
-              {tab === 'MATCHES' && <MatchHistoryPanel matchHistory={stats.matchHistory} onLoadMore={loadMoreMatchHistory} />}
+              {tab === 'MATCHES' && (
+                <MatchHistoryPanel
+                  matchHistory={stats.matchHistory}
+                  onLoadMore={loadMoreMatchHistory}
+                  teamNamesById={Object.fromEntries((stats.teamHistory ?? []).map((t) => [t.teamId, t.shortName || t.name]))}
+                />
+              )}
+              {tab === 'ACHIEVEMENTS' && <PlayerAchievements achievements={stats.achievements} />}
+              {tab === 'TIMELINE' && <CareerTimeline timeline={stats.careerTimeline} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/summary`)} />}
             </>
           )}
+          {tab === 'FOLLOWING' && <FollowingList />}
           {tab === 'TEAMS' &&
             (displayTeam ? (
               <div className="flex items-center gap-4 rounded-2xl bg-white/5 px-4 py-4">

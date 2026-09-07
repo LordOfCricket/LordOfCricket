@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { createTournament } from '../../services/tournamentApi.js'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const FORMATS = [
   { value: 'LEAGUE', label: 'League / Round Robin' },
@@ -65,10 +65,7 @@ export default function CreateTournamentPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.9), rgba(2,6,23,0.9)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-xl">
-        <Link to="/tournaments" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Tournaments
-        </Link>
+        <BackButton label="Back to Tournaments" fallback="/tournaments" />
 
         <h1 className="mt-4 text-2xl font-bold text-white">Create Tournament</h1>
         <p className="mt-1 text-sm text-slate-300">Set the format and rules — teams register once you open registration.</p>

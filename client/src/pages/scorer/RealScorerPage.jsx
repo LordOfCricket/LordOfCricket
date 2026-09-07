@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, History } from 'lucide-react'
+import { ArrowLeft, History, Trophy } from 'lucide-react'
 import { useRealScorer } from '../../hooks/useRealScorer.js'
+import { formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 import ScorerHeader from '../../components/scorer/ScorerHeader.jsx'
 import ChaseHeader from '../../components/scorer/ChaseHeader.jsx'
 import BatsmenPanel from '../../components/scorer/BatsmenPanel.jsx'
@@ -69,7 +70,7 @@ export default function RealScorerPage() {
           <button type="button" onClick={() => window.location.reload()} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950">
             Retry
           </button>
-          <button type="button" onClick={() => navigate('/player/dashboard')} className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-semibold text-white">
+          <button type="button" onClick={() => navigate('/umpire/dashboard')} className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-semibold text-white">
             Back to Dashboard
           </button>
         </div>
@@ -85,6 +86,20 @@ export default function RealScorerPage() {
   const nonStriker = playersById.get(state.nonStriker)
 
   const inningsFinished = state.isAllOut || state.isOversComplete || state.isTargetChased || state.innings.status !== 'live'
+  // The real, authoritative "the WHOLE MATCH — not just this innings — is
+  // decided" signal (refreshed on every write, see useRealScorer.js) — an
+  // innings-1 break also sets inningsFinished but leaves match.status
+  // 'live' (more play still to come), so this is what actually
+  // distinguishes "target reached / all out — MATCH WON" from "innings 1
+  // is over, set up innings 2".
+  const matchDecided = match.status === 'completed' || match.status === 'finalized'
+  const matchResultLine = matchDecided
+    ? formatMatchResultLine(
+        match.result_type ? { resultType: match.result_type, winnerTeamId: match.winner_team_id, text: match.result } : null,
+        { id: match.team_a_id, name: match.team_a_name },
+        { id: match.team_b_id, name: match.team_b_name },
+      )
+    : null
 
   const eligibleBatsmen = battingSquad.filter((mp) => !state.batsmen[mp.id]?.out && mp.id !== state.striker && mp.id !== state.nonStriker)
   const eligibleBowlers = bowlingSquad.filter((mp) => mp.id !== state.bowler)
@@ -98,7 +113,7 @@ export default function RealScorerPage() {
       }
     : null
 
-  const controlsDisabled = pending || inningsFinished || Boolean(state.pendingBatsmanSelection) || needsBowlerSelection
+  const controlsDisabled = pending || inningsFinished || matchDecided || Boolean(state.pendingBatsmanSelection) || needsBowlerSelection
 
   const withShot = (input) => {
     const result = pendingShot ? { ...input, shot: pendingShot } : input
@@ -113,7 +128,7 @@ export default function RealScorerPage() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="flex items-center justify-between">
-          <button type="button" onClick={() => navigate('/player/dashboard')} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
+          <button type="button" onClick={() => navigate('/umpire/dashboard')} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
             <ArrowLeft className="h-4 w-4" />
             Exit Scorer
           </button>
@@ -128,19 +143,35 @@ export default function RealScorerPage() {
 
         {conflictNotice && <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{conflictNotice}</div>}
         {actionError && <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-rose-300">{actionError}</div>}
-        {inningsFinished && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            <span>
-              {state.isTargetChased ? 'Target reached!' : state.isAllOut ? 'All out!' : 'Overs complete!'} This innings has finished.
+        {matchDecided ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <span className="flex items-center gap-2 font-bold">
+              <Trophy className="h-5 w-5 text-amber-300" />
+              {matchResultLine || 'Match complete.'}
             </span>
             <button
               type="button"
               onClick={() => navigate(`/matches/${matchId}/setup`)}
-              className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-emerald-950"
+              className="rounded-full bg-amber-400 px-4 py-2 text-xs font-bold uppercase tracking-wide text-amber-950"
             >
-              Continue
+              View Full Scorecard
             </button>
           </div>
+        ) : (
+          inningsFinished && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              <span>
+                {state.isTargetChased ? 'Target reached!' : state.isAllOut ? 'All out!' : 'Overs complete!'} This innings has finished.
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate(`/matches/${matchId}/setup`)}
+                className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-emerald-950"
+              >
+                Continue
+              </button>
+            </div>
+          )
         )}
         {state.conflicts.length > 0 && (
           <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">

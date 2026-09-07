@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { useAuth } from './useAuth.js'
 import {
@@ -13,6 +13,7 @@ import {
 export function useOrderStatus() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { publicGroundId, publicCanteenId } = useParams()
   const { user } = useAuth()
   const storedOrder = useMemo(
     () => (typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(CANTEEN_LATEST_ORDER_STORAGE_KEY) || 'null') : null),
@@ -27,7 +28,7 @@ export function useOrderStatus() {
     if (!orderId) {
       const userId = storedOrder?.userId || user?.id
       if (userId) {
-        fetchActiveOrder(userId)
+        fetchActiveOrder(publicGroundId, publicCanteenId, userId)
           .then((found) => {
             if (found) {
               setOrder(found)
@@ -35,23 +36,29 @@ export function useOrderStatus() {
               localStorage.setItem(CANTEEN_LATEST_ORDER_STORAGE_KEY, JSON.stringify({ orderId: found.id, userId: found.userId, seatId: found.seatId }))
               return
             }
-            navigate('/canteen/menu')
+            navigate(`/grounds/${publicGroundId}/canteen/${publicCanteenId}/menu`)
           })
-          .catch(() => navigate('/canteen/menu'))
+          .catch(() => navigate(`/grounds/${publicGroundId}/canteen/${publicCanteenId}/menu`))
       } else {
         navigate('/login')
       }
       return
     }
 
-    fetchOrder(orderId)
+    fetchOrder(publicGroundId, publicCanteenId, orderId)
       .then(setOrder)
       .catch((err) => setError(err.response?.data?.error || 'Unable to load order.'))
-  }, [navigate, orderId, storedOrder, user?.id])
+  }, [navigate, orderId, storedOrder, user?.id, publicGroundId, publicCanteenId])
 
   useEffect(() => {
     if (!orderId) return
-    const socket = io(socketUrl)
+    // withCredentials — the server's join-order-room/join-user-room handlers
+    // now authenticate via the same HttpOnly session cookie every REST call
+    // already sends (see server.js/realtime/socketAuth.js); without this,
+    // Socket.IO won't attach the cookie to a cross-origin handshake and both
+    // joins would be silently rejected. Same option useMatchChat.js already
+    // uses for the identical reason.
+    const socket = io(socketUrl, { withCredentials: true })
     let hasConnectedBefore = false
 
     const updateOrder = (updated) => {
@@ -60,7 +67,7 @@ export function useOrderStatus() {
       }
     }
 
-    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // Socket.IO drops room membership on disconnect and never
     // auto-rejoins an app-level room on its own reconnect; re-emit the joins
     // every time, and resync the order via HTTP on any reconnect (not the
     // first connect) since a status update published while disconnected would
@@ -69,7 +76,7 @@ export function useOrderStatus() {
       socket.emit('join-order-room', orderId)
       if (order?.userId) socket.emit('join-user-room', order.userId)
       if (hasConnectedBefore) {
-        fetchOrder(orderId).then(setOrder).catch(() => {})
+        fetchOrder(publicGroundId, publicCanteenId, orderId).then(setOrder).catch(() => {})
       }
       hasConnectedBefore = true
     })
@@ -77,7 +84,7 @@ export function useOrderStatus() {
     socket.on('order-status-updated', updateOrder)
     socket.on('order-completed', updateOrder)
     return () => socket.disconnect()
-  }, [orderId, order?.userId])
+  }, [orderId, order?.userId, publicGroundId, publicCanteenId])
 
   const activeIndex = useMemo(() => {
     if (order?.status === 'Cancelled') return -1
@@ -92,6 +99,6 @@ export function useOrderStatus() {
     steps: STATUS_STEPS,
     activeIndex,
     currentStep,
-    handleBackToMenu: () => navigate('/canteen/menu'),
+    handleBackToMenu: () => navigate(`/grounds/${publicGroundId}/canteen/${publicCanteenId}/menu`),
   }
 }

@@ -136,6 +136,23 @@ export async function getPlayerAnalytics(publicPlayerId, { recent = DEFAULT_RECE
   const consistency = computeBattingConsistency(recentItems.filter((p) => p.batting.didBat).map((p) => ({ runs: p.batting.runs, notOut: p.batting.notOut })))
   const boundaryAnalysis = computeBoundaryAnalysis({ runs: stats.career.batting.runs, fours: stats.career.batting.fours, sixes: stats.career.batting.sixes })
 
+  // Career vs Recent — the SAME aggregateBatting/aggregateBowling the career
+  // stats endpoint uses (one formula, never a second), run over exactly the
+  // recent-N finalized innings already loaded above. `stats.career` is the
+  // full-career side, unchanged. No trend conclusions ("improving") are
+  // computed — just the two comparable figure sets.
+  const recentBattingPerfs = recentItems
+    .filter((p) => p.batting.didBat)
+    .map((p) => ({ runs: p.batting.runs, balls: p.batting.balls, fours: p.batting.fours, sixes: p.batting.sixes, notOut: p.batting.notOut }))
+  const recentBowlingPerfs = recentItems
+    .filter((p) => p.bowling.didBowl)
+    .map((p) => ({ legalBalls: p.bowling.legalBalls, runs: p.bowling.runs, wickets: p.bowling.wickets, maidens: p.bowling.maidens, ballsPerOver: p.bowling.ballsPerOver }))
+  const careerVsRecent = {
+    recentMatches: recentItems.length,
+    career: { matches: stats.career.matches, batting: stats.career.batting, bowling: stats.career.bowling },
+    recent: { matches: recentItems.length, batting: aggregateBatting(recentBattingPerfs), bowling: aggregateBowling(recentBowlingPerfs) },
+  }
+
   const participation = await statsRepo.listFinalizedMatchParticipation(playerRow.id)
   const recentMatchIds = new Set(recentItems.map((p) => p.matchId))
   const matchPlayerIdByMatch = new Map(participation.filter((p) => recentMatchIds.has(p.match_id)).map((p) => [p.match_id, p.match_player_id]))
@@ -155,6 +172,7 @@ export async function getPlayerAnalytics(publicPlayerId, { recent = DEFAULT_RECE
     bowlingTrend,
     consistency,
     boundaryAnalysis,
+    careerVsRecent,
     dotBallAnalysis,
     dismissalBreakdown,
     tournamentBreakdown,

@@ -7,7 +7,7 @@ const inputClass = 'rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 t
 const btnClass = 'rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-bold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40'
 const btnGhostClass = 'rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40'
 
-/** Staff-only tournament management surface (Part 51/52). Every action is
+/** Staff-only tournament management surface. Every action is
  * server-validated regardless of what this UI allows the organizer to click —
  * this is convenience, not the source of authorization. */
 export default function OrganizerPanel({ detail }) {

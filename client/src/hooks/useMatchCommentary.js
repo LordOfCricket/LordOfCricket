@@ -12,12 +12,12 @@ function dedupePrepend(existing, incoming) {
 }
 
 /**
- * Phase 12 spectator commentary transport. Owns its own Socket.IO connection
+ * Spectator commentary transport. Owns its own Socket.IO connection
  * (same one-connection-per-hook-mount convention as useSocketMatchTransport,
- * joined to the SAME match:{matchId} room — Part 75, no second room) plus the
+ * joined to the SAME match:{matchId} room — no second room) plus the
  * initial/paginated HTTP fetch. `append` messages merge straight into the
  * list; a `resync` message (a correction may have changed many entries at
- * once — Part 40), a reconnect (Part 43 — never assume missed events
+ * once), a reconnect (never assume missed events
  * replay), or an innings transition all trigger a fresh HTTP refetch of the
  * first page rather than trying to patch the list in place. No component
  * using this hook ever calls socket.on(...) directly.

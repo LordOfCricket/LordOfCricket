@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-// Phase 10 Part 3 — subtle connection/freshness indicator (Part 78/79/83).
+// A subtle connection/freshness indicator.
 // The "Updated Xs ago" text ticks locally every second (presentation-only,
-// never refetches — Part 79) and deliberately has NO aria-live region: an
+// never refetches) and deliberately has NO aria-live region: an
 // aria-live counter that changes every second would spam a screen reader
-// every tick, which Part 84 explicitly warns against.
-const STALE_THRESHOLD_MS = 15000 // ~5x the 3s poll interval (Part 15, documented)
+// every tick, which this explicitly avoids.
+const STALE_THRESHOLD_MS = 15000 // ~5x the 3s poll interval, documented
 
 function formatElapsed(ms) {
   const seconds = Math.floor(ms / 1000)
@@ -22,7 +22,7 @@ export default function LiveStatusBar({ connectionStatus, lastUpdatedAt, onRefre
     return () => clearInterval(id)
   }, [])
 
-  // Deliberately impure: a presentation-only "time ago" ticker (Part 79) that
+  // Deliberately impure: a presentation-only "time ago" ticker that
   // re-reads the clock every second via the interval above — never used as
   // cricket truth, so React re-running this on an extra render is harmless.
   // eslint-disable-next-line react-hooks/purity

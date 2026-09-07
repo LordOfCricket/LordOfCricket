@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './useAuth.js'
-import { getPostAuthPath } from '../models/roleRedirect.model.js'
+import { getPostLoginPath } from '../models/roleRedirect.model.js'
 
 export function usePlayerTypeSelect() {
   const { selectPlayerType } = useAuth()
@@ -14,7 +14,11 @@ export function usePlayerTypeSelect() {
     setError('')
     try {
       const updated = await selectPlayerType(playerType)
-      navigate(getPostAuthPath(updated), { replace: true })
+      // The last mandatory setup step — the account is now fully set up, so
+      // this is the same "land on the homepage" moment a returning user's
+      // login already gets. Never replaced, for the same back-navigation
+      // reason as useAuthPage.js.
+      navigate(getPostLoginPath(updated))
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to save your choice.')
       setSubmitting(false)

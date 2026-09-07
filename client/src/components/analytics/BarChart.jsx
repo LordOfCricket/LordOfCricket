@@ -1,6 +1,6 @@
-// Phase 17 — a small, dependency-free CSS bar chart. Plain HTML/CSS (not
+// A small, dependency-free CSS bar chart. Plain HTML/CSS (not
 // SVG) so every value is a real, always-visible text label — never hidden
-// behind a hover-only tooltip (Part 42's "don't rely on color/hover alone").
+// behind a hover-only tooltip (don't rely on color/hover alone).
 
 export default function BarChart({ data, formatValue = (v) => v, color = '#34d399', emptyLabel = 'No data yet.' }) {
   if (!data || data.length === 0) {

@@ -1,12 +1,53 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, FlaskConical, LogOut } from 'lucide-react'
+import { ChevronDown, LandPlot, LogOut } from 'lucide-react'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel } from '../../models/player.model.js'
-import { getAccountLinks } from '../../models/navLinks.model.js'
+import {
+  getAccountLinks,
+  getUmpireAccountLinks,
+  getGroundOwnerAccountLinks,
+  getGroundStaffAccountLinks,
+  isUmpireMode,
+  isStaffMode,
+} from '../../models/navLinks.model.js'
+import { useIsGroundOwner } from '../../hooks/useIsGroundOwner.js'
+import { useMyGroundStaffMemberships } from '../../hooks/useMyGroundStaffMemberships.js'
 
 export default function AccountMenu({ user, player, onLogout }) {
-  const MENU_LINKS = getAccountLinks(user)
+  const umpireMode = isUmpireMode(user)
+  // Not part of getAccountLinks (that function is synchronous — user.role/
+  // player_type only; ground ownership has no such signal on the user
+  // object) — U5's own self-check, same "fetch quietly in the navbar"
+  // posture NotificationBell already has.
+  const isGroundOwner = useIsGroundOwner(Boolean(user))
+  // Ground Owner Menu Cleanup — a plain ground owner (not also staff or an
+  // approved umpire) gets the dedicated, cut-down menu instead of the full
+  // player menu. Staff/umpire accounts that also own a ground keep their
+  // existing role menu unchanged, with Ground Owner Dashboard still added
+  // on below (see the block after MENU_LINKS).
+  const groundOwnerMode = isGroundOwner && !umpireMode && !isStaffMode(user)
+  // Ground-Level Staff Dashboard — a ground_users staff (GROUND_ADMIN/
+  // CANTEEN_STAFF) row can belong to EITHER a brand-new dedicated account
+  // (role='staff', staff_role=null, created via groundStaff.service.js#
+  // createStaffForGround) OR an existing player/user account a Ground Owner
+  // added by their existing email/phone (createStaffForGround reuses the
+  // found account as-is — never rewrites its role). users.role can't tell
+  // these apart, so — same reasoning as isGroundOwner above — this is a real
+  // membership self-check, not a synchronous role check. Previously such an
+  // account had no ground-scoped destination at all: a dedicated staff
+  // account fell into getAccountLinks(user)'s generic isStaff branch
+  // (legacy single-canteen/global links), and an existing player/user
+  // account had no staff menu section whatsoever.
+  const { memberships: staffMemberships } = useMyGroundStaffMemberships(Boolean(user))
+  const groundStaffMode = staffMemberships.length > 0 && !groundOwnerMode && !umpireMode
+  const MENU_LINKS = groundOwnerMode
+    ? getGroundOwnerAccountLinks()
+    : groundStaffMode
+      ? getGroundStaffAccountLinks()
+      : umpireMode
+        ? getUmpireAccountLinks()
+        : getAccountLinks(user)
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -53,10 +94,10 @@ export default function AccountMenu({ user, player, onLogout }) {
             <Avatar name={user?.name} photoUrl={player?.photo_url} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-base font-bold text-white">{user?.name}</p>
-              {player?.public_player_id && (
+              {!umpireMode && player?.public_player_id && (
                 <p className="text-xs font-semibold tracking-wide text-emerald-300">{player.public_player_id}</p>
               )}
-              <p className="text-xs text-emerald-100/60">{role || 'Complete your profile to set a role'}</p>
+              <p className="text-xs text-emerald-100/60">{umpireMode ? 'Approved Umpire' : role || 'Complete your profile to set a role'}</p>
             </div>
           </div>
 
@@ -77,16 +118,18 @@ export default function AccountMenu({ user, player, onLogout }) {
             })}
           </div>
 
-          <div className="border-t border-white/10 py-2">
-            <Link
-              to="/testing"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-amber-200/90 transition-colors hover:bg-white/5 hover:text-amber-100"
-            >
-              <FlaskConical className="h-4 w-4" />
-              Umpire Testing
-            </Link>
-          </div>
+          {isGroundOwner && !groundOwnerMode && (
+            <div className="border-t border-white/10 py-2">
+              <Link
+                to="/ground-owner/dashboard"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-emerald-100/80 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <LandPlot className="h-4 w-4 text-emerald-300" />
+                Ground Owner Dashboard
+              </Link>
+            </div>
+          )}
 
           <div className="border-t border-white/10 py-2">
             <button

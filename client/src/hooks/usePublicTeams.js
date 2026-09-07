@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchPublicTeams } from '../services/publicTeamApi.js'
 
-/** Same derived-loading / request-race-safe pattern as usePublicMatches.js
- * (Part 57): loading is derived by comparing the current request's params
+/** Same derived-loading / request-race-safe pattern as usePublicMatches.js:
+ * loading is derived by comparing the current request's params
  * key against the params key of the last COMPLETED fetch, so setState is
  * never called synchronously inside the effect body, and a slow, now-stale
  * search response can never overwrite a faster newer one. */

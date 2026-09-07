@@ -1,5 +1,5 @@
 /**
- * Phase 7.1 — mirrors the CSS palette already established in index.css
+ * Mirrors the CSS palette already established in index.css
  * (--color-loc-*) and the DOM background layers (FloodLightRays' cool
  * white/blue floodlight core, AmbientLighting's gold halo, GlowLayer's
  * grass/gold/night-blue/white orbs) so the 3D lighting rig and the

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { UserPen, Users, UtensilsCrossed, BarChart3 } from 'lucide-react'
+import { UserPen, Users, BarChart3 } from 'lucide-react'
 
 export default function QuickActions({ player, team }) {
   const navigate = useNavigate()
@@ -8,7 +8,6 @@ export default function QuickActions({ player, team }) {
   const actions = [
     profileIncomplete && { label: 'Complete Profile', icon: UserPen, onClick: () => navigate('/profile/edit'), highlight: true },
     !team && { label: 'My Teams', icon: Users, onClick: () => document.getElementById('teams')?.scrollIntoView({ behavior: 'smooth' }) },
-    { label: 'Canteen', icon: UtensilsCrossed, onClick: () => navigate('/canteen') },
     { label: 'Statistics', icon: BarChart3, onClick: () => document.getElementById('career')?.scrollIntoView({ behavior: 'smooth' }) },
   ].filter(Boolean)
 

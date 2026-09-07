@@ -1,10 +1,14 @@
 import api from './api.js'
 
-// Phase 14 Part 3 — ground booking client. Every number/slot here comes
-// straight from the server (Part 9/10) — the client never computes
+// Ground booking client. Every number/slot here comes
+// straight from the server — the client never computes
 // availability itself.
-export async function fetchAvailability(dateStr) {
-  const { data } = await api.get('/bookings/availability', { params: { date: dateStr } })
+// Ground Time-Slot Pricing — publicGroundId is optional (omitted keeps the
+// exact previous default-ground behavior); when passed, the server resolves
+// it to a real ACTIVE ground and books/checks availability against THAT
+// ground specifically — see groundBooking.controller.js#resolveOptionalGroundId.
+export async function fetchAvailability(dateStr, publicGroundId = null) {
+  const { data } = await api.get('/bookings/availability', { params: { date: dateStr, publicGroundId: publicGroundId || undefined } })
   return data.slots
 }
 

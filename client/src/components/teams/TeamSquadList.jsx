@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router-dom'
 import Avatar from '../ui/Avatar.jsx'
 import { roleLabel, battingStyleLabel, bowlingStyleLabel } from '../../models/player.model.js'
 
-// Phase 10 Part 2 (Part 31/32/36) — CURRENT squad membership, never the
+// CURRENT squad membership, never the
 // historical Playing XI of any one match. No captain/wicketkeeper badge here
-// deliberately (Part 2/3's audited decision — those are match-specific facts
+// deliberately (an audited decision — those are match-specific facts
 // in match_players, not permanent team metadata).
 export default function TeamSquadList({ squad }) {
   const navigate = useNavigate()

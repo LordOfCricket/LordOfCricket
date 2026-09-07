@@ -1,14 +1,23 @@
 // Phase 14 Part 2 — canteen "one active order per user" concurrency guard.
 // Proved directly against the real MongoDB unique partial index
 // (userId + hasActiveOrderFlag), the actual source of correctness — not the
-// findOne-then-create fast path in the controller, which two near-simultaneous
-// requests can both pass. Skips cleanly (not fail) if MongoDB isn't
-// configured, consistent with the rest of this app treating Mongo as optional.
+// findOne-then-create fast path the retired controller used, which two
+// near-simultaneous requests could both pass. Skips cleanly (not fail) if
+// MongoDB isn't configured, consistent with the rest of this app treating
+// Mongo as optional.
+//
+// MongoDB cleanup, Phase 5: the LIVE Order implementation is now
+// PostgreSQL-backed (see canteenOrder.model.js and the equivalent
+// concurrency proof in canteenOrder.integration.test.js's "CONCURRENCY"
+// tests). This file's import was repointed to the renamed legacy Mongoose
+// model (canteenOrderMongoLegacy.model.js) — it still legitimately proves
+// the retired MongoDB model's own index still works, which matters only as
+// a rollback-path regression check, not as coverage of the live app.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import mongoose from 'mongoose'
 import { connectMongo, isMongoReady } from '../../config/db.js'
-import Order from '../../models/canteenOrder.model.js'
+import Order from '../../models/canteenOrderMongoLegacy.model.js'
 
 await connectMongo()
 const mongoReady = isMongoReady()

@@ -10,6 +10,7 @@ import http from 'http'
 import app from '../../app.js'
 import { pool } from '../../config/db.js'
 import { signToken } from '../../utils/jwt.js'
+import { mintMfaVerifiedSessionCookie } from './helpers/mfaFixtures.js'
 
 // A minimal valid 1x1 PNG, embedded rather than depending on a real file on
 // disk — keeps this test self-contained and independent of anything under
@@ -39,9 +40,16 @@ async function createSuperAdminUser() {
       [`integration-test-super-admin-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, superAdminRoleId],
     )
   ).rows[0]
+  // Phase 6 — requireStaffRole('super_admin') now requires req.mfaVerified,
+  // which a bare JWT can never satisfy (no backing `sessions` row). This
+  // file isn't testing MFA, only upload authorization, so a REAL,
+  // already-MFA-verified session cookie is minted directly — see
+  // helpers/mfaFixtures.js.
+  const { cookie } = await mintMfaVerifiedSessionCookie(user.id)
   return {
     id: user.id,
     token: signToken({ id: user.id }),
+    cookie,
     async cleanup() {
       await pool.query('DELETE FROM users WHERE id = $1', [user.id])
     },
@@ -109,7 +117,7 @@ for (const route of ROUTES) {
       form.append(route.nameField, 'Missing file test')
       const res = await fetch(`${server.baseUrl}${route.base}/upload`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${admin.token}` },
+        headers: { Cookie: admin.cookie },
         body: form,
       })
       assert.equal(res.status, 400)
@@ -130,7 +138,7 @@ for (const route of ROUTES) {
 
       const uploadRes = await fetch(`${server.baseUrl}${route.base}/upload`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${admin.token}` },
+        headers: { Cookie: admin.cookie },
         body: form,
       })
       assert.equal(uploadRes.status, 201)
@@ -146,8 +154,12 @@ for (const route of ROUTES) {
       const imageRes = await fetch(body[route.urlField])
       assert.equal(imageRes.status, 200)
 
-      // Appears in the public list endpoint.
-      const listRes = await fetch(`${server.baseUrl}${route.base}`)
+      // Appears in the list endpoint. ground_photos/amenities now require
+      // super_admin auth to list (Phase 7 — see docs/SECURITY.md finding
+      // #1); partners' list stays public (platform-wide, not ground-scoped
+      // data). Sending the admin cookie on every route in this shared loop
+      // is harmless for partners and correct for the other two.
+      const listRes = await fetch(`${server.baseUrl}${route.base}`, { headers: { Cookie: admin.cookie } })
       const listBody = await listRes.json()
       const listArr = Array.isArray(listBody) ? listBody : listBody.images
       assert.ok(listArr.some((item) => item.id === createdId))
@@ -156,12 +168,12 @@ for (const route of ROUTES) {
       // Cloudinary asset was targeted for cleanup.
       const deleteRes = await fetch(`${server.baseUrl}${route.base}/${createdId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${admin.token}` },
+        headers: { Cookie: admin.cookie },
       })
       assert.equal(deleteRes.status, 200)
       createdId = null // already deleted, nothing left for the finally block to clean up
 
-      const listAfter = await fetch(`${server.baseUrl}${route.base}`)
+      const listAfter = await fetch(`${server.baseUrl}${route.base}`, { headers: { Cookie: admin.cookie } })
       const listAfterBody = await listAfter.json()
       const arrAfter = Array.isArray(listAfterBody) ? listAfterBody : listAfterBody.images
       assert.ok(!arrAfter.some((item) => item.id === body.id))

@@ -1,5 +1,5 @@
-// State-dependent next action for the match operations list (Phase 13 —
-// scorer discoverability). A match's status alone decides where "open this
+// State-dependent next action for the match operations list (scorer
+// discoverability). A match's status alone decides where "open this
 // match" should navigate; nothing here recomputes match state itself.
 export function matchActionForStatus(match) {
   switch (match.status) {

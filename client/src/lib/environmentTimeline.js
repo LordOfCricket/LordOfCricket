@@ -1,5 +1,5 @@
 /**
- * Phase 6 — the canonical environmental progression the background reads
+ * The canonical environmental progression the background reads
  * from (ScrollEnvironmentContext.jsx). One shared definition consumed by
  * two effects (ScrollAtmosphere's brightness, EnvironmentTint's color)
  * instead of two hand-tuned curves drifting apart over time.
@@ -14,7 +14,6 @@
  * `offsetTop` instead of adding more hand-picked stops here.
  */
 export const SCENE_STOPS = [0, 0.12, 0.3, 0.45, 0.58, 0.72, 0.85, 1]
-export const SCENE_LABELS = ['hero', 'gallery', 'matches', 'amenities', 'about', 'partners', 'booking', 'footer']
 
 /**
  * Ambient/Glow brightness multiplier at each stop (ScrollAtmosphere) — the

@@ -5,7 +5,7 @@ import { fetchMatch } from '../services/matchApi.js'
 // Backend-authoritative real scorer state. This hook NEVER computes cricket
 // state itself (strike rotation, over completion, wicket effects, ...) — it
 // only calls scoringApi.js and stores exactly what the server returns. See
-// Phase 5 Part 18: the server is the only source of truth for official
+// The server is the only source of truth for official
 // matches (the practice /testing sandbox is the one place a client engine is
 // still allowed to own that logic).
 export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
@@ -20,7 +20,7 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
   const [actionError, setActionError] = useState('')
   const [conflictNotice, setConflictNotice] = useState('')
   const [pending, setPending] = useState(false)
-  // Phase 6 Part 1 fix: bowler selection is tracked as "chosen id, FOR which
+  // Bowler selection is tracked as "chosen id, FOR which
   // over" rather than just an id, and re-derived from authoritative state on
   // every load/refresh — never assumed from the URL alone. Opening over (0)
   // is seeded from the setup flow's URL param; every other over is either
@@ -47,18 +47,25 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
   const needsBowlerSelection = Boolean(state) && !state.isAllOut && !state.isOversComplete && pendingBowlerOverNumber !== state?.score?.overNumber
 
   const refresh = useCallback(async () => {
-    const [nextState, nextTimeline, nextShots, nextCorrections] = await Promise.all([
+    const [nextState, nextTimeline, nextShots, nextCorrections, nextMatch] = await Promise.all([
       scoringApi.getInningsState(inningsId),
       scoringApi.getInningsTimeline(inningsId),
       scoringApi.getWagonWheel(inningsId),
       scoringApi.getCorrectionHistory(inningsId),
+      // Cheap single-row fetch, refreshed after every write — without this,
+      // `match` stays whatever it was at page load, so a delivery that
+      // actually decides the match (target reached / all out / overs
+      // complete on the second innings) could never be reflected in
+      // match.status/result_type/winner_team_id on this page.
+      fetchMatch(matchId),
     ])
     setState(nextState)
     setTimeline(nextTimeline)
     setWagonWheelShots(nextShots)
     setCorrections(nextCorrections)
+    setMatch(nextMatch)
     return nextState
-  }, [inningsId])
+  }, [inningsId, matchId])
 
   useEffect(() => {
     let cancelled = false
@@ -70,7 +77,12 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
         setMatchPlayers(mps)
         await refresh()
       } catch (err) {
-        if (!cancelled) setLoadError(err.response?.data?.message || 'Unable to load this match.')
+        // Auth-middleware 403s (requireMatchScorer) return {error}, not
+        // {message} — checked first so a non-assigned umpire sees the real
+        // reason ("You are not assigned to umpire this match.") instead of
+        // a generic fallback (U4/U3.1: handle authorization failure
+        // gracefully, not as a broken/blank state).
+        if (!cancelled) setLoadError(err.response?.data?.error || err.response?.data?.message || 'Unable to load this match.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -94,7 +106,7 @@ export function useRealScorer(matchId, inningsId, initialOpeningBowlerId) {
           setConflictNotice('The score changed on another device. Latest state has been loaded.')
           await refresh().catch(() => {})
         } else {
-          setActionError(err.response?.data?.message || 'That action was not recorded. Please try again.')
+          setActionError(err.response?.data?.error || err.response?.data?.message || 'That action was not recorded. Please try again.')
         }
       } finally {
         setPending(false)

@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { useStaffBookingSchedule } from '../../hooks/useStaffBookingSchedule.js'
+import BackButton from '../../components/common/BackButton.jsx'
 import { useGroundTimeline, useGroundDashboard, useBookingHistory, useGroundReports, useAuditLog } from '../../hooks/useGroundOps.js'
 import { formatBookingDate, formatSlotTime, GROUND_BLOCK_TYPES } from '../../models/booking.model.js'
 import Button from '../../components/ui/Button.jsx'
@@ -392,7 +391,6 @@ function ReportsTab() {
 }
 
 export default function StaffBookingPage() {
-  const navigate = useNavigate()
   const s = useStaffBookingSchedule()
   const [tab, setTab] = useState('Schedule')
 
@@ -402,10 +400,7 @@ export default function StaffBookingPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">Ground Operations</h1>
 

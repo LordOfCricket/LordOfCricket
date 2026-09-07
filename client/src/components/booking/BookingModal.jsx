@@ -5,12 +5,12 @@ import { useBookingFlow } from '../../hooks/useBookingFlow.js'
 import { formatSlotTime, formatBookingDate, todayDateInputValue } from '../../models/booking.model.js'
 import Button from '../ui/Button.jsx'
 
-// Phase 14 Part 3 (43/44/45/46) — Homepage -> Book Ground -> Calendar ->
+// Homepage -> Book Ground -> Calendar ->
 // Choose Date -> Available Times -> Booking Details -> Confirm -> Confirmed.
 // Internally scrollable (max-h + overflow-y-auto) so it fits at 390x844
 // without the page itself scrolling.
-export default function BookingModal({ open, onClose }) {
-  const flow = useBookingFlow()
+export default function BookingModal({ open, onClose, publicGroundId = null }) {
+  const flow = useBookingFlow(publicGroundId)
 
   useEffect(() => {
     if (open) flow.reset()
@@ -65,23 +65,36 @@ export default function BookingModal({ open, onClose }) {
               ) : (
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   {flow.slots.map((slot) => {
-                    const available = slot.status === 'AVAILABLE'
+                    // Ground Pricing UX Polish — a slot can be schedule-
+                    // AVAILABLE but have no active pricing configured; that's
+                    // treated the same as unbookable here (the server would
+                    // reject it with PRICE_UNAVAILABLE anyway), rather than
+                    // letting a customer pick a time they can't actually
+                    // confirm.
+                    const priced = slot.price != null
+                    const bookable = slot.status === 'AVAILABLE' && priced
                     return (
                       <button
                         key={slot.startTime}
                         type="button"
-                        disabled={!available}
+                        disabled={!bookable}
                         onClick={() => flow.chooseSlot(slot)}
-                        aria-label={`${formatSlotTime(slot.startTime, slot.endTime)} — ${available ? 'available' : 'unavailable'}`}
+                        aria-label={`${formatSlotTime(slot.startTime, slot.endTime)} — ${bookable ? 'available' : 'unavailable'}`}
                         className={`flex flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition-colors ${
-                          available ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20' : 'cursor-not-allowed border-white/10 bg-white/5 text-slate-500'
+                          bookable ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20' : 'cursor-not-allowed border-white/10 bg-white/5 text-slate-500'
                         }`}
                       >
                         <span className="flex items-center gap-1.5">
                           <Clock className="h-3.5 w-3.5" />
                           {formatSlotTime(slot.startTime, slot.endTime)}
                         </span>
-                        <span className="text-[11px] font-medium uppercase tracking-wide">{available ? 'Available' : 'Unavailable'}</span>
+                        {slot.status === 'AVAILABLE' ? (
+                          <span className={`text-[11px] font-medium uppercase tracking-wide ${priced ? '' : 'normal-case tracking-normal'}`}>
+                            {priced ? `₹${slot.price.toLocaleString('en-IN')}` : 'Price unavailable'}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium uppercase tracking-wide">Unavailable</span>
+                        )}
                       </button>
                     )
                   })}
@@ -99,6 +112,12 @@ export default function BookingModal({ open, onClose }) {
               <div className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-4">
                 <p className="text-sm font-semibold text-white">{formatBookingDate(flow.selectedSlot.startTime)}</p>
                 <p className="text-sm text-emerald-200">{formatSlotTime(flow.selectedSlot.startTime, flow.selectedSlot.endTime)}</p>
+                {flow.selectedSlot.price != null && (
+                  <div className="mt-3 flex items-center justify-between border-t border-emerald-400/20 pt-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-emerald-200/80">Ground Fee</span>
+                    <span className="text-lg font-bold text-[#F5D547]">₹{flow.selectedSlot.price.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
               </div>
 
               {!flow.isLoggedIn ? (
@@ -141,7 +160,11 @@ export default function BookingModal({ open, onClose }) {
                   {flow.error && <p className="text-sm text-rose-300">{flow.error}</p>}
 
                   <Button disabled={flow.submitting} onClick={flow.submit} className="h-12 w-full">
-                    {flow.submitting ? 'Confirming…' : 'Confirm Booking'}
+                    {flow.submitting
+                      ? 'Confirming…'
+                      : flow.selectedSlot.price != null
+                        ? `Confirm Booking — ₹${flow.selectedSlot.price.toLocaleString('en-IN')}`
+                        : 'Confirm Booking'}
                   </Button>
                 </div>
               )}
@@ -196,6 +219,17 @@ export default function BookingModal({ open, onClose }) {
                 <p className="text-sm text-slate-400">
                   Booking Reference <span className="float-right font-semibold text-emerald-300">{flow.confirmedBooking.publicBookingId}</span>
                 </p>
+                {flow.confirmedBooking.amount != null && (
+                  <>
+                    <div className="my-2 border-t border-white/10" />
+                    <p className="text-sm text-slate-400">
+                      Ground Fee <span className="float-right font-semibold text-white">₹{Number(flow.confirmedBooking.amount).toLocaleString('en-IN')}</span>
+                    </p>
+                    <p className="text-sm font-semibold text-slate-300">
+                      Total <span className="float-right font-bold text-[#F5D547]">₹{Number(flow.confirmedBooking.amount).toLocaleString('en-IN')}</span>
+                    </p>
+                  </>
+                )}
               </div>
               <Link to="/bookings" onClick={onClose} className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-linear-to-r from-emerald-400 to-emerald-600 px-5 py-3 text-sm font-bold text-emerald-950">
                 View My Bookings

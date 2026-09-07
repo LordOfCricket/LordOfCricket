@@ -5,7 +5,7 @@ import { roleLabel } from '../../models/player.model.js'
 import { searchPlayers } from '../../services/statisticsApi.js'
 import { addPlayerToTeam, removePlayerFromTeam } from '../../services/publicTeamApi.js'
 
-// Phase 13 — staff-only roster management. Team membership (players.team_id)
+// Staff-only roster management. Team membership (players.team_id)
 // previously had no HTTP-reachable write path at all; this is the smallest
 // robust UI for it: search the existing public player directory, add/remove
 // by publicPlayerId, and let the caller (TeamProfilePage) refetch the public

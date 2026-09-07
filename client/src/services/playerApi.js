@@ -10,6 +10,13 @@ export async function updateMyPlayer(fields) {
   return response.data.player
 }
 
+export async function uploadMyPlayerPhoto(file) {
+  const formData = new FormData()
+  formData.append('photo', file)
+  const response = await api.post('/me/player/photo', formData)
+  return response.data.player
+}
+
 export async function fetchTeams() {
   const response = await api.get('/teams')
   return response.data.teams

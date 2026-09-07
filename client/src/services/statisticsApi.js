@@ -1,4 +1,4 @@
-// Phase 7 — official career statistics client. Every number here is derived
+// Official career statistics client. Every number here is derived
 // server-side from finalized PostgreSQL match history on every request; there
 // is no client-side aggregation and nothing is cached in localStorage.
 import api from './api.js'
@@ -13,7 +13,7 @@ export async function fetchPlayerStats(publicPlayerId, { limit, offset } = {}) {
   return data
 }
 
-// Phase 8 — player discovery, public profiles, leaderboards. All public
+// Player discovery, public profiles, leaderboards. All public
 // (no auth required), consistent with the public-read posture of /matches.
 
 export async function fetchPublicPlayerInfo(publicPlayerId) {
@@ -28,5 +28,13 @@ export async function searchPlayers({ q, role, teamId, limit, offset } = {}) {
 
 export async function fetchLeaderboard(metric, { role, teamId, limit, offset } = {}) {
   const { data } = await api.get(`/stats/leaderboards/${metric}`, { params: { role, teamId, limit, offset } })
+  return data
+}
+
+// LOC Cricket Records — match & team records (highest team total, highest
+// match aggregate, biggest wins by runs / by wickets, highest successful
+// chase) across all finalized matches. Server-derived; nothing computed here.
+export async function fetchCricketRecords() {
+  const { data } = await api.get('/stats/records')
   return data
 }

@@ -1,4 +1,4 @@
-// Phase 12 — public commentary read client. Every field comes straight from
+// Public commentary read client. Every field comes straight from
 // the server's projection on every fetch; nothing is computed here.
 import api from './api.js'
 

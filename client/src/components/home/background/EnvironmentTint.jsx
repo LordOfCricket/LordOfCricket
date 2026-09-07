@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import useScrollEnvironment from '../../../hooks/useScrollEnvironment.js'
 
 /**
- * Phase 6 — the environmental "color grading" pass: one soft-light-blended
+ * The environmental "color grading" pass: one soft-light-blended
  * overlay whose color drifts through the section-anchored palette in
  * environmentTimeline.js (cool morning at Hero → energetic green at
  * Matches → warm gold at Booking → calm dark at Footer) as the visitor

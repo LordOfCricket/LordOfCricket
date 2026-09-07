@@ -1,7 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import { listImages, getImage, uploadImage, updateImage, deleteImage } from '../controllers/galleryImage.controller.js'
-import { requireAuth, requireStaffRole } from '../middlewares/auth.js'
+import { requireAuth,  requireStaffRole } from '../middlewares/auth.js'
 
 // Memory storage, not disk — the buffer goes straight to Cloudinary
 // (uploadImageFileDetailed) and is never written to this server's
@@ -36,10 +36,17 @@ function uploadSingleImage(req, res, next) {
 
 const router = express.Router()
 
+// Phase 12 — DEPRECATED DEVELOPMENT ROUTES for the single-ground phase.
+// Gallery images are ground-specific resources managed by Ground Owners and Staff.
+// Super Admin no longer has operational CRUD access to gallery images.
+// These routes should not be called from production frontend (see AppRoutes.jsx).
+//
+// When multiple grounds are deployed, these routes will need multi-ground
+// alternatives like: /grounds/:publicGroundId/gallery
 router.get('/', listImages)
 router.get('/:id', getImage)
-router.post('/', requireAuth, requireStaffRole('super_admin'), uploadSingleImage, uploadImage)
-router.patch('/:id', requireAuth, requireStaffRole('super_admin'), updateImage)
-router.delete('/:id', requireAuth, requireStaffRole('super_admin'), deleteImage)
+router.post('/', requireAuth, requireStaffRole('admin'), uploadSingleImage, uploadImage)
+router.patch('/:id', requireAuth, requireStaffRole('admin'), updateImage)
+router.delete('/:id', requireAuth, requireStaffRole('admin'), deleteImage)
 
 export default router

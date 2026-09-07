@@ -20,6 +20,19 @@ async function startTestApp() {
   }
 }
 
+// FINAL AUDIT — Phase 21.2 (request traceability) added `requestId: req.id`
+// to every branch of errorHandler.js's response body, for incident-log
+// correlation. OLD EXPECTATION (below, before this pass): the body was
+// exactly `{message}`, nothing else. ACTUAL CONTRACT since Phase 21.2: the
+// body always also carries `requestId` — a real UUID for a genuine HTTP
+// request (set by middlewares/requestId.js earlier in the chain), or
+// `undefined` here specifically because these two tests hand-build a bare
+// `req` object and call errorHandler() directly, bypassing that middleware
+// entirely (a deliberate, minimal unit-style test of errorHandler in
+// isolation, not a real HTTP request). NEW EXPECTATION: assert `requestId`
+// is present as a key (value `undefined` in this specific unit-style
+// context) alongside the existing message assertion, matching what the
+// real response object now always contains.
 test('errorHandler never leaks a raw/unexpected error message or stack to the client', () => {
   let captured = null
   const req = { method: 'GET', originalUrl: '/api/whatever' }
@@ -30,7 +43,7 @@ test('errorHandler never leaks a raw/unexpected error message or stack to the cl
   errorHandler(err, req, res, () => {})
 
   assert.equal(captured.code, 500)
-  assert.deepEqual(captured.body, { message: 'Internal Server Error' })
+  assert.deepEqual(captured.body, { message: 'Internal Server Error', requestId: req.id })
 })
 
 test('errorHandler passes through an intentional statusCode+message unchanged (service-thrown 404s etc.)', () => {
@@ -43,7 +56,7 @@ test('errorHandler passes through an intentional statusCode+message unchanged (s
   errorHandler(err, req, res, () => {})
 
   assert.equal(captured.code, 404)
-  assert.deepEqual(captured.body, { message: 'Team not found.' })
+  assert.deepEqual(captured.body, { message: 'Team not found.', requestId: req.id })
 })
 
 test('errorHandler still returns the full structured shape for a domain-coded error', () => {
@@ -127,15 +140,21 @@ test('a staff-only endpoint rejects an unauthenticated request with 401, and a n
   }
 })
 
-test('the login endpoint is rate-limited: enough rapid attempts eventually get a 429, not an unbounded retry surface', async () => {
+// Phase 8 — this test used to hit the legacy `/auth/login` (email+password)
+// endpoint, removed this phase (zero reachable frontend callers — see
+// docs/AUTH.md). `/auth/verify-otp` is the real credential/code-guessing
+// surface now (guessing a 6-digit OTP is the modern equivalent of guessing
+// a password) and carries its own limiter (otpVerifyLimiter, same 20/15min
+// ceiling authLimiter used to have) — this test now proves that one fires.
+test('the OTP verify endpoint is rate-limited: enough rapid attempts eventually get a 429, not an unbounded retry surface', async () => {
   const server = await startTestApp()
   try {
     let sawRateLimited = false
     for (let i = 0; i < 25; i += 1) {
-      const res = await fetch(`${server.baseUrl}/auth/login`, {
+      const res = await fetch(`${server.baseUrl}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'nobody@example.test', password: 'wrong-password' }),
+        body: JSON.stringify({ identifier: 'nobody@example.test', code: '000000' }),
       })
       if (res.status === 429) {
         sawRateLimited = true
@@ -143,9 +162,9 @@ test('the login endpoint is rate-limited: enough rapid attempts eventually get a
         assert.ok(body.message)
         break
       }
-      assert.equal(res.status, 401)
+      assert.notEqual(res.status, 500, 'a wrong OTP must never crash the request')
     }
-    assert.ok(sawRateLimited, 'expected the auth rate limiter to trigger a 429 within 25 rapid attempts')
+    assert.ok(sawRateLimited, 'expected the OTP verify rate limiter to trigger a 429 within 25 rapid attempts')
   } finally {
     await server.close()
   }

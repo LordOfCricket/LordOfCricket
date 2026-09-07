@@ -9,6 +9,12 @@ const RESULT_TYPES = [
   { id: 'leg-bye', label: 'Leg Bye' },
   { id: 'wicket', label: 'Wicket' },
   { id: 'dead-ball', label: 'Dead Ball' },
+  // Phase 4 (Umpire Module) — voiding used to be a separate one-tap button
+  // that committed immediately, bypassing the live before/after preview
+  // every other correction gets. Folding it into the same Result picker
+  // means it now goes through the identical patch -> preview -> Apply
+  // pipeline as everything else, with no special-cased confirmation logic.
+  { id: 'void', label: 'Void', destructive: true },
 ]
 
 function resultTypeOf(d) {
@@ -34,6 +40,8 @@ function buildPatch({ resultType, runs, extraRuns, wicket }) {
       return { ...base, extra: { type: 'leg-bye', runs: extraRuns } }
     case 'dead-ball':
       return { ...base, isDeadBall: true }
+    case 'void':
+      return { ...base, voided: true }
     case 'wicket':
       return { ...base, batRuns: wicket?.type === 'run-out' ? wicket.runsCompleted || 0 : 0, wicket }
     default:
@@ -63,6 +71,14 @@ export default function DeliveryCorrectionEditor({ delivery, playersById, bowlin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultType, runs, extraRuns, wicketType, dismissedId, runsCompleted, newBowlerId])
 
+  const selectResultType = (id) => {
+    setResultType(id)
+    // A void is virtually always "recorded in error" — set that default the
+    // moment it's picked so the umpire doesn't have to also remember to set
+    // the Reason chip; they can still change it before applying.
+    if (id === 'void') setReason('ACCIDENTAL_DELIVERY')
+  }
+
   useEffect(() => {
     let cancelled = false
     previewCorrection('delivery', delivery.id, patch)
@@ -85,16 +101,7 @@ export default function DeliveryCorrectionEditor({ delivery, playersById, bowlin
   const handleApply = async () => {
     setApplying(true)
     try {
-      await onApply(patch, reason, note)
-    } finally {
-      setApplying(false)
-    }
-  }
-
-  const handleVoid = async () => {
-    setApplying(true)
-    try {
-      await onApply({ voided: true }, 'ACCIDENTAL_DELIVERY', note || 'Recorded in error')
+      await onApply(patch, reason, resultType === 'void' ? note || 'Recorded in error' : note)
     } finally {
       setApplying(false)
     }
@@ -121,12 +128,20 @@ export default function DeliveryCorrectionEditor({ delivery, playersById, bowlin
         <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100/60">Result</p>
           <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {RESULT_TYPES.map((t) => (
+            {RESULT_TYPES.filter((t) => t.id !== 'void' || !delivery.voided).map((t) => (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setResultType(t.id)}
-                className={`min-h-10 rounded-lg border text-xs font-semibold transition-all ${resultType === t.id ? 'border-emerald-400/60 bg-emerald-500/20 text-white' : 'border-white/10 bg-white/5 text-emerald-100/80 hover:bg-white/10'}`}
+                onClick={() => selectResultType(t.id)}
+                className={`min-h-10 rounded-lg border text-xs font-semibold transition-all ${
+                  resultType === t.id
+                    ? t.destructive
+                      ? 'border-rose-400/60 bg-rose-500/20 text-white'
+                      : 'border-emerald-400/60 bg-emerald-500/20 text-white'
+                    : t.destructive
+                      ? 'border-rose-400/30 bg-rose-500/5 text-rose-200 hover:bg-rose-500/10'
+                      : 'border-white/10 bg-white/5 text-emerald-100/80 hover:bg-white/10'
+                }`}
               >
                 {t.label}
               </button>
@@ -260,18 +275,15 @@ export default function DeliveryCorrectionEditor({ delivery, playersById, bowlin
         <button type="button" onClick={onCancel} className="flex-1 rounded-xl bg-white/10 py-3 text-sm font-semibold text-white">
           Cancel
         </button>
-        {!delivery.voided && (
-          <button type="button" disabled={applying} onClick={handleVoid} className="flex-1 rounded-xl border border-rose-400/40 bg-rose-500/10 py-3 text-sm font-bold uppercase tracking-wide text-rose-200 disabled:cursor-not-allowed disabled:opacity-40">
-            Void Delivery
-          </button>
-        )}
         <button
           type="button"
           disabled={!canApply || applying}
           onClick={handleApply}
-          className="flex-1 rounded-xl bg-emerald-500 py-3 text-sm font-bold uppercase tracking-wide text-emerald-950 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`flex-1 rounded-xl py-3 text-sm font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-40 ${
+            resultType === 'void' ? 'bg-rose-500 text-rose-50' : 'bg-emerald-500 text-emerald-950'
+          }`}
         >
-          {applying ? 'Applying…' : 'Apply Correction'}
+          {applying ? 'Applying…' : resultType === 'void' ? 'Void Delivery' : 'Apply Correction'}
         </button>
       </div>
     </div>

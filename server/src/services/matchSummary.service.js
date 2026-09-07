@@ -9,10 +9,23 @@
 // shots (1 query) — never one query per player/delivery/over.
 
 import { findMatchByIdWithTeams } from '../models/match.model.js'
+import { findGroundSummaryById } from '../models/ground.model.js'
 import * as scoringService from './scoring.service.js'
 import * as matchPlayerRepo from '../repositories/matchPlayer.repository.js'
 import * as tournamentRepo from '../repositories/tournament.repository.js'
 import { buildInningsSummary } from '../domain/matchSummary/buildInningsSummary.js'
+
+// Phase 23, Workstream B — additive only, same "null for most matches"
+// posture as buildTournamentContext below: a legacy/ground-less match
+// (ground_id=NULL, U1's own convention) simply gets ground: null, never a
+// fabricated placeholder. Exists specifically so Match Briefing can show
+// real ground amenities without a second match-detail endpoint.
+async function buildGroundContext(match) {
+  if (!match.ground_id) return null
+  const ground = await findGroundSummaryById(match.ground_id)
+  if (!ground) return null
+  return { name: ground.name, amenities: ground.amenity_names || [] }
+}
 
 // Phase 15 Part 55 — additive only: null for the vast majority of matches
 // (never tournament-linked), a small cross-nav pointer when it is. Never
@@ -100,6 +113,7 @@ export async function getMatchSummary(matchId) {
     teams: { teamA: teamSummary(match, 'team_a'), teamB: teamSummary(match, 'team_b') },
     toss: buildToss(match),
     result: buildResult(match),
+    ground: await buildGroundContext(match),
     innings: inningsSummaries,
     playingXi,
     tournamentContext: await buildTournamentContext(matchId),

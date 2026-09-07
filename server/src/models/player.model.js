@@ -45,6 +45,17 @@ export async function findPlayersByTeam(teamId) {
   return rows
 }
 
+// Phase 24 — bulk lookup for validating a booking's participant list in one
+// round trip rather than N queries. Returns whichever ids actually resolved
+// to a real row (never fabricates the missing ones) — see domain/booking/
+// participants.js#assertPlayersExist for how a caller turns a short result
+// into a specific PLAYER_NOT_FOUND error.
+export async function findPlayersByIds(ids) {
+  if (!ids.length) return []
+  const { rows } = await pool.query('SELECT * FROM players WHERE id = ANY($1::int[])', [ids])
+  return rows
+}
+
 export async function findAllPlayers() {
   const { rows } = await pool.query('SELECT * FROM players ORDER BY id')
   return rows
@@ -64,4 +75,22 @@ export async function updatePlayer(id, fields) {
 
 export async function deletePlayer(id) {
   await pool.query('DELETE FROM players WHERE id = $1', [id])
+}
+
+// SUPER_ADMIN Identity & Secure Provisioning feature — "Players" admin
+// list (§5's sidebar). Joins to users for real account info (email/phone/
+// status) rather than trusting players.name alone, which can drift from
+// the account holder's registered name (see profile-edit's own separate
+// "Display Name" field). Excludes umpires (player_type='umpire') — those
+// have their own dedicated admin list (findAllUmpires, user.model.js).
+export async function findAllPlayersForAdmin() {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.public_player_id, p.jersey_number, p.city, p.role,
+            u.id AS user_id, u.name, u.email, u.phone, u.status, u.created_at
+     FROM players p
+     JOIN users u ON u.id = p.user_id
+     WHERE u.player_type = 'team_player'
+     ORDER BY u.name`,
+  )
+  return rows
 }

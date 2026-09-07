@@ -1,13 +1,41 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, UtensilsCrossed, ClipboardCheck, Images, UserPlus, LogOut } from 'lucide-react'
+import {
+  LayoutDashboard,
+  ClipboardCheck,
+  MapPinPlus,
+  MapPinned,
+  ShieldCheck,
+  Users,
+  Trophy,
+  ClipboardList,
+  Handshake,
+  Sparkles,
+  ShoppingBag,
+  LogOut,
+} from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
 
+// Super Admin sidebar navigation cleanup + centralized Sponsors/Amenities
+// Master — Edit Photos (unrouted dead link already), Admin Settings, and
+// Create Staff were removed from primary nav here (their routes/pages stay
+// registered and reachable — Admin Settings by direct URL, Create Staff via
+// the Dashboard's own Quick Actions tile and from within Admin Settings
+// itself). Sponsors (client/src/pages/admin-sponsors) and Amenities
+// (client/src/pages/admin-amenities/AdminAmenityCatalogPage.jsx) are the
+// new centralized content-management sections replacing them.
 const LINKS = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, allow: ['super_admin', 'admin'] },
-  { to: '/canteen/staff', label: 'Canteen', icon: UtensilsCrossed, allow: ['super_admin', 'admin'] },
+  { to: '/admin/ground-registrations', label: 'Ground Requests', icon: MapPinPlus, allow: ['super_admin'] },
+  { to: '/admin/all-grounds', label: 'All Grounds', icon: MapPinned, allow: ['super_admin'] },
+  { to: '/admin/ground-owners', label: 'Ground Owners', icon: ShieldCheck, allow: ['super_admin'] },
+  { to: '/admin/players', label: 'Players', icon: Users, allow: ['super_admin'] },
+  { to: '/admin/umpires', label: 'Umpires', icon: Trophy, allow: ['super_admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
-  { to: '/admin/photos-hub', label: 'Edit Photos', icon: Images, allow: ['super_admin'] },
-  { to: '/admin/staff/new', label: 'Create Staff', icon: UserPlus, allow: ['super_admin'] },
+  { to: '/admin/sponsors', label: 'Sponsors', icon: Handshake, allow: ['super_admin'] },
+  { to: '/admin/merchandise', label: 'Merchandise', icon: ShoppingBag, allow: ['super_admin'] },
+  { to: '/admin/amenities', label: 'Amenities', icon: Sparkles, allow: ['super_admin'] },
+  { to: '/security', label: 'Account Security', icon: ShieldCheck, allow: ['super_admin', 'admin'] },
+  { to: '/admin/audit-log', label: 'Audit Logs', icon: ClipboardList, allow: ['super_admin'] },
 ]
 
 export default function AdminSidebar() {

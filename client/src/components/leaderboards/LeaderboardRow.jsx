@@ -9,10 +9,10 @@ function formatValue(value, category, metric) {
 }
 
 function secondaryLine(item, category) {
-  const s = item.secondary || {}
-  if (category === 'batting') return `Avg ${s.average ?? '—'} • SR ${s.strikeRate ?? '—'}`
-  if (category === 'bowling') return `Avg ${s.average ?? '—'} • Econ ${s.economy ?? '—'}`
-  return `${s.matches ?? '—'} matches`
+  const secondary = item.secondary || {}
+  if (category === 'batting') return `Avg ${secondary.average ?? '—'} • SR ${secondary.strikeRate ?? '—'}`
+  if (category === 'bowling') return `Avg ${secondary.average ?? '—'} • Econ ${secondary.economy ?? '—'}`
+  return `${secondary.matches ?? '—'} matches`
 }
 
 export default function LeaderboardRow({ item, category, metric, unit }) {

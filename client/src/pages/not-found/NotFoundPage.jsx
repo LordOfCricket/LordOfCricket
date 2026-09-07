@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-// Phase 19 Feature 11 — there was no catch-all route at all: an unmatched
+// There was no catch-all route at all: an unmatched
 // URL (a stale bookmark, a typo, a dead link) rendered a blank page inside
 // Layout's <Outlet/> with no explanation and no way back, since React
 // Router doesn't render anything of its own for a route that matches

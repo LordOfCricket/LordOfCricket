@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-// Phase 16 Part 36 — the AI section loads INDEPENDENTLY of the page's main
+// The AI section loads INDEPENDENTLY of the page's main
 // content (same shape as useTeamProfile.js's own loading/error pattern):
 // the caller renders the primary, deterministic page immediately and mounts
 // this hook in its own bounded section, never blocking on it.

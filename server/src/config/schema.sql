@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS teams (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_teams_owner_id ON teams(owner_id);
+
 CREATE TABLE IF NOT EXISTS players (
   id SERIAL PRIMARY KEY,
   team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
@@ -111,6 +114,24 @@ ALTER TABLE players ADD COLUMN IF NOT EXISTS jersey_number SMALLINT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE players ADD COLUMN IF NOT EXISTS city VARCHAR(100);
 ALTER TABLE players ADD COLUMN IF NOT EXISTS bio VARCHAR(280);
+
+-- First-Login Player Profile Onboarding — same self-service players row,
+-- not a new table. `nickname` and `date_of_birth` are new personal-info
+-- fields; `is_wicket_keeper` is a real boolean (not folded into the
+-- existing `role` playing-role enum, which stays untouched and unrelated
+-- to this form). `address_line`/`state`/`postal_code` follow the exact
+-- naming already used for grounds/ground_owner_requests addresses in this
+-- file — `city` is NOT duplicated here, the existing column above is
+-- reused. `profile_onboarding_completed` is the explicit, single source of
+-- truth for "has this player already been shown (and handled) onboarding"
+-- — deliberately NOT inferred from whether optional fields are filled.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS nickname VARCHAR(50);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS is_wicket_keeper BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS address_line VARCHAR(255);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS postal_code VARCHAR(20);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS profile_onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ============================================================================
 -- PHASE 3 — Authoritative scoring domain (innings / deliveries / events)
@@ -362,6 +383,18 @@ ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_type VARCHAR(10) CHECK (resu
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_margin INTEGER;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMP;
+-- Phase 6 (Umpire Module) — pre-match cancellation, the one confirmed-
+-- missing match lifecycle action from the Phase 5 audit. Mirrors
+-- completed_at/finalized_at's own shape exactly (a plain TIMESTAMP column
+-- directly on the match row is this table's established audit convention),
+-- plus cancelled_by/cancellation_reason so "who cancelled and why" is
+-- queryable without a second table. ON DELETE SET NULL matches every other
+-- "acting user" reference column in this schema (e.g. ground_audit_log's
+-- actor_user_id) — the audit fact survives even if that account is later
+-- deleted.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(280);
 
 -- ============================================================================
 -- PHASE 12 — Deterministic commentary projection
@@ -653,7 +686,7 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_actor_user_id_fkey'
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_actor_user_id_fkey'
   ) THEN
     ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_actor_user_id_fkey;
     ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL;
@@ -703,6 +736,45 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_role_id INTEGER REFERENCES staf
 -- to a clean validation error in staff.controller.js.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;
 
+-- SUPER_ADMIN Identity & Secure Provisioning feature.
+--
+-- `username` is a NEW, purely display/reference concept — distinct from
+-- `staff_id` (which is the "LOC-ADM-001"-style Admin ID, already
+-- generated into this same column by utils/adminId.js). It is NEVER used
+-- to authenticate: login stays email/phone + password (or OTP), exactly
+-- as documented above for staff_id — introducing a third login-identifier
+-- type would itself be the kind of "second authentication system" this
+-- feature is explicitly forbidden from creating, and a fabricated
+-- @lordofcricket.* address the platform doesn't actually own would
+-- violate the brief's own "no fake email accounts" rule. The bootstrap
+-- script requires a real, reachable email from the operator; `username`
+-- is just the human-chosen handle shown alongside it in Admin Management.
+--
+-- `force_password_change` gates the bootstrap Super Admin (and later, any
+-- account an admin resets via a temporary credential — see
+-- temp_password_hash below) into a mandatory password change before they
+-- can use any staff-privileged route again. Enforced server-side in
+-- requireStaffRole (middlewares/auth.js), not just a client redirect.
+--
+-- temp_password_hash/temp_password_expires_at back the admin-initiated
+-- "reset a user's password" flow (services/adminPasswordRecovery.service.js):
+-- a cryptographically random one-time credential, bcrypt-hashed exactly
+-- like a real password (never stored/logged in plaintext), short-lived,
+-- and cleared the instant it's used successfully (services/otpAuth.service.js
+-- #loginWithPassword) or superseded by a real password change — never
+-- promoted into being the permanent password.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_expires_at TIMESTAMPTZ;
+
+-- `users` had `created_at` but no `updated_at` at all (unlike every other
+-- table this codebase has added since — grounds/ground_owner_requests both
+-- have one already). The brief's own account-structure spec explicitly
+-- wants both; `updateUser()` (models/user.model.js) now sets this on every
+-- write.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- ============================================================================
 -- PHASE 10 (3D homepage project) — Ground media storage migrated to Cloudinary
 -- ============================================================================
@@ -719,3 +791,2113 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS staff_id VARCHAR(50) UNIQUE;
 ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
 ALTER TABLE amenities ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS cloudinary_public_id TEXT;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 1 — GalleryImage migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `GalleryImage`
+-- collection (see server/src/models/galleryImageMongoLegacy.model.js, kept
+-- only for the one-time migration script / rollback reference — no longer on
+-- the live request path). Field-for-field identical shape to
+-- ground_photos/amenities/partners above, which already proved this exact
+-- Cloudinary-URL-plus-metadata pattern; the sub-document `image.{url,
+-- publicId,width,height,format,bytes}` simply flattens to columns.
+CREATE TABLE IF NOT EXISTS gallery_images (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(150) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  category VARCHAR(20) NOT NULL DEFAULT 'ground'
+    CHECK (category IN ('ground','match','tournament','event')),
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT NOT NULL,
+  image_width INTEGER,
+  image_height INTEGER,
+  image_format VARCHAR(10),
+  image_bytes INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — maps a migrated row back to the
+  -- original MongoDB GalleryImage._id for auditability/idempotent re-runs
+  -- during the burn-in period. NULL for any row created directly in
+  -- PostgreSQL after this migration (never required). Never exposed through
+  -- the public API (see galleryImage.service.js#toPublicShape). Safe to drop
+  -- in a later cleanup phase once production is verified.
+  legacy_mongo_id TEXT
+);
+
+-- The one real query pattern this table serves (same rationale as the
+-- retired Mongo index it replaces): "active images in a category, in
+-- display order" — public gallery reads + the homepage carousel.
+CREATE INDEX IF NOT EXISTS idx_gallery_images_category_active_order
+  ON gallery_images(category, is_active, sort_order);
+
+-- Lets the migration script upsert by legacy_mongo_id (ON CONFLICT) so
+-- re-running it after a partial failure never creates duplicate rows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gallery_images_legacy_mongo_id
+  ON gallery_images(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 2 — AiInsight migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `AiInsight` cache
+-- collection (see server/src/models/aiInsightMongoLegacy.model.js, kept only
+-- for the one-time migration script / rollback reference — no longer on the
+-- live request path). This is still purely a CACHE, never a second source of
+-- cricket truth (README principle #4/#9, ARCHITECTURE.md §16.5) — colocating
+-- it in PostgreSQL doesn't change that, it only changes which database holds
+-- the cache. Deleting every row here loses nothing authoritative; the next
+-- read simply regenerates it from PostgreSQL's own cricket data.
+--
+-- `source_id` is intentionally VARCHAR, not an INTEGER FK: it's a
+-- polymorphic reference (a `matches.id` when source_type='MATCH', a
+-- `teams.id` when 'TEAM', but a `players.public_player_id` — already a
+-- VARCHAR, not `players.id` — when 'PLAYER'), so a single-column FK to three
+-- differently-shaped targets isn't expressible. Same documented tradeoff
+-- `score_corrections.target_id`/`ground_audit_log.entity_id` already accept
+-- above — resolved by application code, not a trigger.
+--
+-- `payload` stays JSONB deliberately, not because Mongo happened to store it
+-- as a nested document: it's genuinely variable-shaped, schema-validated
+-- AI-generated content (a different shape per source_type — see
+-- ai/schemas/matchInsightSchema.js vs personInsightSchema.js), never
+-- filtered/queried by its internal fields anywhere in this app — the exact
+-- same reasoning `matches.rules` and `match_events.payload` already use.
+CREATE TABLE IF NOT EXISTS ai_insights (
+  id SERIAL PRIMARY KEY,
+  source_type VARCHAR(10) NOT NULL CHECK (source_type IN ('MATCH', 'PLAYER', 'TEAM')),
+  source_id VARCHAR(30) NOT NULL,
+  -- sha256 hex digest (see domain/ai/computeSourceFingerprint.js) — always
+  -- exactly 64 hex characters, never guessed-at width.
+  source_fingerprint VARCHAR(64) NOT NULL,
+  provider VARCHAR(30) NOT NULL,
+  model VARCHAR(50) NOT NULL,
+  payload JSONB NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment above for the exact rationale, identical here.
+  legacy_mongo_id TEXT,
+  -- The actual caching key (mirrors the retired Mongo collection's unique
+  -- compound index exactly): at most one cached insight per entity at a
+  -- time — a regeneration overwrites this row in place, it never creates
+  -- history/versioning. Every live read/write goes through THIS constraint
+  -- (ON CONFLICT (source_type, source_id)), not legacy_mongo_id.
+  UNIQUE (source_type, source_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_insights_legacy_mongo_id
+  ON ai_insights(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 3 — MenuItem migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `MenuItem` collection
+-- (see server/src/models/canteenMenuItemMongoLegacy.model.js, kept only for
+-- the one-time migration script / rollback reference — no longer on the
+-- live request path). No existing PostgreSQL table could be reused for
+-- this — audited first (no canteen/menu table exists anywhere in this
+-- schema) — so this is a genuinely new table, not a duplicate of one.
+--
+-- `price` is NUMERIC, never FLOAT/REAL/DOUBLE: this is real currency (INR),
+-- and floating point cannot represent money exactly — the same reasoning
+-- every other money-shaped value in a well-modeled schema follows, even
+-- though no other LOC table happens to store a price today.
+--
+-- Deliberately NO `ground_id`/`canteen_id` column: audited first (Step 6)
+-- — the retired Mongoose schema had no such field, and this app manages
+-- exactly one physical ground/canteen today (see ARCHITECTURE.md §18.1's
+-- same "no ground_id anywhere" statement for ground_bookings). A future,
+-- dedicated multi-ground phase will need to add `canteen_id` here (and to
+-- `TodayMenu`/`Order` once THEY migrate) — intentionally not pre-built now,
+-- consistent with this project's own "audit-first, no speculative columns"
+-- discipline.
+--
+-- TodayMenu and Order remain on MongoDB this phase (unchanged, per strict
+-- scope) and continue to reference a menu item by whatever string `id` this
+-- table hands back (Mongoose's `TodayMenu.items[].id` / `Order.items[].id`/
+-- `.foodId` are plain, unconstrained String fields — never a real Mongo
+-- ObjectId ref — so a Postgres integer-as-string slots in with zero schema
+-- friction on the Mongo side). One real, documented consequence: currently
+-- PUBLISHED `TodayMenu` entries reference the OLD Mongo ObjectId string, so
+-- after this migration they will not match any *new* Postgres-backed
+-- `menu_items.id` until staff republish today's menu — see the Phase 3
+-- report's "Order relationship compatibility analysis" section.
+CREATE TABLE IF NOT EXISTS menu_items (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  price NUMERIC(8,2) NOT NULL,
+  image_url TEXT NOT NULL DEFAULT '',
+  cloudinary_public_id TEXT NOT NULL DEFAULT '',
+  default_stock INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment for the exact rationale, identical here. Also doubles as the
+  -- breadcrumb a future Order-migration phase needs: a historical Order's
+  -- `items[].foodId` (a MongoDB ObjectId string) can be resolved back to
+  -- this row via `legacy_mongo_id`, even though Order itself doesn't
+  -- migrate in this phase.
+  legacy_mongo_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_items_legacy_mongo_id
+  ON menu_items(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 4 — TodayMenu migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `TodayMenu` singleton
+-- document (see server/src/models/canteenTodayMenuMongoLegacy.model.js, kept
+-- only for the one-time migration script / rollback reference). Two tables,
+-- not one JSONB blob: `items[]` in Mongo already had a fixed, fully-typed
+-- shape (id/available/stock/dailyPrice) referencing another collection by
+-- id — exactly the relational shape `menu_items`'s own Cloudinary+Postgres
+-- siblings already use, and exactly what a real `menu_item_id` foreign key
+-- (Step 5's explicit ask) requires child ROWS for, not a nested document.
+--
+-- `today_menu` is a practical singleton — the retired code always operated
+-- on "the one document" via `findOne({})` with no filter, never a real
+-- uniqueness constraint. Application code preserves that exact convention
+-- (always the lowest/only id), so no artificial `CHECK (id = 1)` is added
+-- for a constraint the app never actually needed enforced at the DB level.
+CREATE TABLE IF NOT EXISTS today_menu (
+  id SERIAL PRIMARY KEY,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Temporary migration metadata only — see gallery_images.legacy_mongo_id's
+  -- comment for the exact rationale, identical here.
+  legacy_mongo_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_today_menu_legacy_mongo_id
+  ON today_menu(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+
+-- One row per published item. A REAL foreign key to menu_items (Step 5) —
+-- unlike the retired Mongo array, which could (and, prior to Phase 3A,
+-- silently did) hold an item id with no matching MenuItem, invisible only
+-- at READ time via a JS `.filter(Boolean)`. That's no longer representable
+-- here on purpose: `updateTodaysMenu`'s write path now resolves/validates
+-- ids BEFORE insert, so an unresolvable id is simply never written, instead
+-- of being written and then silently ignored later. Zero observable API
+-- difference (an unresolvable id was already invisible through every read
+-- endpoint before) — see the Phase 4 report's "Replacement semantics"
+-- section for the full reasoning.
+--
+-- `UNIQUE(today_menu_id, menu_item_id)`: the retired code's own read path
+-- (`Object.fromEntries(items.map(i => [i.id, i]))`) already collapsed
+-- duplicate ids in one publish to "last one wins" — this constraint plus a
+-- write-side dedup (same rule, keep the last occurrence) makes that
+-- pre-existing, already-observable behavior a real guarantee instead of an
+-- accident of `Object.fromEntries` key ordering.
+--
+-- `sort_order`: publish order is observably meaningful (both the staff
+-- dashboard's today's-items list and the public menu render in the order
+-- the API returns) — preserved explicitly rather than relying on insertion
+-- order, which SQL never guarantees on its own.
+CREATE TABLE IF NOT EXISTS today_menu_items (
+  id SERIAL PRIMARY KEY,
+  today_menu_id INTEGER NOT NULL REFERENCES today_menu(id) ON DELETE CASCADE,
+  menu_item_id INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+  available BOOLEAN NOT NULL DEFAULT false,
+  stock INTEGER NOT NULL DEFAULT 0,
+  daily_price NUMERIC(8,2) NOT NULL DEFAULT 0,
+  sort_order SMALLINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (today_menu_id, menu_item_id)
+);
+-- today_menu_id: every read (listMenu/getTodaysMenuConfig) fetches "this
+-- publish's items, in order" — the one real query pattern this table serves.
+CREATE INDEX IF NOT EXISTS idx_today_menu_items_today_menu_id ON today_menu_items(today_menu_id, sort_order);
+-- menu_item_id: backs deleteMenuItem's existing cross-table cleanup (remove
+-- this item's entry from today's published menu), now a real indexed
+-- lookup instead of an in-memory JS array filter.
+CREATE INDEX IF NOT EXISTS idx_today_menu_items_menu_item_id ON today_menu_items(menu_item_id);
+
+-- ============================================================================
+-- MongoDB cleanup, Phase 5 (final feature) — Order migrated to PostgreSQL
+-- ============================================================================
+--
+-- Direct relational translation of the retired MongoDB `Order` collection
+-- (see server/src/models/canteenOrderMongoLegacy.model.js, kept only for
+-- the one-time migration script / rollback reference). The real identity
+-- on an order is `user_id` (an integer FK to `users` — `req.user.id` from
+-- the JWT), NOT a mobile number; the retired schema never had a mobile
+-- number field. There is also no separate `cancelled_at` — the retired
+-- code stamps the SAME `completedAt` field for both 'Completed' and
+-- 'Cancelled' (any FINISHED_STATUSES transition), never a second column —
+-- preserved exactly as `completed_at`, not split into two.
+--
+-- `public_order_id` reuses the EXACT SAME `generatePublicId()` utility
+-- already used for `ground_bookings.public_booking_id` and
+-- `tournaments.public_tournament_id` (utils/publicId.js) — the retired
+-- Mongo-backed API exposed the raw Mongo `_id` hex string as `order.id`;
+-- exposing PostgreSQL's sequential integer PK the same way would leak
+-- internal row counts, so this app's own established pattern is reused
+-- instead of inventing a new one.
+CREATE TABLE IF NOT EXISTS orders (
+  id SERIAL PRIMARY KEY,
+  public_order_id VARCHAR(20) UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  customer_name VARCHAR(150) NOT NULL DEFAULT '',
+  seat_id VARCHAR(50) NOT NULL DEFAULT 'unknown',
+  total NUMERIC(10,2) NOT NULL,
+  -- The exact 6 values PRESET_STATUS already enforces for every new write
+  -- in the retired code (canteenOrder.controller.js) — legacy display-only
+  -- names ('Order Placed'/'Prepared'/'Ready for Pickup') are normalized via
+  -- LEGACY_STATUS_MAP at migration/write time, never stored verbatim (see
+  -- the migration script) — matching how normalizeOrder() already
+  -- transparently displays them as their current equivalents today.
+  status VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (status IN (
+    'Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled'
+  )),
+  -- Direct translation of the retired Mongo `hasActiveOrderFlag` field:
+  -- NULL (not false) while inactive, so the partial unique index below only
+  -- ever applies to genuinely active orders — an UPDATE to a terminal
+  -- status must explicitly SET this NULL, mirroring the retired code's
+  -- explicit Mongo `$unset` (its own comment there: "Mongoose does not
+  -- reliably translate doc.field = undefined into a real $unset on save()").
+  has_active_order_flag BOOLEAN,
+  ordered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  legacy_mongo_id TEXT
+);
+
+-- THE concurrency guarantee (Step 11/12) — direct translation of the proven
+-- MongoDB partial unique index `{userId, hasActiveOrderFlag}`. Two
+-- transactions concurrently inserting an active order for the same user_id
+-- cannot both commit; the loser gets a 23505 unique-violation error,
+-- translated to the same HTTP 409 the Mongo E11000 path already produced.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_per_user
+  ON orders(user_id) WHERE has_active_order_flag = true;
+-- order history / active-order lookup: "this user's orders, newest first"
+-- (getOrderHistory, lookupOrderByUser) and "this user's active order"
+-- (getActiveOrder) are both this exact shape.
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id, ordered_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_legacy_mongo_id
+  ON orders(legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;
+-- No separate index needed for public_order_id — the column's own
+-- `UNIQUE NOT NULL` constraint already creates one automatically.
+
+-- One row per ordered line item. `raw_item_id` is the AUTHORITATIVE,
+-- always-present identifier — exactly mirroring the retired schema's own
+-- `items[].id`/`.foodId` (plain, unconstrained Mongoose Strings, always
+-- kept equal to each other by normalizeItems()), because Order's own
+-- business rule (proven in Phase 3's test suite) is that it NEVER validates
+-- an item id against MenuItem, at creation or afterward — a fabricated id
+-- must remain fully representable. `menu_item_id` is a best-effort,
+-- OPTIONAL resolution of that same string against a real menu_items row
+-- (nullable — Step 15: historical orders must stay readable even if their
+-- MenuItem was later deleted, or never existed at all), useful only for
+-- analytics/future joins, never for display: `item_name`/`unit_price` are
+-- the permanent, authoritative snapshot and are NEVER re-derived from
+-- menu_items, even if the live price changes.
+CREATE TABLE IF NOT EXISTS order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  menu_item_id INTEGER REFERENCES menu_items(id) ON DELETE SET NULL,
+  raw_item_id TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  unit_price NUMERIC(8,2) NOT NULL,
+  quantity SMALLINT NOT NULL CHECK (quantity > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+
+-- ============================================================================
+-- Phase 8 — Ground + Canteen foundation (multi-ground architecture, Part 1)
+-- ============================================================================
+--
+-- Per the Phase 7 audit: introduces the two anchor tables the whole
+-- multi-ground design (§7-9 of that audit) hangs off — `grounds` as the
+-- primary tenancy boundary, `canteens` as the intermediate parent for the
+-- existing menu_items/today_menu/orders tables (still ungrounded this
+-- phase — deliberately out of scope, see the Phase 8 report). No other
+-- table gains a ground_id/canteen_id column yet.
+--
+-- `latitude`/`longitude` are plain NUMERIC, not PostGIS `geography` as
+-- Phase 7 recommended for the *ground-creation* moment: audited first, this
+-- Postgres host has no PostGIS extension available at all
+-- (`pg_available_extensions` has no `postgis` row) — not a "not yet
+-- installed," a hard environment constraint. Migrating a lat/lng pair to a
+-- geography column later is a small, self-contained change; blocking this
+-- phase on an extension this host cannot install would not be.
+--
+-- `status` defaults to 'DRAFT' at the schema level (a new ground, from a
+-- future onboarding flow, shouldn't appear live before review) — the one
+-- real ground this phase seeds is explicitly set to 'ACTIVE' at seed time,
+-- not by relying on this default.
+CREATE TABLE IF NOT EXISTS grounds (
+  id SERIAL PRIMARY KEY,
+  public_ground_id VARCHAR(20) UNIQUE NOT NULL,
+  slug VARCHAR(150) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL,
+  description VARCHAR(500),
+  address_line VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100) NOT NULL DEFAULT 'India',
+  postal_code VARCHAR(20),
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
+  phone VARCHAR(30),
+  email VARCHAR(150),
+  website TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'ACTIVE', 'SUSPENDED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- A ground may have more than one canteen (Phase 7 §9's stated reason for
+-- this table existing at all, instead of a flat `canteen_id`-free design) —
+-- deliberately no UNIQUE(ground_id) here.
+CREATE TABLE IF NOT EXISTS canteens (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  public_canteen_id VARCHAR(20) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL DEFAULT 'Main Canteen',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_canteens_ground_id ON canteens(ground_id);
+
+-- Phase 9 — ground-scoped authorization. A user's GLOBAL role (users.role /
+-- staff_role_id, unchanged) says what kind of account they have; a row here
+-- says what they're allowed to do AT A SPECIFIC GROUND. SUPER_ADMIN is
+-- deliberately NOT a value here — it stays the existing platform-wide
+-- staff_role_id=1 concept (Phase 7 §14/Step 14) and bypasses this table
+-- entirely in the authorization middleware, so a Super Admin is never forced
+-- to hold a membership row per ground.
+--
+-- Role is a plain CHECK-constrained VARCHAR, not a role_id FK into
+-- staff_roles: staff_roles is the GLOBAL staff sub-role lookup (super_admin/
+-- admin/canteen_staff, referenced by users.staff_role_id) and is a different
+-- concept from a ground-scoped role — reusing it would let a ground
+-- membership row claim 'super_admin', contradicting Step 14. A plain CHECK
+-- mirrors the existing grounds.status convention (this file, above) instead
+-- of introducing a second lookup-table pattern for what is still a small,
+-- fixed enum.
+--
+-- One row per (user, ground, role) — not one row per (user, ground) — so a
+-- single user can hold multiple roles at the same ground (e.g. OWNER and
+-- CANTEEN_STAFF) without a separate permissions/many-role structure.
+-- UNIQUE(user_id, ground_id, role) is the constraint that makes that legal
+-- while still rejecting an exact duplicate grant.
+--
+-- Revocation is is_active=false, never a DELETE — a past grant is
+-- authorization history, not disposable business data (Step 6/Step 7).
+-- ON DELETE CASCADE from users/grounds only removes the membership ROW
+-- itself if the user or ground is hard-deleted; it never reaches into any
+-- other table (orders, menu_items, etc. don't reference ground_users at
+-- all), so it cannot silently erase business data.
+CREATE TABLE IF NOT EXISTS ground_users (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL CHECK (role IN ('GROUND_OWNER', 'GROUND_ADMIN', 'CANTEEN_STAFF', 'UMPIRE', 'SCORER')),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, ground_id, role)
+);
+-- ============================================================================
+-- Phase 10 — canteen data tenancy (menu_items/today_menu/orders)
+-- ============================================================================
+--
+-- Ownership chain per Step 2: each table gets its OWN canteen_id, not a
+-- ground_id — canteens.ground_id (above) already establishes
+-- resource -> canteen -> ground, so a parallel ground_id here would be
+-- denormalized state that could drift from canteen_id's own ground.
+-- order_items deliberately does NOT get canteen_id (Step 6): its ownership
+-- chain is order_item -> order -> canteen, avoiding a third redundant
+-- tenancy column on the highest-row-count table in the schema.
+--
+-- Columns are added nullable, backfilled, THEN set NOT NULL in the same
+-- statement batch (migrate.js applies this whole file as one multi-statement
+-- query, which Postgres runs as one implicit transaction — see the Phase 10
+-- report's "Migration strategy" section) — safe to re-run: ADD COLUMN IF NOT
+-- EXISTS/the backfill's WHERE canteen_id IS NULL/SET NOT NULL are all no-ops
+-- once already applied.
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+ALTER TABLE today_menu ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS canteen_id INTEGER REFERENCES canteens(id);
+
+-- Backfill: every pre-Phase-10 row belongs to the single canteen Phase 8
+-- seeded — there is no other candidate canteen in this database, so this is
+-- a confident assignment (Phase 10 report's Pre-Implementation Audit), not
+-- an invented default. A future multi-canteen environment never reaches
+-- this UPDATE again (WHERE canteen_id IS NULL matches nothing once
+-- backfilled), so it can never mis-assign a genuinely new canteen's rows.
+UPDATE menu_items SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+UPDATE today_menu SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+UPDATE orders SET canteen_id = (SELECT id FROM canteens ORDER BY id LIMIT 1) WHERE canteen_id IS NULL;
+
+ALTER TABLE menu_items ALTER COLUMN canteen_id SET NOT NULL;
+-- today_menu: one row PER CANTEEN now (was a global singleton pre-Phase-10,
+-- "the" row found via ORDER BY id LIMIT 1 with no filter) — UNIQUE enforces
+-- that a canteen can never accumulate two "today" rows, exactly preserving
+-- the old singleton guarantee, just scoped per-tenant instead of globally.
+ALTER TABLE today_menu ALTER COLUMN canteen_id SET NOT NULL;
+ALTER TABLE orders ALTER COLUMN canteen_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_menu_items_canteen_id ON menu_items(canteen_id);
+-- CREATE UNIQUE INDEX (not a named ADD CONSTRAINT — Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS", which would break this file's established
+-- re-run-safe idempotency) doubling as the exact index "today_menu WHERE
+-- canteen_id = ?" needs — no separate plain index required.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_today_menu_canteen_id ON today_menu(canteen_id);
+
+-- Step 12 — the active-order guarantee moves from GLOBAL-per-user to
+-- PER-CANTEEN-per-user: the same person may hold one active order at Ground
+-- A's canteen AND a separate active order at Ground B's canteen
+-- simultaneously, but never two active orders at the SAME canteen. Replaces
+-- (not narrows past correctness of) the Phase 5 global partial unique index.
+DROP INDEX IF EXISTS idx_orders_one_active_per_user;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_per_canteen_user
+  ON orders(canteen_id, user_id) WHERE has_active_order_flag = true;
+-- Step 10/11 — order history ("this user's orders at this canteen, newest
+-- first") and active-order lookup pre-checks are both this exact shape;
+-- (canteen_id, user_id) as leading columns also serves a bare
+-- "WHERE canteen_id = ?" staff order-list query via prefix match, so this
+-- replaces (not supplements) the old global idx_orders_user_id — under the
+-- new tenancy model "all of a user's orders regardless of canteen" is no
+-- longer a real query pattern (Step 11 canteen-scopes order history).
+DROP INDEX IF EXISTS idx_orders_user_id;
+CREATE INDEX IF NOT EXISTS idx_orders_canteen_user ON orders(canteen_id, user_id, ordered_at DESC);
+
+-- UNIQUE(user_id, ground_id, role) above already gives a btree index whose
+-- leading columns (user_id) and leading pair (user_id, ground_id) cover the
+-- two most common authorization checks ("this user, this ground" and "all of
+-- this user's memberships") for free. The one query shape it can't serve —
+-- "everyone active at this ground" (e.g. a future owner-dashboard staff
+-- list), which filters on ground_id without user_id — needs its own index,
+-- same reasoning as idx_canteens_ground_id above.
+CREATE INDEX IF NOT EXISTS idx_ground_users_ground_id ON ground_users(ground_id);
+
+-- ============================================================================
+-- Phase 12 — ground discovery / public ground profile foundation
+-- ============================================================================
+--
+-- ground_photos and amenities were global, ground-less tables (same
+-- situation Phase 10 found for menu_items/today_menu/orders pre-tenancy).
+-- The public ground profile (Step 14/15/16) requires an explicit ground
+-- boundary on these queries — "never SELECT all photos" — so they get the
+-- exact same nullable -> backfill -> NOT NULL treatment Phase 10 used for
+-- canteen_id, backfilled to the single existing ground (the only candidate
+-- in this database — a confident assignment, not an invented default,
+-- verified via direct query before writing this migration).
+--
+-- gallery_images is deliberately NOT touched here — Phase 12's brief
+-- explicitly forbids silently redesigning it this phase; it stays a global
+-- table and is omitted (not guessed at) from the public ground profile
+-- response until a future phase gives it a real ground relationship.
+ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+ALTER TABLE amenities ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+
+UPDATE ground_photos SET ground_id = (SELECT id FROM grounds ORDER BY id LIMIT 1) WHERE ground_id IS NULL;
+UPDATE amenities SET ground_id = (SELECT id FROM grounds ORDER BY id LIMIT 1) WHERE ground_id IS NULL;
+
+ALTER TABLE ground_photos ALTER COLUMN ground_id SET NOT NULL;
+ALTER TABLE amenities ALTER COLUMN ground_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_ground_photos_ground_id ON ground_photos(ground_id);
+CREATE INDEX IF NOT EXISTS idx_amenities_ground_id ON amenities(ground_id);
+
+-- Step 20 — status/public_ground_id/slug already have indexes (status has
+-- none yet; public_ground_id and slug are UNIQUE, which is itself a btree
+-- index). The nearby-search query filters on status = 'ACTIVE' AND
+-- latitude/longitude IS NOT NULL before computing distance — with grounds
+-- still numbering in the single digits, Postgres correctly prefers a Seq
+-- Scan over any index here (see Phase 12 report's EXPLAIN section), so a
+-- status index would sit unused today. It is cheap, safe, and exactly the
+-- column the discovery query filters on first, so it's added now rather
+-- than deferred — unlike latitude/longitude, which Step 20 explicitly says
+-- NOT to index with a plain B-tree (that isn't equivalent to a spatial
+-- index and would be actively misleading to add without PostGIS).
+CREATE INDEX IF NOT EXISTS idx_grounds_status ON grounds(status);
+
+-- ============================================================================
+-- PHASE 21 — Umpire Network & Match Officiating (U1: Database Foundation)
+-- ============================================================================
+--
+-- Ground-owner "which matches are at my ground" and match-scoped umpire
+-- assignment both need a real ground<->match link, which has never existed
+-- (venue was always free text). Nullable and backward-compatible: every
+-- match created before this phase simply has ground_id = NULL and is
+-- invisible to any ground-owner query — the Phase 0 audit found no reliable
+-- way to infer which existing match belongs to which ground, so none are
+-- backfilled.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS required_umpires SMALLINT NOT NULL DEFAULT 0 CHECK (required_umpires >= 0);
+CREATE INDEX IF NOT EXISTS idx_matches_ground_id ON matches(ground_id) WHERE ground_id IS NOT NULL;
+
+-- One row PER SLOT, not a counter column (Phase 0 plan's approved Decision
+-- 3): with exactly `required_umpires` rows pre-created per match, claiming a
+-- slot is a single atomic `UPDATE ... WHERE status = 'AVAILABLE' RETURNING
+-- *`, so over-allocation is structurally impossible — there are only ever N
+-- rows to claim — rather than relying on a counted aggregate, which a plain
+-- CHECK constraint can't express across rows anyway. The assignment/claim
+-- endpoint itself is U3, not this phase; this table only lays the
+-- foundation it will claim rows from.
+CREATE TABLE IF NOT EXISTS match_umpire_slots (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  slot_number SMALLINT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
+    CHECK (status IN ('AVAILABLE', 'ASSIGNED', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  assigned_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  cancellation_reason VARCHAR(280),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (match_id, slot_number)
+);
+-- Decision 3's second guarantee ("same umpire cannot hold duplicate active
+-- assignments for the same match") — a PARTIAL unique index rather than a
+-- table-level UNIQUE(match_id, umpire_user_id), since umpire_user_id must
+-- stay reusable across a match's CANCELLED/COMPLETED history rows once a
+-- slot has passed through more than one umpire over time.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_match_umpire_slots_active_umpire
+  ON match_umpire_slots(match_id, umpire_user_id) WHERE status = 'ASSIGNED';
+-- "My Assignments" (an umpire's own slots, across every match) filters on
+-- umpire_user_id without match_id — UNIQUE(match_id, slot_number) above only
+-- indexes match_id first, so this query shape needs its own index (same
+-- reasoning as idx_ground_users_ground_id elsewhere in this file).
+CREATE INDEX IF NOT EXISTS idx_match_umpire_slots_umpire_user_id
+  ON match_umpire_slots(umpire_user_id) WHERE umpire_user_id IS NOT NULL;
+
+-- Umpire-specific extended profile — never duplicates users/players (name,
+-- email, photo already live there). user_id IS the primary key: a true 1:1,
+-- created lazily (on umpire-request approval or first slot claim, both a
+-- later phase) rather than backfilled for every existing user.
+CREATE TABLE IF NOT EXISTS umpire_profiles (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  bio VARCHAR(500),
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  matches_officiated INTEGER NOT NULL DEFAULT 0,
+  matches_cancelled INTEGER NOT NULL DEFAULT 0,
+  matches_no_show INTEGER NOT NULL DEFAULT 0,
+  rating_avg NUMERIC(3,2) CHECK (rating_avg BETWEEN 0 AND 5),
+  rating_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Approved Decision 4 — one row per (match, participant), not three separate
+-- Ground/Umpire/LOC tables: it's naturally a single progressive submission,
+-- and one UNIQUE constraint enforces "once per match per person" instead of
+-- three. umpire_user_id/umpire_* stay NULL when the match had no assigned
+-- umpire (required_umpires can be 0). No ground_id column here — a ground's
+-- aggregate rating is computed by joining through matches.ground_id,
+-- avoiding a second column that could drift from it. Eligibility ("did this
+-- user actually play in this match") is enforced by application code against
+-- the existing match_players relationship, not by anything in this table.
+CREATE TABLE IF NOT EXISTS match_feedback (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  submitted_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ground_rating SMALLINT NOT NULL CHECK (ground_rating BETWEEN 1 AND 5),
+  ground_comment_liked VARCHAR(500),
+  ground_comment_improve VARCHAR(500),
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  umpire_rating SMALLINT CHECK (umpire_rating BETWEEN 1 AND 5),
+  umpire_comment_liked VARCHAR(500),
+  umpire_comment_improve VARCHAR(500),
+  app_rating SMALLINT NOT NULL CHECK (app_rating BETWEEN 1 AND 5),
+  app_comment VARCHAR(500),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (match_id, submitted_by)
+);
+-- (idx_match_feedback_umpire_user_id, the original index on this table's
+-- since-removed umpire_user_id column, was dropped in Phase 22/U6 below —
+-- removed from here too, not just left dangling, since re-running this
+-- CREATE INDEX against a column Phase 22 has since dropped would break a
+-- fresh migrate on an already-migrated database.)
+
+-- Cached aggregates, recomputed from match_feedback (joined through
+-- matches.ground_id) by application code once feedback submission exists
+-- (a later phase) — never written here. rating_count = 0 / rating_avg = NULL
+-- means "no reviews yet", the same honest-absence convention GroundCard has
+-- followed throughout this project rather than a placeholder value.
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS rating_avg NUMERIC(3,2) CHECK (rating_avg BETWEEN 0 AND 5);
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS rating_count INTEGER NOT NULL DEFAULT 0;
+
+-- Notifications need to reference the umpire's match, not a booking —
+-- related_match_id is a new, separate nullable FK mirroring the existing
+-- related_booking_id column rather than overloading it. Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS" (established at Phase 10 above), so the
+-- type CHECK is widened the same idempotent drop-then-add way the
+-- ground_audit_log FK was fixed earlier in this file.
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_match_id INTEGER REFERENCES matches(id) ON DELETE CASCADE;
+-- ground_notifications_type_check: this phase's widening (previously its
+-- own DROP+ADD block here) is now part of ONE consolidated block near the
+-- end of this file — search "Consolidated ground_notifications_type_check".
+-- Keeping N separate historical DROP+ADD blocks broke `db:migrate` on any
+-- re-run against a populated DB: migrate.js replays the WHOLE file every
+-- time (not just once on a fresh DB), so an earlier, narrower block would
+-- fail the moment the live data contained a type only a LATER block allowed.
+
+-- ============================================================================
+-- PHASE 22 (U6) — Feedback & Rating System
+-- ============================================================================
+--
+-- match_feedback stays the single "one row per (match, submitted_by)"
+-- submission shell (U1's own design, unchanged) for the two categories that
+-- really are 1:1 with a submission — Ground and LOC/App. Both rating
+-- columns become nullable: U6's eligibility model means not every eligible
+-- submitter is eligible for every category (a Ground Owner reviewing their
+-- own ground would be a self-rating loophole, so they submit Umpire+App
+-- only), so "every category populated" can no longer be assumed the way
+-- the original NOT NULL implied.
+ALTER TABLE match_feedback ALTER COLUMN ground_rating DROP NOT NULL;
+ALTER TABLE match_feedback ALTER COLUMN app_rating DROP NOT NULL;
+
+-- app_comment -> app_comment_liked (symmetry with ground_comment_liked/
+-- umpire_comment_liked — this category never had a "what improved" field,
+-- unlike the other two) + a new app_comment_improve. Renamed rather than
+-- left as a lone oddly-named column — safe because this feature has not
+-- shipped yet (no real rows depend on the old name).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'match_feedback' AND column_name = 'app_comment')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'match_feedback' AND column_name = 'app_comment_liked') THEN
+    ALTER TABLE match_feedback RENAME COLUMN app_comment TO app_comment_liked;
+  END IF;
+END $$;
+ALTER TABLE match_feedback ADD COLUMN IF NOT EXISTS app_comment_improve VARCHAR(500);
+-- One structured field for "which LOC feature did you like most" — a fixed,
+-- small taxonomy validated at the service layer (app.controller-level list,
+-- not a DB CHECK/enum — matches this schema's existing convention of plain
+-- VARCHAR + application validation for small option sets, e.g.
+-- umpire_requests.status). Free text stays covered by app_comment_liked/
+-- app_comment_improve; this is additive, not a replacement.
+ALTER TABLE match_feedback ADD COLUMN IF NOT EXISTS app_feature_liked VARCHAR(50);
+
+-- The one real schema gap U1 flagged for a future phase to resolve: a match
+-- can have more than one assigned umpire (required_umpires, U1/U3), but the
+-- old umpire_user_id/umpire_rating/umpire_comment_* columns on
+-- match_feedback could only ever hold ONE. Rather than force multiple
+-- match_feedback rows per submitter (destroying the UNIQUE(match_id,
+-- submitted_by) "one submission" rule) or cram an array into one column,
+-- per-umpire ratings are normalized into their own child table — the same
+-- one-row-per-relationship principle match_umpire_slots already established
+-- for "more than one umpire on a match". match_feedback remains the single
+-- submission shell; this table is the one-to-many part of it.
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_user_id;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_rating;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_comment_liked;
+ALTER TABLE match_feedback DROP COLUMN IF EXISTS umpire_comment_improve;
+DROP INDEX IF EXISTS idx_match_feedback_umpire_user_id;
+
+CREATE TABLE IF NOT EXISTS match_feedback_umpire_ratings (
+  id SERIAL PRIMARY KEY,
+  match_feedback_id INTEGER NOT NULL REFERENCES match_feedback(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment_liked VARCHAR(500),
+  comment_improve VARCHAR(500),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- The same submitter can rate two different assigned umpires within one
+  -- submission, but never the same umpire twice.
+  UNIQUE (match_feedback_id, umpire_user_id)
+);
+-- recalculateUmpireRating(umpireUserId)'s query shape: "every rating for
+-- this umpire, across every submission" — filters on umpire_user_id alone.
+CREATE INDEX IF NOT EXISTS idx_match_feedback_umpire_ratings_umpire ON match_feedback_umpire_ratings(umpire_user_id);
+
+-- ============================================================================
+-- Ground Owner match lifecycle + umpire staffing notifications
+-- ============================================================================
+--
+-- Three new notification types, same idempotent drop-then-add widening of
+-- ground_notifications_type_check already used once above (Phase 21):
+-- UMPIRE_SLOTS_FULLY_STAFFED (distinct from UMPIRE_SLOT_ASSIGNED — fires
+-- once, only when the assignment that just landed brought a match to
+-- fully-staffed, not on every assignment), MATCH_STARTING and
+-- MATCH_COMPLETED (a Ground-Owner-controlled lifecycle action notifying the
+-- assigned umpire — no existing type covers either).
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
+
+-- ============================================================================
+-- PHASE 23 — Umpire Operations 2.0 (availability, assignment history,
+-- check-in, no-show/replacement, incidents, reminders)
+-- ============================================================================
+--
+-- Availability calendar. No rows for a given umpire = fully available (the
+-- same honest-absence default umpire_profiles.is_available already implies,
+-- and the only state every umpire is in before this phase ships — zero
+-- regression risk for existing assignment-claiming tests). A date-specific
+-- override always wins over the weekly rule for that date. One row per
+-- (umpire, date) — a single window per date, matching every example in the
+-- spec; loosening to multiple windows per date later is additive, not a
+-- breaking change, so it isn't built now.
+CREATE TABLE IF NOT EXISTS umpire_weekly_availability (
+  id SERIAL PRIMARY KEY,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday .. 6=Saturday
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE (umpire_user_id, day_of_week)
+);
+CREATE TABLE IF NOT EXISTS umpire_date_availability (
+  id SERIAL PRIMARY KEY,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  specific_date DATE NOT NULL,
+  start_time TIME,
+  end_time TIME,
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (umpire_user_id, specific_date)
+);
+
+-- Append-only assignment event log — the actual source of truth for
+-- replacement history and per-umpire no-show/cancellation counts.
+-- match_umpire_slots only ever holds CURRENT per-slot state: a CANCELLED or
+-- NO_SHOW slot can be reclaimed by a *different* umpire (the same atomic-
+-- claim mechanism U3 already uses for CANCELLED rows), which silently
+-- overwrites umpire_user_id on that row. Without this table, the umpire who
+-- no-showed or cancelled would lose that history the instant someone else
+-- takes the slot. umpire_user_id/recorded_by use ON DELETE SET NULL (not
+-- CASCADE) — matching match_umpire_slots.umpire_user_id's own precedent —
+-- so history survives a user row being removed instead of vanishing with it.
+CREATE TABLE IF NOT EXISTS umpire_assignment_events (
+  id SERIAL PRIMARY KEY,
+  match_umpire_slot_id INTEGER NOT NULL REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(24) NOT NULL
+    CHECK (event_type IN ('ASSIGNED', 'CANCELLED', 'NO_SHOW', 'REPLACEMENT_ASSIGNED', 'COMPLETED')),
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_umpire_assignment_events_umpire ON umpire_assignment_events(umpire_user_id);
+CREATE INDEX IF NOT EXISTS idx_umpire_assignment_events_match ON umpire_assignment_events(match_id);
+
+-- Match-operational incident log (rain, injury, bad light, etc.) — reported
+-- by the assigned umpire, visible to the umpire and the match's ground
+-- owner. Not a generic issue tracker: always tied to exactly one match, one
+-- reporter, one timestamp.
+CREATE TABLE IF NOT EXISTS match_incidents (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  reported_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  incident_type VARCHAR(30) NOT NULL
+    CHECK (incident_type IN ('RAIN', 'INJURY', 'BAD_LIGHT', 'GROUND_CONDITION', 'PLAYER_MISCONDUCT',
+                              'EQUIPMENT_ISSUE', 'TECHNICAL_PROBLEM', 'MATCH_ABANDONED', 'OTHER')),
+  description VARCHAR(500),
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_match_incidents_match ON match_incidents(match_id);
+
+-- Pre-match checklist — persisted per (match, umpire), not localStorage, so
+-- it survives a refresh/device change and belongs to the real assignment.
+-- Fixed item taxonomy validated at the service layer (same small-option-set
+-- convention as app_feature_liked/umpire_requests.status elsewhere in this
+-- file), not a second CHECK-driven enum table.
+CREATE TABLE IF NOT EXISTS umpire_match_checklist_items (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item_key VARCHAR(40) NOT NULL,
+  is_checked BOOLEAN NOT NULL DEFAULT false,
+  checked_at TIMESTAMPTZ,
+  UNIQUE (match_id, umpire_user_id, item_key)
+);
+
+-- Check-in — columns directly on the assignment row rather than a new
+-- table: match + umpire + assignment are already exactly what a
+-- match_umpire_slots row identifies, so a check-in is just three more facts
+-- about that same row, not a separate entity.
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ;
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS check_in_latitude NUMERIC(9,6);
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS check_in_longitude NUMERIC(9,6);
+
+-- 7 new notification types for the operational events this phase adds.
+-- BOOKING_REMINDER (existing, still unused) is a ground-booking-domain type
+-- and is deliberately not repurposed for umpire assignment reminders — a
+-- different domain sharing one string would make dedup/filtering ambiguous.
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
+
+-- Dedup backstop for the reminder poller (server/src/services/
+-- reminderScheduler.service.js): a partial unique index, not just a
+-- check-then-insert in application code, so a duplicate reminder can never
+-- land even under overlapping poll ticks — same "let the DB be the real
+-- guarantee" approach as idx_match_umpire_slots_active_umpire above.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ground_notifications_reminder_dedup
+  ON ground_notifications(user_id, type, related_match_id)
+  WHERE type IN ('UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M');
+
+-- One-time backfill: nothing has ever written match_umpire_slots.status =
+-- 'COMPLETED' (getUmpireStats has always read status IN ('ASSIGNED',
+-- 'COMPLETED') specifically because of this gap). Without this, every match
+-- that completed before this phase shipped would permanently show 0
+-- officiated matches for real work already done, since nothing retroactively
+-- revisits an ASSIGNED row once a match moves on. Idempotent — only touches
+-- rows still stuck at ASSIGNED on an already-completed/finalized match, so
+-- re-running this file is a no-op the second time.
+UPDATE match_umpire_slots
+  SET status = 'COMPLETED', completed_at = COALESCE(completed_at, NOW())
+  WHERE status = 'ASSIGNED'
+    AND match_id IN (SELECT id FROM matches WHERE status IN ('completed', 'finalized'));
+
+-- ============================================================================
+-- Umpire Communication & Commercial 2.0
+-- ============================================================================
+--
+-- Match-scoped communication. One table serves both "announcements" and
+-- "chat" (an announcement is just a message) — building two parallel
+-- systems for the same shape would be pure duplication. sender_role is
+-- snapshotted at send time (not re-derived from current ground_users/
+-- match_umpire_slots state on every read) so a message's displayed
+-- attribution stays correct even after a replacement umpire takes over the
+-- slot the original sender held.
+CREATE TABLE IF NOT EXISTS match_messages (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sender_role VARCHAR(20) NOT NULL CHECK (sender_role IN ('GROUND_OWNER', 'UMPIRE')),
+  body VARCHAR(1000) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_match_messages_match ON match_messages(match_id, created_at);
+
+-- One new notification type for match messages — same idempotent
+-- drop-then-add widening used 3 times already above.
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
+
+-- Umpire fee — per-umpire (confirmed with the product owner; no existing
+-- precedent anywhere in LOC to infer this from). Nullable: no fee set yet
+-- is a real, honest state ("not configured"), never displayed as ₹0.
+-- NUMERIC(10,2), matching the exact monetary convention already established
+-- by menu_items.price/orders.total (real currency, never FLOAT) — not an
+-- integer-minor-units convention this codebase has never used anywhere.
+-- Set/updated only by the owning Ground Owner and, per Workstream R,
+-- rejected by the service layer once the match is completed/finalized (no
+-- DB-level immutability trigger — every other write-time business rule in
+-- this schema is enforced the same way, in the service layer).
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_amount NUMERIC(10,2);
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_currency VARCHAR(3) NOT NULL DEFAULT 'INR';
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_set_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS umpire_fee_updated_at TIMESTAMPTZ;
+
+-- Umpire earnings — one row per umpire who actually COMPLETED a slot on a
+-- match that had a fee set at completion time. UNIQUE(match_umpire_slot_id)
+-- is what makes "no duplicate earning for the same completed assignment" a
+-- DB guarantee, not just application discipline (same posture as the
+-- reminder dedup index above). A slot that went NO_SHOW then got
+-- reassigned and completed by a replacement has exactly one
+-- match_umpire_slots row throughout — its current umpire_user_id at
+-- completion time is whoever actually finished the match, so this table
+-- naturally never credits a no-show umpire without any special-case code.
+CREATE TABLE IF NOT EXISTS umpire_earnings (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  match_umpire_slot_id INTEGER NOT NULL UNIQUE REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'APPROVED', 'PAID', 'FAILED', 'CANCELLED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_umpire_earnings_umpire ON umpire_earnings(umpire_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_umpire_earnings_match ON umpire_earnings(match_id);
+
+-- ============================================================================
+-- Umpire Intelligence & Scale 2.0
+-- ============================================================================
+--
+-- ai_insights.source_type widened to add 'UMPIRE' — reuses the existing
+-- Player/Team insight machinery exactly (PERSON_INSIGHT_SCHEMA, same
+-- ai_insights row shape), no new table. Idempotent drop-then-add, same
+-- pattern already used repeatedly for ground_notifications_type_check.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ai_insights' AND constraint_name = 'ai_insights_source_type_check'
+  ) THEN
+    ALTER TABLE ai_insights DROP CONSTRAINT ai_insights_source_type_check;
+  END IF;
+END $$;
+ALTER TABLE ai_insights ADD CONSTRAINT ai_insights_source_type_check
+  CHECK (source_type IN ('MATCH', 'PLAYER', 'TEAM', 'UMPIRE'));
+
+-- ============================================================================
+-- Umpire Proposals — "Browse Umpires" + incentive/bonus offers
+-- ============================================================================
+--
+-- A Ground Owner can proactively invite a specific (or several) approved
+-- umpire(s) to an OPEN slot (never a NO_SHOW slot — that stays the existing,
+-- separate assignReplacementUmpire flow), optionally offering a bonus on top
+-- of the match's base fee. Multiple simultaneous proposals per slot are
+-- allowed (confirmed product decision) — first to accept wins, every other
+-- pending proposal for that slot then expires. The bonus is private to the
+-- umpire(s) it's offered to, never surfaced on any public listing.
+--
+-- incentive_amount lives on the SLOT (not just the proposal row) because
+-- it's the actual commercial commitment once accepted — ensureEarningRecordsForMatch
+-- reads it directly from here, the same way it already reads the match's
+-- base fee, rather than joining back into the proposals table at earning-
+-- creation time. A slot must never inherit a stale bonus from a previous
+-- occupant, so every UPDATE that assigns a NEW umpire to a slot (self-apply,
+-- ground-owner replacement, or proposal acceptance) explicitly sets this
+-- column — either to 0 or to the accepted proposal's own amount.
+ALTER TABLE match_umpire_slots ADD COLUMN IF NOT EXISTS incentive_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS umpire_proposals (
+  id SERIAL PRIMARY KEY,
+  match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  match_umpire_slot_id INTEGER NOT NULL REFERENCES match_umpire_slots(id) ON DELETE CASCADE,
+  proposed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  umpire_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  incentive_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (incentive_amount >= 0),
+  currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+  message VARCHAR(280),
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED', 'EXPIRED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  responded_at TIMESTAMPTZ
+);
+-- One PENDING offer per (slot, umpire) at a time — a new one can be sent
+-- after the previous one is declined/expired/cancelled (all terminal, so
+-- the partial index only ever guards the live PENDING state).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_umpire_proposals_pending_unique
+  ON umpire_proposals(match_umpire_slot_id, umpire_user_id) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_umpire_proposals_umpire ON umpire_proposals(umpire_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_umpire_proposals_slot ON umpire_proposals(match_umpire_slot_id, status);
+
+-- 5 new notification types — same idempotent drop-then-add widening used
+-- repeatedly above.
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
+
+-- ============================================================================
+-- PHASE 3 — Unified OTP authentication (email OR phone, no password required)
+-- ============================================================================
+
+-- A user can now be identified by phone alone (no email yet) or, going the
+-- other direction, exist with only an email and no phone — both must be
+-- optional at the column level, with a CHECK guaranteeing at least one is
+-- present. password_hash becomes optional too: an OTP-only signup never sets
+-- a password. None of this affects the 90 existing rows (all already have
+-- both email and password_hash set) — every ALTER here only relaxes a
+-- constraint or adds a nullable/defaulted column, never removes data.
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20) UNIQUE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'users' AND constraint_name = 'users_email_or_phone_present'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_email_or_phone_present;
+  END IF;
+END $$;
+ALTER TABLE users ADD CONSTRAINT users_email_or_phone_present CHECK (email IS NOT NULL OR phone IS NOT NULL);
+
+-- Account status — server-side source of truth for whether a user may
+-- authenticate at all, independent of role. Every existing row defaults to
+-- 'ACTIVE' (zero behavior change for the 90 existing accounts).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'users' AND constraint_name = 'users_status_check'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_status_check;
+  END IF;
+END $$;
+ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DISABLED', 'PENDING'));
+
+-- One row per OTP issued. Never stores the raw code — otp_hash only. status
+-- is the OTP's own lifecycle (independent of whether it was ever delivered
+-- successfully), not the user's account status above. purpose exists so an
+-- OTP issued for one purpose (LOGIN today; e.g. a future PHONE_VERIFY or
+-- PASSWORD_RESET) can never be replayed to satisfy a different one.
+-- otp_hash is nullable: when `provider = 'TWILIO_VERIFY'`, Twilio's Verify
+-- API owns the actual code/verification state remotely (see
+-- services/otpProviders/twilioProvider.js) — this row exists only for local
+-- rate-limiting/audit bookkeeping, not as a second source of verification
+-- truth. Every other provider (SendGrid, console) is a "dumb" delivery
+-- channel for a code LOC itself generates, hashes, and stores here.
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id BIGSERIAL PRIMARY KEY,
+  identifier VARCHAR(150) NOT NULL,
+  identifier_type VARCHAR(10) NOT NULL CHECK (identifier_type IN ('EMAIL', 'PHONE')),
+  purpose VARCHAR(20) NOT NULL DEFAULT 'LOGIN' CHECK (purpose IN ('LOGIN')),
+  provider VARCHAR(20) NOT NULL DEFAULT 'CONSOLE' CHECK (provider IN ('CONSOLE', 'TWILIO_VERIFY', 'SENDGRID')),
+  otp_hash TEXT,
+  status VARCHAR(10) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'VERIFIED', 'EXPIRED', 'LOCKED')),
+  attempts SMALLINT NOT NULL DEFAULT 0,
+  max_attempts SMALLINT NOT NULL DEFAULT 5,
+  expires_at TIMESTAMPTZ NOT NULL,
+  verified_at TIMESTAMPTZ,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- The one query the whole OTP flow hinges on: "find the current live OTP for
+-- this identifier+purpose" (to verify against, invalidate, or rate-limit
+-- new requests). PENDING-only partial index keeps it small regardless of
+-- how many historical (verified/expired) rows accumulate.
+-- These two existed from the first pass of this Phase and are widened here
+-- idempotently, same pattern as every other ALTER in this file.
+ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS provider VARCHAR(20) NOT NULL DEFAULT 'CONSOLE';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_provider_check'
+  ) THEN
+    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_provider_check;
+  END IF;
+END $$;
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_provider_check CHECK (provider IN ('CONSOLE', 'TWILIO_VERIFY', 'SENDGRID'));
+ALTER TABLE otp_codes ALTER COLUMN otp_hash DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_otp_codes_identifier_purpose_pending
+  ON otp_codes(identifier, purpose) WHERE status = 'PENDING';
+-- Identifier-scoped rate limiting (requests-per-hour) needs all recent rows
+-- for that identifier regardless of status, not just the pending one.
+CREATE INDEX IF NOT EXISTS idx_otp_codes_identifier_created ON otp_codes(identifier, created_at);
+
+-- One row per active (or once-active) server-side session. token_hash is a
+-- SHA-256 digest of the random session token the client's cookie actually
+-- holds — the raw token itself is never written to the database, matching
+-- how password_hash never stores a raw password.
+CREATE TABLE IF NOT EXISTS sessions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(64) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ,
+  ip_address VARCHAR(45),
+  user_agent TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+-- ============================================================================
+-- PHASE 4 — Account creation & onboarding
+-- ============================================================================
+
+-- Widen otp_codes for registration flows (Player/Umpire self-registration
+-- collects `name` before the identifier is verified) — additive only, the 2
+-- existing rows from Phase 3 are untouched (metadata defaults NULL, purpose
+-- stays 'LOGIN').
+--
+-- Bug found and fixed here (New Signup Flow task) — same class of bug as
+-- account_audit_log_event_type_check's own fix further down this file (see
+-- that comment for the full mechanism): this block's DROP+ADD used to
+-- re-narrow otp_codes_purpose_check to just these 3 values on every re-run
+-- of schema.sql, which silently broke the moment real 'PASSWORD_RESET' rows
+-- existed (Auth Enhancement task) — the ADD CONSTRAINT here would fail
+-- immediately against that live data, aborting migrate.js before it ever
+-- reached the later block(s) that re-widen correctly. Fixed by dropping the
+-- redundant intermediate DROP+ADD entirely; the widening further down this
+-- file already derives the fully correct, current constraint from scratch,
+-- so removing this one changes nothing about the final state on any
+-- database. metadata's own ADD COLUMN IF NOT EXISTS is unrelated and stays.
+ALTER TABLE otp_codes ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+-- Ground Owner registration request — decoupled from `grounds`/`ground_users`
+-- entirely until approved. A pending/rejected/under-review applicant has NO
+-- row in either of those tables and therefore no ownership of anything; see
+-- services/groundOwnerRequest.service.js#approveRequest for the transaction
+-- that creates them together only on approval. status is never writable by
+-- the client — only the approve/reject/request-information endpoints (all
+-- super_admin-only) change it.
+CREATE TABLE IF NOT EXISTS ground_owner_requests (
+  id SERIAL PRIMARY KEY,
+  public_request_id VARCHAR(20) UNIQUE NOT NULL,
+  applicant_name VARCHAR(100) NOT NULL,
+  applicant_email VARCHAR(150),
+  applicant_phone VARCHAR(20),
+  ground_name VARCHAR(150) NOT NULL,
+  ground_description VARCHAR(500),
+  address_line VARCHAR(255) NOT NULL,
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NOT NULL,
+  country VARCHAR(100) NOT NULL DEFAULT 'India',
+  postal_code VARCHAR(20),
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
+  ground_phone VARCHAR(30) NOT NULL,
+  ground_email VARCHAR(150),
+  ground_website TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'PENDING'
+    CHECK (status IN ('PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'MORE_INFORMATION_REQUIRED')),
+  rejection_reason VARCHAR(500),
+  more_info_notes VARCHAR(500),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_ground_id INTEGER REFERENCES grounds(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT ground_owner_requests_applicant_identifier_present CHECK (applicant_email IS NOT NULL OR applicant_phone IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_ground_owner_requests_status ON ground_owner_requests(status, created_at DESC);
+
+-- Ground Registration feature — additive columns on the existing request
+-- table (no new "registration" table; ground_owner_requests already *is*
+-- the registration entity — see groundOwnerRequest.service.js).
+-- submitted_by_user_id is set only for the authenticated submission path
+-- (POST /grounds) and is what "My Ground Registrations" / resubmit
+-- ownership checks key off — deliberately NOT matched by applicant_email/
+-- applicant_phone string equality, which would be both fragile (a typo'd
+-- contact value) and occasionally wrong (two different accounts sharing a
+-- contact string). NULL for the older, fully-anonymous POST
+-- /ground-owner-requests path, which has no session to attribute to.
+-- terms_agreed_at is the audit trail proving agreement was captured at
+-- submission time — the boolean itself is never persisted (an
+-- always-true column would be meaningless); a NULL is impossible on any
+-- row reaching PENDING status, since submitRequest rejects a missing
+-- agreement before the INSERT ever runs.
+ALTER TABLE ground_owner_requests ADD COLUMN IF NOT EXISTS submitted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ground_owner_requests ADD COLUMN IF NOT EXISTS terms_agreed_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_ground_owner_requests_submitted_by ON ground_owner_requests(submitted_by_user_id) WHERE submitted_by_user_id IS NOT NULL;
+
+-- LOC-controlled amenity catalog — the Ground Owner selects from this list
+-- at registration time, never uploads their own amenity photo/label (see
+-- amenities table below, which stays exactly as it was: a legacy,
+-- super_admin-only, free-text-name + owner-uploaded-photo mechanism for
+-- ALREADY-approved grounds, kept for backward compatibility, not touched
+-- or repurposed by this feature). `key` is the stable identifier every
+-- other table below references — `icon` is a lucide-react icon name
+-- string, resolved to a real icon client-side (never a URL/image an owner
+-- could swap), which is what keeps the public icon consistent across every
+-- ground regardless of what the owner selected.
+CREATE TABLE IF NOT EXISTS amenity_catalog (
+  key VARCHAR(40) PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  icon VARCHAR(40) NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+INSERT INTO amenity_catalog (key, name, icon, display_order) VALUES
+  ('washroom', 'Washroom', 'Bath', 1),
+  ('wifi', 'Wi-Fi', 'Wifi', 2),
+  ('parking', 'Parking', 'ParkingSquare', 3),
+  ('canteen', 'Canteen', 'UtensilsCrossed', 4),
+  ('floodlights', 'Floodlights', 'Lightbulb', 5),
+  ('cctv', 'CCTV', 'Camera', 6),
+  ('practice_nets', 'Practice Nets', 'Target', 7),
+  ('changing_room', 'Changing Room', 'DoorOpen', 8),
+  ('drinking_water', 'Drinking Water', 'GlassWater', 9),
+  ('pavilion', 'Pavilion', 'Building2', 10)
+ON CONFLICT (key) DO NOTHING;
+
+-- Registration-time selections/uploads — scoped to the REQUEST, not a
+-- ground (no ground exists yet). Copied into the ground-scoped tables
+-- below only on approval (groundOwnerRequest.service.js#approveRequest),
+-- exactly mirroring how the request's address/name fields themselves get
+-- copied into a real `grounds` row only then. CASCADE delete: these rows
+-- have no independent meaning once their request is gone.
+CREATE TABLE IF NOT EXISTS ground_registration_amenities (
+  request_id INTEGER NOT NULL REFERENCES ground_owner_requests(id) ON DELETE CASCADE,
+  amenity_key VARCHAR(40) NOT NULL REFERENCES amenity_catalog(key),
+  PRIMARY KEY (request_id, amenity_key)
+);
+
+CREATE TABLE IF NOT EXISTS ground_registration_photos (
+  id SERIAL PRIMARY KEY,
+  request_id INTEGER NOT NULL REFERENCES ground_owner_requests(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT NOT NULL,
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ground_registration_photos_request ON ground_registration_photos(request_id);
+
+-- Ground-scoped catalog selections — the approved-ground counterpart of
+-- ground_registration_amenities above, populated once at approval and from
+-- then on independently editable by the owner (future profile-edit surface,
+-- out of this feature's scope) without touching the original request.
+CREATE TABLE IF NOT EXISTS ground_amenities (
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  amenity_key VARCHAR(40) NOT NULL REFERENCES amenity_catalog(key),
+  PRIMARY KEY (ground_id, amenity_key)
+);
+
+-- Ground Registration feature — is_featured distinguishes the mandatory 6
+-- slideshow photos from the optional gallery, on the SAME ground_photos
+-- table the legacy admin photo panel already writes to (that panel's own
+-- uploads simply default to is_featured = false, i.e. "gallery", which is
+-- exactly correct for photos that were never part of a slideshow concept).
+ALTER TABLE ground_photos ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Account/onboarding audit trail — deliberately separate from
+-- ground_audit_log (that table's entity_type is hard-scoped to
+-- 'BOOKING'/'BLOCK', a different bounded context). Same proven shape
+-- (actor SET NULL so the trail survives account deletion, JSONB metadata,
+-- append-only).
+CREATE TABLE IF NOT EXISTS account_audit_log (
+  id SERIAL PRIMARY KEY,
+  event_type VARCHAR(40) NOT NULL CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED'
+  )),
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_request_id INTEGER REFERENCES ground_owner_requests(id) ON DELETE SET NULL,
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- PHASE 5 — RBAC, granular Staff permissions, ground-level authorization
+-- ============================================================================
+--
+-- Ground-scoped Staff (GROUND_ADMIN/CANTEEN_STAFF, Phase 4) could log in but
+-- do nothing — every groundOwner.routes.js route was GROUND_OWNER-only. This
+-- lets an Owner grant SPECIFIC staff members SPECIFIC capabilities on THEIR
+-- OWN ground. A minimal, evidence-based catalog (not the brief's illustrative
+-- list) — see docs/AUTHORIZATION.md for the full reasoning on why staff
+-- creation/permission-management itself stays owner-only, never delegable
+-- (delegating STAFF_PERMISSIONS_MANAGE would reopen the exact "staff modifies
+-- another staff's permissions" escalation path the brief forbids).
+CREATE TABLE IF NOT EXISTS permissions (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(50) UNIQUE NOT NULL,
+  description VARCHAR(200) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO permissions (key, description) VALUES
+  ('MATCH_VIEW', 'View matches, umpire slots, incidents, and proposals for a ground'),
+  ('MATCH_MANAGE', 'Create and run matches: start, complete, set umpire fee/payment status'),
+  ('UMPIRE_MANAGE', 'Manage umpire assignment: no-show, replacement, proposals'),
+  ('STAFF_VIEW', 'View the staff list for a ground')
+ON CONFLICT (key) DO NOTHING;
+
+-- Grants are tied to ground_users.id, not a redundant (user_id, ground_id)
+-- pair — a permission grant is structurally impossible without an existing
+-- membership row (FK-enforced), reusing the existing tenancy architecture
+-- instead of duplicating it. revoked_at IS NULL = active; a revoked row is
+-- kept (not deleted) as its own audit trail of "this was once granted."
+CREATE TABLE IF NOT EXISTS staff_permissions (
+  id SERIAL PRIMARY KEY,
+  ground_user_id INTEGER NOT NULL REFERENCES ground_users(id) ON DELETE CASCADE,
+  permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+  granted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  revoked_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+-- The hot authorization-check path (requireGroundPermission, every
+-- permission-gated request): one indexed lookup, never a table scan. The
+-- partial UNIQUE also IS the "no duplicate active grant" guarantee — no
+-- separate application-level check needed.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_permissions_active_unique
+  ON staff_permissions(ground_user_id, permission_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_staff_permissions_ground_user_active
+  ON staff_permissions(ground_user_id) WHERE revoked_at IS NULL;
+
+-- Widen account_audit_log for the 3 new Phase 5 events.
+--
+-- Bug found and fixed here (Auth Enhancement task) — this block used to
+-- DROP+ADD account_audit_log_event_type_check down to just the 11
+-- Phase-5-era values, exactly like every other idempotent-ALTER widening in
+-- this file. That was silently broken the moment Phase 6 data started
+-- accumulating: schema.sql runs top-to-bottom as ONE implicit transaction
+-- (`npm run db:migrate` sends the whole file as one multi-statement query —
+-- see config/migrate.js), so on any re-run against an already-populated
+-- database, THIS block's narrower ADD CONSTRAINT would immediately fail
+-- validation against real Phase-6-era rows (MFA_ENROLLMENT_COMPLETED,
+-- STEP_UP_*, TOTP_*, SESSION_REVOKED_FOR_SECURITY_REASON, etc.) that
+-- already exist by the time this statement runs — aborting the entire
+-- migration before it ever reached the Phase 6 block below, which
+-- re-widens to the correct full list anyway. Never noticed before because
+-- nothing had reason to re-run `db:migrate` against a live, Phase-6-
+-- populated database until this task needed to add PASSWORD_RESET further
+-- down. Fixed by dropping this now-redundant intermediate DROP+ADD
+-- entirely — the Phase 6 block below already derives the correct
+-- constraint from scratch (its own DROP-IF-EXISTS + ADD), so removing this
+-- one changes nothing about the FINAL state on any database, fresh or
+-- live, only removes the harmful intermediate step. The index below is
+-- unrelated to the constraint and stays.
+CREATE INDEX IF NOT EXISTS idx_account_audit_log_event_type ON account_audit_log(event_type, created_at DESC);
+
+-- ============================================================================
+-- PHASE 6 — Privileged Account MFA & Step-Up Security
+-- ============================================================================
+--
+-- MFA is mandatory for SUPER_ADMIN and GROUND_OWNER only (never PLAYER/
+-- UMPIRE/STAFF) — see docs/AUTHORIZATION.md and docs/MFA.md. WebAuthn
+-- (passkeys) is the primary factor; TOTP is a secondary fallback for anyone
+-- without a compatible authenticator. mfa_verified_at lives directly on
+-- `sessions` (not a separate table) because MFA freshness is inherently a
+-- property of ONE authenticated session, not the user globally — this also
+-- gives session-binding (Phase 6 brief §14) for free: a session's own
+-- mfa_verified_at can never be read/written by a request authenticated with
+-- a DIFFERENT session's cookie, since requireAuth resolves exactly one
+-- session row per request.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified_at TIMESTAMPTZ;
+
+-- One row per registered passkey. A privileged user may register several
+-- (laptop, phone, security key) — see docs/MFA.md. counter/device_type/
+-- backed_up/transports are exactly the fields @simplewebauthn/server's
+-- verifyRegistrationResponse/verifyAuthenticationResponse return, stored
+-- as-is rather than re-derived. No private key is ever stored — public_key
+-- is the authenticator's COSE PUBLIC key, useless to an attacker without
+-- the device's own secure enclave.
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT UNIQUE NOT NULL,
+  public_key BYTEA NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  device_type VARCHAR(20),
+  backed_up BOOLEAN NOT NULL DEFAULT false,
+  transports TEXT[],
+  device_name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id) WHERE revoked_at IS NULL;
+
+-- Short-lived, single-use WebAuthn ceremony challenges (ceremony = either a
+-- registration or an authentication). Always tied to an already-identified
+-- user (Phase 6 never does passwordless-first-factor login — WebAuthn here
+-- is strictly a SECOND factor on top of Phase 3's OTP-authenticated
+-- session), unlike a passwordless-login WebAuthn flow which would need a
+-- nullable user_id resolved only after the ceremony completes.
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  challenge TEXT NOT NULL,
+  purpose VARCHAR(20) NOT NULL CHECK (purpose IN ('REGISTRATION', 'AUTHENTICATION')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_user_purpose ON webauthn_challenges(user_id, purpose) WHERE consumed_at IS NULL;
+
+-- One TOTP enrollment per user (UNIQUE user_id — re-enrolling replaces it,
+-- never accumulates). encrypted_secret is AES-256-GCM ciphertext
+-- (iv:authTag:ciphertext, hex), keyed by MFA_ENCRYPTION_KEY — never a raw
+-- secret, never Base64-only "encryption". verified_at is deliberately
+-- separate from disabled_at: a QR code that was generated but never
+-- confirmed with a real code must NOT count as an active factor (see
+-- hasAnyActiveFactor in mfaState.service.js) — otherwise an abandoned
+-- enrollment attempt would silently satisfy the MFA-mandatory policy.
+-- last_verified_step blocks replaying the same 30-second code twice within
+-- its own validity window, which otplib's window-tolerance alone does not
+-- prevent.
+CREATE TABLE IF NOT EXISTS totp_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  encrypted_secret TEXT NOT NULL,
+  verified_at TIMESTAMPTZ,
+  last_verified_step BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  disabled_at TIMESTAMPTZ
+);
+
+-- Recovery codes — the last-resort factor when every passkey is lost and
+-- TOTP was never enrolled. Hashed (SHA-256, same low-cost reasoning as
+-- otp_codes.otp_hash — these are single-use and revoked immediately on
+-- use, not long-lived secrets needing bcrypt's cost factor), shown to the
+-- user exactly once at generation time, never logged.
+CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_recovery_codes_user ON mfa_recovery_codes(user_id) WHERE used_at IS NULL;
+
+-- Step-up grants — short-lived (default 5 min, STEP_UP_TTL_MINUTES),
+-- single-use proof that the CURRENT session recently re-verified a strong
+-- factor specifically to perform ONE scoped high-risk action. Consumed via
+-- a WHERE-guarded UPDATE (see stepUp.service.js#consumeStepUpGrant) inside
+-- the SAME transaction as the gated mutation itself — the exact
+-- concurrency-safe pattern ground_owner_requests.markApprovedIfEligible
+-- (Phase 4) already established, reused rather than reinvented.
+-- action_scope is a closed CHECK enum, not free text: a typo'd scope
+-- string must never accidentally satisfy (or fail to satisfy) a check.
+CREATE TABLE IF NOT EXISTS step_up_grants (
+  id SERIAL PRIMARY KEY,
+  session_id BIGINT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_scope VARCHAR(50) NOT NULL CHECK (action_scope IN (
+    'WEBAUTHN_ADD', 'WEBAUTHN_REMOVE', 'TOTP_ENABLE', 'TOTP_DISABLE',
+    'RECOVERY_CODES_REGENERATE', 'MFA_DISABLE',
+    'STAFF_CREATE', 'GROUND_OWNER_REQUEST_APPROVE', 'PERMISSION_GRANT', 'STAFF_DISABLE'
+  )),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ
+);
+-- Prevents two simultaneously-live unused grants for the same (session,
+-- scope) — mirrors idx_staff_permissions_active_unique's exact shape
+-- (Phase 5). Freshness (expires_at > NOW()) is enforced by the consuming
+-- UPDATE's WHERE clause, not this index — a partial index predicate can't
+-- reference NOW() (not IMMUTABLE).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_step_up_grants_active ON step_up_grants(session_id, action_scope) WHERE used_at IS NULL;
+
+-- SUPER_ADMIN Identity & Secure Provisioning feature — ADMIN_PASSWORD_RESET
+-- (generating a temporary credential for another account). Same idempotent
+-- DROP+ADD widening shape as every other CHECK constraint in this file —
+-- the CREATE TABLE above stays as originally written; this is the one
+-- place enforcement actually changes for an already-existing database.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'step_up_grants' AND constraint_name = 'step_up_grants_action_scope_check'
+  ) THEN
+    ALTER TABLE step_up_grants DROP CONSTRAINT step_up_grants_action_scope_check;
+  END IF;
+END $$;
+ALTER TABLE step_up_grants ADD CONSTRAINT step_up_grants_action_scope_check CHECK (action_scope IN (
+  'WEBAUTHN_ADD', 'WEBAUTHN_REMOVE', 'TOTP_ENABLE', 'TOTP_DISABLE',
+  'RECOVERY_CODES_REGENERATE', 'MFA_DISABLE',
+  'STAFF_CREATE', 'GROUND_OWNER_REQUEST_APPROVE', 'PERMISSION_GRANT', 'STAFF_DISABLE',
+  'ADMIN_PASSWORD_RESET'
+));
+
+-- Ground Registration feature — found and removed a latent instance of the
+-- same "intermediate CHECK-narrowing" bug already fixed twice elsewhere in
+-- this file (otp_codes_purpose_check, and this same constraint's own
+-- earlier Phase-6-only widening): this block re-derived the constraint
+-- WITHOUT 'PASSWORD_RESET' even though the Auth Enhancement block further
+-- down already re-widens to the complete, correct list including it. Since
+-- schema.sql runs top-to-bottom as one transaction (config/migrate.js),
+-- the moment a real PASSWORD_RESET audit row exists, this block's
+-- ADD CONSTRAINT would fail against it and abort the whole migration
+-- before ever reaching the correct block below — never triggered so far
+-- only because no PASSWORD_RESET row had been recorded yet. Removed
+-- entirely rather than patched, since the later block already derives the
+-- fully correct current state from scratch (same fix shape as the two
+-- prior instances of this bug).
+--
+-- Auth Enhancement — password login + forgot-password. otp_codes.purpose's
+-- own comment (see its CREATE TABLE above) literally anticipated
+-- 'PASSWORD_RESET' as a future value.
+--
+-- The intermediate DROP+ADD that used to live here (widening only as far as
+-- 'PASSWORD_RESET') was removed for the same reason as the Phase-4 block
+-- above: re-running schema.sql after real 'SIGNUP_VERIFY' rows exist would
+-- fail here before ever reaching the block below that adds it. Only the
+-- final, complete widening (right below) is kept — same final state either
+-- way, one fewer place this can silently rot again the next time a purpose
+-- is added.
+--
+-- New Signup Flow — one new purpose, 'SIGNUP_VERIFY', used for BOTH the
+-- email-verification code and the phone-verification code the new signup
+-- form requests (disambiguated from each other by the row's own
+-- identifier+identifier_type, exactly like every other purpose already is —
+-- not by having two separate purpose strings). Deliberately role-agnostic
+-- (unlike REGISTER_PLAYER/REGISTER_UMPIRE above): this purpose only proves
+-- "this identifier belongs to whoever is filling out the form," account
+-- creation and role assignment happen later, together, in one
+-- POST /auth/signup/create-account call — see services/signup.service.js.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'otp_codes' AND constraint_name = 'otp_codes_purpose_check'
+  ) THEN
+    ALTER TABLE otp_codes DROP CONSTRAINT otp_codes_purpose_check;
+  END IF;
+END $$;
+-- Ground Registration feature — the CHECK constraint has been widened
+-- several times (SIGNUP_VERIFY, PASSWORD_RESET, ...) but the underlying
+-- column TYPE was never widened alongside it — every prior purpose value
+-- happened to fit in VARCHAR(20) by coincidence. 'GROUND_CONTACT_VERIFY'
+-- (21 chars) and 'GROUND_REGISTRATION_LOOKUP' (26 chars) don't, and would
+-- fail with a truncation error at insert time despite passing the CHECK
+-- constraint's own string list. Same fix shape as players.role's earlier
+-- VARCHAR(20)->VARCHAR(30) widening for 'WICKET_KEEPER_BATSMAN'.
+ALTER TABLE otp_codes ALTER COLUMN purpose TYPE VARCHAR(40);
+
+-- Ground Registration feature — GROUND_CONTACT_VERIFY (an authenticated
+-- Ground Owner adding/verifying a missing email or phone before submitting)
+-- and GROUND_REGISTRATION_LOOKUP (the public, no-login "find my
+-- registrations" OTP gate) join the existing purposes.
+ALTER TABLE otp_codes ADD CONSTRAINT otp_codes_purpose_check CHECK (purpose IN ('LOGIN', 'REGISTER_PLAYER', 'REGISTER_UMPIRE', 'PASSWORD_RESET', 'SIGNUP_VERIFY', 'GROUND_CONTACT_VERIFY', 'GROUND_REGISTRATION_LOOKUP'));
+
+-- Umpire Module Phase 6 — this block used to DROP+ADD
+-- account_audit_log_event_type_check down to a list missing the later
+-- Sponsors/Amenities Master values (SPONSOR_*/AMENITY_*), exactly the same
+-- bug class already documented and fixed twice earlier in this file (see
+-- the "Bug found and fixed here" comments above otp_codes' metadata column
+-- and above the account_audit_log index further up) — this specific
+-- occurrence was missed. schema.sql runs top-to-bottom as ONE implicit
+-- transaction (config/migrate.js sends the whole file as one multi-
+-- statement query), so on any re-run against this already-populated dev DB
+-- (which has real SPONSOR_CREATED/AMENITY_DELETED/etc. rows), this block's
+-- narrower ADD CONSTRAINT failed validation immediately, aborting the
+-- entire migration before it ever reached the correct, fully-widened block
+-- below — which already includes every value this one had, plus more.
+-- Removing this redundant intermediate block changes nothing about the
+-- FINAL constraint state on any database, fresh or live — confirmed by
+-- cross-checking every distinct event_type actually present in this dev
+-- DB's account_audit_log against the block below: all covered.
+
+-- ============================================================================
+-- PHASE 24 — Ground Booking System: Multi-Ground, Team & Player Conflict Engine
+-- ============================================================================
+--
+-- Generalizes Phase 14/18's single-ground, walk-in-only booking engine into
+-- a real multi-ground marketplace with team- and player-aware conflict
+-- checking. The proven concurrency guarantee (a Postgres EXCLUDE constraint
+-- makes two overlapping active bookings structurally impossible to both
+-- commit) is extended to two new axes — team, player — via two new small
+-- "slot" tables, each with their own EXCLUDE constraint, rather than
+-- replacing ground_bookings' own mechanism or inventing an application-level
+-- check for the new axes. See docs/BOOKING.md for the full design rationale.
+
+-- --- grounds: optional per-ground operating hours --------------------------
+-- NULL means "use the global GROUND_OPENING_HOUR/GROUND_CLOSING_HOUR policy
+-- default" (domain/booking/policy.js) — no ground is forced to configure
+-- this immediately.
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS opening_hour SMALLINT CHECK (opening_hour IS NULL OR (opening_hour >= 0 AND opening_hour <= 23));
+ALTER TABLE grounds ADD COLUMN IF NOT EXISTS closing_hour SMALLINT CHECK (closing_hour IS NULL OR (closing_hour >= 1 AND closing_hour <= 24));
+
+-- --- ground_bookings: ground-aware, purpose/team/status-machine columns ---
+
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id);
+
+-- Backfill: every pre-existing row predates ground_id, from back when this
+-- table implicitly assumed exactly one ground (LOC's own). The lowest-id
+-- ground in this database is that ground (every other row in `grounds` is
+-- either a later real registration or accumulated test-run data, never
+-- lower-id than the original). A from-scratch database has zero
+-- ground_bookings rows, so this UPDATE is a no-op there.
+UPDATE ground_bookings SET ground_id = (SELECT id FROM grounds ORDER BY id ASC LIMIT 1) WHERE ground_id IS NULL;
+ALTER TABLE ground_bookings ALTER COLUMN ground_id SET NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_ground_id ON ground_bookings(ground_id);
+
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS booking_purpose VARCHAR(20) NOT NULL DEFAULT 'WALK_IN'
+  CHECK (booking_purpose IN ('WALK_IN', 'MATCH', 'PRACTICE'));
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS match_format VARCHAR(20);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS hold_expires_at TIMESTAMPTZ;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(300);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS rejected_reason VARCHAR(300);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ;
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS no_show_at TIMESTAMPTZ;
+
+-- Widen status to the full state machine. Blocking states (occupy the
+-- slot): HOLD, PROPOSED, PENDING, CONFIRMED. Non-blocking: REJECTED,
+-- CANCELLED, EXPIRED, COMPLETED, NO_SHOW. DRAFT is deliberately not
+-- modeled — no multi-step drafting UI exists, mirroring bookingStatus.js's
+-- existing "only model states that are real" precedent. Valid transitions
+-- are enforced in application code (domain/booking/bookingStatus.js), not
+-- the database — same division of responsibility as today.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_bookings' AND constraint_name = 'ground_bookings_status_check'
+  ) THEN
+    ALTER TABLE ground_bookings DROP CONSTRAINT ground_bookings_status_check;
+  END IF;
+END $$;
+ALTER TABLE ground_bookings ADD CONSTRAINT ground_bookings_status_check
+  CHECK (status IN ('HOLD', 'PROPOSED', 'PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'COMPLETED', 'NO_SHOW'));
+
+-- Rebuild the ground-conflict EXCLUDE constraint: now partitioned per ground
+-- (ground_id WITH =) and gated on the full blocking-status set, not just
+-- CONFIRMED. Two overlapping bookings at the SAME ground in ANY blocking
+-- status still cannot both commit; different grounds never conflict with
+-- each other.
+--
+-- EXCLUDE constraints are a Postgres extension to the SQL standard and are
+-- NOT surfaced by information_schema.table_constraints (confirmed directly
+-- against this database — the query returns zero rows even when the
+-- constraint exists) — pg_constraint is used here instead, unlike the plain
+-- CHECK-constraint guards elsewhere in this file which correctly use
+-- information_schema.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'ground_bookings'::regclass AND conname = 'ground_bookings_no_overlap') THEN
+    ALTER TABLE ground_bookings DROP CONSTRAINT ground_bookings_no_overlap;
+  END IF;
+END $$;
+ALTER TABLE ground_bookings ADD CONSTRAINT ground_bookings_no_overlap EXCLUDE USING gist (
+  ground_id WITH =,
+  tstzrange(start_time, end_time, '[)') WITH &&
+) WHERE (status IN ('HOLD', 'PROPOSED', 'PENDING', 'CONFIRMED'));
+
+-- --- match_proposals: thin metadata for an open "looking for opponent" ----
+-- match. The actual ground/team/time reservation IS a ground_bookings row
+-- (status='PROPOSED', booking_purpose='MATCH') — a proposal gets the exact
+-- same atomic conflict guarantees as any other booking, never a second,
+-- parallel reservation mechanism (Single Source of Truth).
+CREATE TABLE IF NOT EXISTS match_proposals (
+  id SERIAL PRIMARY KEY,
+  public_proposal_id VARCHAR(20) UNIQUE NOT NULL,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id),
+  booking_id INTEGER NOT NULL UNIQUE REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  proposing_team_id INTEGER NOT NULL REFERENCES teams(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'ACCEPTED', 'CONFIRMED', 'CANCELLED', 'EXPIRED')),
+  proposal_expires_at TIMESTAMPTZ NOT NULL,
+  accepted_by_team_id INTEGER REFERENCES teams(id),
+  accepted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT match_proposals_teams_differ CHECK (accepted_by_team_id IS NULL OR accepted_by_team_id <> proposing_team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_proposals_status ON match_proposals(status, proposal_expires_at);
+CREATE INDEX IF NOT EXISTS idx_match_proposals_ground ON match_proposals(ground_id);
+
+-- Added after match_proposals exists (ground_bookings -> match_proposals ->
+-- ground_bookings would otherwise be circular within a single CREATE).
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS proposal_id INTEGER REFERENCES match_proposals(id) ON DELETE SET NULL;
+
+-- --- booking_teams: which team(s) a MATCH/PRACTICE booking is for ---------
+-- Descriptive only — the conflict GUARANTEE lives in booking_team_slots
+-- below, not here.
+CREATE TABLE IF NOT EXISTS booking_teams (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  role VARCHAR(10) CHECK (role IN ('HOME', 'AWAY')),
+  UNIQUE (booking_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_teams_team ON booking_teams(team_id);
+
+-- --- booking_team_slots / booking_player_slots: the real conflict guarantee
+-- Rows exist ONLY while the parent booking is in a blocking status —
+-- inserted alongside the booking row in the same transaction, deleted the
+-- moment the booking leaves a blocking status (cancel/reject/expire/
+-- no-show/complete), also in the same transaction as that status change.
+-- This mirrors ground_bookings_no_overlap's own mechanism but avoids a
+-- WHERE clause tied to another table's mutable status column: a slot row's
+-- mere existence IS "this team/player is committed to this time range."
+CREATE TABLE IF NOT EXISTS booking_team_slots (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  time_range TSTZRANGE NOT NULL,
+  CONSTRAINT booking_team_slots_no_overlap EXCLUDE USING gist (team_id WITH =, time_range WITH &&)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_team_slots_booking ON booking_team_slots(booking_id);
+
+CREATE TABLE IF NOT EXISTS booking_player_slots (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  time_range TSTZRANGE NOT NULL,
+  CONSTRAINT booking_player_slots_no_overlap EXCLUDE USING gist (player_id WITH =, time_range WITH &&)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_player_slots_booking ON booking_player_slots(booking_id);
+
+-- --- booking_participants: permanent historical snapshot -------------------
+-- Never deleted, even on cancellation/removal (Part 32 — a later team-
+-- membership/roster change must never rewrite who was actually on a past
+-- booking). Deliberately separate from booking_player_slots (mutable, "is
+-- this slot currently occupied") — this table only ever answers "who was on
+-- this booking", permanently. removed_at tracks a mid-lifecycle removal
+-- (Part 10) without deleting the historical row; re-adding the same player
+-- later reuses the row (removed_at reset to NULL) rather than violating the
+-- uniqueness guarantee below.
+CREATE TABLE IF NOT EXISTS booking_participants (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES ground_bookings(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  removed_at TIMESTAMPTZ,
+  UNIQUE (booking_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_booking_participants_booking ON booking_participants(booking_id);
+CREATE INDEX IF NOT EXISTS idx_booking_participants_player ON booking_participants(player_id);
+
+-- --- ground_audit_log: widen for the booking-engine's new lifecycle events -
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_entity_type_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_entity_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_entity_type_check
+  CHECK (entity_type IN ('BOOKING', 'BLOCK', 'PROPOSAL'));
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_action_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_action_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
+  CHECK (action IN (
+    'CREATED', 'CANCELLED', 'GOOGLE_SYNC',
+    'CONFIRMED', 'REJECTED', 'EXPIRED', 'NO_SHOW', 'CHECKED_IN',
+    'PARTICIPANT_ADDED', 'PARTICIPANT_REMOVED', 'ACCEPTED', 'ACCEPT_FAILED', 'ADMIN_OVERRIDE'
+  ));
+
+-- --- ground_notifications: widen for the booking-engine's new lifecycle ----
+-- events (BOOKING_REJECTED, PROPOSAL_RECEIVED, PROPOSAL_ACCEPTED,
+-- PROPOSAL_EXPIRED, BOOKING_EXPIRING_SOON, NO_SHOW_RECORDED).
+-- ground_notifications_type_check widening: consolidated below (see
+-- "Consolidated ground_notifications_type_check" near the end of this file).
+
+-- --- permissions: booking delegation for GROUND_ADMIN staff ----------------
+INSERT INTO permissions (key, description) VALUES
+  ('BOOKING_VIEW', 'View match/practice bookings and proposals for a ground'),
+  ('BOOKING_MANAGE', 'Create, cancel, and manage match/practice bookings and proposals for a ground')
+ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================================
+-- PHASE 25 — Match Proposals
+-- ============================================================================
+--
+-- An open proposal's ground/team/player reservation IS a ground_bookings
+-- row (status='PROPOSED', booking_purpose='MATCH', booking_teams has one
+-- HOME row for the proposing team) — match_proposals (Phase 24) is thin
+-- metadata layered on top, never a second reservation mechanism. Accepting
+-- attaches a second (AWAY) booking_teams/booking_team_slots/participants
+-- set to the SAME booking row and flips both rows CONFIRMED together, all
+-- inside one transaction — see services/matchProposal.service.js.
+--
+-- Supports the lazy expiry sweep every proposal-creating/accepting
+-- transaction runs first (services/bookingConflict.service.js#
+-- sweepExpiredHolds): finds ground_bookings rows stuck in a blocking-but-
+-- stale state (PROPOSED/HOLD past their hold_expires_at) so an expired
+-- proposal can never block a ground slot indefinitely just because no
+-- external scheduler has swept it yet. Partial (only rows that could ever
+-- match) and covers exactly the sweep's own WHERE clause.
+CREATE INDEX IF NOT EXISTS idx_ground_bookings_stale_holds ON ground_bookings(status, hold_expires_at) WHERE hold_expires_at IS NOT NULL;
+
+-- ============================================================================
+-- PHASE 15 — Ground Owner Notifications & Alerts
+-- ============================================================================
+--
+-- ground_notifications was, until now, only ever addressed to a CUSTOMER
+-- (BOOKING_APPROVED/CANCELLED) or an UMPIRE (UMPIRE_*) — never to a Ground
+-- Owner. Two new nullable FKs, mirroring exactly how related_match_id was
+-- added above (Phase 21) for match-related types:
+--
+--   ground_id        — required because 3 of the new types below (low
+--                       stock, menu not published, staff activated/
+--                       deactivated) have NO existing FK to derive a ground
+--                       from (related_booking_id/related_match_id are both
+--                       NULL for these) — without this column there is no
+--                       way to safely ground-scope or ground-isolate them.
+--   related_order_id  — mirrors related_match_id's own reasoning: canteen-
+--                       order notification types need something to
+--                       reference and orders has no existing FK slot here.
+--
+-- Both are nullable, additive, ON DELETE CASCADE (same as related_match_id)
+-- — every existing row, every existing insertNotification() caller, and
+-- every existing query keeps working completely unchanged.
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id) ON DELETE CASCADE;
+ALTER TABLE ground_notifications ADD COLUMN IF NOT EXISTS related_order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE;
+
+-- Ground-scoped read (GET /ground-owner/grounds/:id/notifications) needs
+-- (user_id, ground_id) — mirrors idx_ground_notifications_user's own shape.
+CREATE INDEX IF NOT EXISTS idx_ground_notifications_ground ON ground_notifications(user_id, ground_id, created_at DESC) WHERE ground_id IS NOT NULL;
+
+-- Consolidated ground_notifications_type_check — this used to be 7 separate
+-- historical DROP+ADD blocks scattered through this file (one per phase
+-- that added new types), each carrying only ITS OWN incremental value list.
+-- Since migrate.js replays this entire file on every run (not just once on
+-- a fresh DB — see migrate.js), any of those older/narrower blocks broke
+-- the moment the live database already contained a type value only a LATER
+-- block accounted for — `db:migrate` was unable to be re-run against a
+-- populated DB. Consolidated into this single, complete, sole block (2026;
+-- the removed blocks are marked with a pointer comment at their old
+-- locations) — the full set below is every type ever added by any phase,
+-- restating every value already live in this database, plus the 10 new
+-- Ground-Owner-facing ones added at the same time as this consolidation:
+--   GROUND_BOOKING_RECEIVED       — new booking notification (owner's own,
+--                                   distinct from the customer's own
+--                                   BOOKING_APPROVED — different recipient,
+--                                   different meaning, same convention as
+--                                   UMPIRE_SLOT_ASSIGNED being distinct from
+--                                   a customer-facing type)
+--   GROUND_BOOKING_CANCELLED      — a customer cancelled; owner-facing
+--   GROUND_BOOKING_STATUS_CHANGED — any other booking status transition
+--                                   (e.g. no-show recorded) the owner
+--                                   should see, distinct from the two above
+--   CANTEEN_ORDER_RECEIVED        — new canteen order placed
+--   CANTEEN_ORDER_STATUS_CHANGED  — an order's status changed
+--   CANTEEN_LOW_STOCK             — a today_menu_items row is running low
+--   CANTEEN_MENU_NOT_PUBLISHED    — today's menu has not been published yet
+--   GROUND_STAFF_ACTIVATED        — a staff membership was (re)activated
+--   GROUND_STAFF_DEACTIVATED      — a staff membership was disabled
+--   GROUND_OPERATIONAL_ALERT      — general-purpose catch-all for future
+--                                   owner-facing operational alerts
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_notifications' AND constraint_name = 'ground_notifications_type_check'
+  ) THEN
+    ALTER TABLE ground_notifications DROP CONSTRAINT ground_notifications_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_notifications ADD CONSTRAINT ground_notifications_type_check
+  CHECK (type IN (
+    'BOOKING_APPROVED', 'BOOKING_CANCELLED', 'BOOKING_REMINDER', 'GROUND_CLOSED',
+    'UMPIRE_SLOT_ASSIGNED', 'UMPIRE_SLOT_CANCELLED', 'UMPIRE_REQUEST_DECIDED', 'UMPIRE_SLOTS_FULLY_STAFFED',
+    'MATCH_STARTING', 'MATCH_COMPLETED', 'UMPIRE_CHECKED_IN', 'UMPIRE_NO_SHOW', 'UMPIRE_REPLACEMENT_ASSIGNED',
+    'UMPIRE_REMINDER_24H', 'UMPIRE_REMINDER_2H', 'UMPIRE_REMINDER_30M', 'MATCH_INCIDENT_REPORTED', 'MATCH_MESSAGE',
+    'UMPIRE_PROPOSAL_RECEIVED', 'UMPIRE_PROPOSAL_ACCEPTED', 'UMPIRE_PROPOSAL_DECLINED', 'UMPIRE_PROPOSAL_WITHDRAWN', 'UMPIRE_PROPOSAL_EXPIRED',
+    'BOOKING_REJECTED', 'PROPOSAL_RECEIVED', 'PROPOSAL_ACCEPTED', 'PROPOSAL_EXPIRED', 'BOOKING_EXPIRING_SOON', 'NO_SHOW_RECORDED',
+    'GROUND_BOOKING_RECEIVED', 'GROUND_BOOKING_CANCELLED', 'GROUND_BOOKING_STATUS_CHANGED',
+    'CANTEEN_ORDER_RECEIVED', 'CANTEEN_ORDER_STATUS_CHANGED', 'CANTEEN_LOW_STOCK', 'CANTEEN_MENU_NOT_PUBLISHED',
+    'GROUND_STAFF_ACTIVATED', 'GROUND_STAFF_DEACTIVATED', 'GROUND_OPERATIONAL_ALERT',
+    -- Phase 6 (Umpire Module) — pre-match cancellation, sent to any umpire
+    -- who held an ASSIGNED slot on the cancelled match.
+    'MATCH_CANCELLED'
+  ));
+
+-- Sponsors + Amenities Master (Super Admin) — Sponsors reuses the existing
+-- `partners` table/CRUD (see partner.model.js) rather than a new table;
+-- these are the only columns it was missing: an about/description shown on
+-- the public homepage, an active/visible toggle (deactivate without
+-- deleting), and updated_at for edit tracking.
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Amenities Master needs no schema change — amenity_catalog (key, name,
+-- icon, display_order, is_active) already has every field; it previously
+-- had zero admin CRUD (seed data only), which is what this feature adds.
+
+-- Widen account_audit_log_event_type_check for Sponsors + Amenities Master
+-- admin actions. Restates every value already live (same caution as every
+-- prior widening in this file — the live constraint is the source of
+-- truth, not just this file's own prior edit), plus 8 new ones.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'account_audit_log' AND constraint_name = 'account_audit_log_event_type_check'
+  ) THEN
+    ALTER TABLE account_audit_log DROP CONSTRAINT account_audit_log_event_type_check;
+  END IF;
+END $$;
+ALTER TABLE account_audit_log ADD CONSTRAINT account_audit_log_event_type_check
+  CHECK (event_type IN (
+    'PLAYER_REGISTERED', 'UMPIRE_REGISTERED',
+    'GROUND_OWNER_REQUEST_SUBMITTED', 'GROUND_OWNER_REQUEST_REVIEW_STARTED',
+    'GROUND_OWNER_APPROVED', 'GROUND_OWNER_REJECTED', 'GROUND_OWNER_MORE_INFO_REQUESTED',
+    'STAFF_CREATED', 'PERMISSION_GRANTED', 'PERMISSION_REVOKED', 'STAFF_DISABLED',
+    'PASSKEY_REGISTERED', 'PASSKEY_REVOKED', 'PASSKEY_AUTHENTICATION_SUCCESS', 'PASSKEY_AUTHENTICATION_FAILURE',
+    'TOTP_ENABLED', 'TOTP_DISABLED', 'TOTP_VERIFICATION_SUCCESS', 'TOTP_VERIFICATION_FAILURE',
+    'MFA_ENROLLMENT_STARTED', 'MFA_ENROLLMENT_COMPLETED', 'MFA_DISABLED',
+    'MFA_RECOVERY_STARTED', 'MFA_RECOVERY_COMPLETED',
+    'STEP_UP_REQUESTED', 'STEP_UP_SUCCEEDED', 'STEP_UP_FAILED',
+    'SESSION_REVOKED_FOR_SECURITY_REASON', 'PASSWORD_RESET', 'GROUND_OWNER_REQUEST_RESUBMITTED',
+    -- SUPER_ADMIN Identity & Secure Provisioning feature.
+    'SUPER_ADMIN_BOOTSTRAPPED', 'ADMIN_LOGIN', 'PASSWORD_CHANGED',
+    'GROUND_SUSPENDED', 'GROUND_REACTIVATED', 'ACCOUNT_STATUS_CHANGED',
+    'PASSWORD_RESET_INITIATED_BY_ADMIN', 'TEMPORARY_CREDENTIAL_GENERATED', 'TEMPORARY_CREDENTIAL_USED',
+    -- Sponsors + Amenities Master (Super Admin CMS).
+    'SPONSOR_CREATED', 'SPONSOR_UPDATED', 'SPONSOR_DEACTIVATED', 'SPONSOR_DELETED',
+    'AMENITY_CREATED', 'AMENITY_UPDATED', 'AMENITY_DEACTIVATED', 'AMENITY_DELETED'
+  ));
+
+-- ============================================================================
+-- Ground Time-Slot Pricing
+-- ============================================================================
+--
+-- Pricing is GROUND-level, not match-level: a Ground Owner defines named
+-- time bands (e.g. 06:00-09:00 = ₹2,000) that apply to every date. `TIME`
+-- columns (time-of-day, not a specific date's TIMESTAMPTZ) since a pricing
+-- slot is a recurring daily rule, never a one-off calendar event — the same
+-- distinction domain/booking/policy.js already draws between
+-- GROUND_OPENING_HOUR (a daily policy) and a real booking's TIMESTAMPTZ.
+-- No DB-level overlap EXCLUDE constraint: unlike ground_bookings' real-time
+-- customer-concurrency race (many customers racing for the same instant),
+-- pricing-slot edits are a single Ground Owner's own low-frequency admin
+-- config, the same class of action amenities/staff-permission management
+-- already handles with a plain service-layer transactional check rather
+-- than a GIST exclusion index — introducing one here (which would need a
+-- TIME-to-minutes int4range conversion; Postgres has no native time range
+-- type) would be new machinery this codebase has no other precedent for,
+-- for a case that doesn't need it.
+CREATE TABLE IF NOT EXISTS ground_pricing_slots (
+  id SERIAL PRIMARY KEY,
+  ground_id INTEGER NOT NULL REFERENCES grounds(id) ON DELETE CASCADE,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  price NUMERIC(8,2) NOT NULL CHECK (price >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT ground_pricing_slots_end_after_start CHECK (end_time > start_time)
+);
+CREATE INDEX IF NOT EXISTS idx_ground_pricing_slots_ground_id ON ground_pricing_slots(ground_id);
+
+-- Price snapshot: the agreed amount at booking time, permanently stable
+-- even if the Ground Owner later edits/deactivates/deletes the pricing
+-- slot that produced it — mirrors menu_items/orders' own "unit_price is
+-- copied onto the order line, never re-read live" convention (schema.sql,
+-- Phase 10-ish canteen orders). `pricing_slot_id` is ON DELETE SET NULL
+-- (traceability only, never authoritative) — `amount` alone is what a
+-- historical booking's price actually is. Both nullable: existing
+-- bookings predate this feature, STAFF_BLOCK bookings have no customer
+-- price, and a booking made when no pricing slot covers its start time is
+-- allowed through with amount=NULL ("price on request"), not blocked —
+-- LOC has no payment gateway (out of scope by explicit product decision),
+-- so amount is informational/bookkeeping, not a payment-enforcement gate.
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS amount NUMERIC(8,2);
+ALTER TABLE ground_bookings ADD COLUMN IF NOT EXISTS pricing_slot_id INTEGER REFERENCES ground_pricing_slots(id) ON DELETE SET NULL;
+
+-- Ground Owner pricing management, delegable to staff exactly like
+-- BOOKING_VIEW/BOOKING_MANAGE above — the Owner always has full implicit
+-- access (requireGroundPermission's own GROUND_OWNER bypass); staff need
+-- an explicit grant, never automatic.
+INSERT INTO permissions (key, description) VALUES
+  ('PRICING_VIEW', 'View ground pricing slots'),
+  ('PRICING_MANAGE', 'Create, edit, activate/deactivate, and delete ground pricing slots')
+ON CONFLICT (key) DO NOTHING;
+
+-- ground_audit_log: widen for pricing-slot lifecycle events.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_entity_type_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_entity_type_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_entity_type_check
+  CHECK (entity_type IN ('BOOKING', 'BLOCK', 'PROPOSAL', 'PRICING_SLOT'));
+
+-- ground_audit_log: widen action for pricing-slot lifecycle events. Restates
+-- every value already live (same caution as the entity_type widening above
+-- and every prior widening in this file), plus 4 new ones.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_schema = current_schema() AND table_name = 'ground_audit_log' AND constraint_name = 'ground_audit_log_action_check'
+  ) THEN
+    ALTER TABLE ground_audit_log DROP CONSTRAINT ground_audit_log_action_check;
+  END IF;
+END $$;
+ALTER TABLE ground_audit_log ADD CONSTRAINT ground_audit_log_action_check
+  CHECK (action IN (
+    'CREATED', 'CANCELLED', 'GOOGLE_SYNC',
+    'CONFIRMED', 'REJECTED', 'EXPIRED', 'NO_SHOW', 'CHECKED_IN',
+    'PARTICIPANT_ADDED', 'PARTICIPANT_REMOVED', 'ACCEPTED', 'ACCEPT_FAILED', 'ADMIN_OVERRIDE',
+    -- Ground Time-Slot Pricing.
+    'UPDATED', 'ACTIVATED', 'DEACTIVATED', 'DELETED'
+  ));
+
+-- ============================================================================
+-- Social Foundation — Follow Players / Teams (Priority 1)
+-- ============================================================================
+--
+-- One personal user->entity relationship that powers BOTH the "Follow" button
+-- on public player/team profiles AND the authenticated user's "Following"
+-- quick-access list. Deliberately ONE table, not a separate `follows` and
+-- `favorites` — for LOC these are the same relationship (keep an entity
+-- close), and a second near-identical table would be duplication. It does
+-- NOT drive notifications in this batch (fan-out to followers is a separate
+-- concern — see the roadmap); it is purely a quick-access subscription.
+--
+-- Exactly one of player_id / team_id is set per row (the XOR CHECK). The two
+-- partial-looking UNIQUE constraints work because Postgres treats NULLs as
+-- distinct: a user has at most one row per followed player and at most one
+-- per followed team, but many team rows (each player_id NULL) never collide.
+CREATE TABLE IF NOT EXISTS user_follows (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT user_follows_exactly_one_target CHECK ((player_id IS NOT NULL) <> (team_id IS NOT NULL)),
+  CONSTRAINT user_follows_unique_player UNIQUE (user_id, player_id),
+  CONSTRAINT user_follows_unique_team UNIQUE (user_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_follows_user ON user_follows(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_follows_player ON user_follows(player_id) WHERE player_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_follows_team ON user_follows(team_id) WHERE team_id IS NOT NULL;
+
+-- ----------------------------------------------------------------------------
+-- Priority 5 — Favorite Grounds. user_follows gains a THIRD optional target
+-- (ground_id), keeping the "exactly one target per row" invariant. Purely
+-- additive: existing player/team rows are untouched (ground_id defaults NULL,
+-- and num_nonnulls(...) = 1 already holds for every one of them).
+-- ----------------------------------------------------------------------------
+ALTER TABLE user_follows ADD COLUMN IF NOT EXISTS ground_id INTEGER REFERENCES grounds(id) ON DELETE CASCADE;
+
+-- Widen the XOR check to "exactly one of three". Drop-then-add, guarded so the
+-- whole-file replay is idempotent — same pattern as ground_bookings_no_overlap
+-- above (a plain CHECK here, so information_schema can be used to detect it).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'user_follows' AND constraint_name = 'user_follows_exactly_one_target'
+  ) THEN
+    ALTER TABLE user_follows DROP CONSTRAINT user_follows_exactly_one_target;
+  END IF;
+END $$;
+ALTER TABLE user_follows ADD CONSTRAINT user_follows_exactly_one_target
+  CHECK (num_nonnulls(player_id, team_id, ground_id) = 1);
+
+-- At most one row per (user, ground) — mirrors the player/team unique
+-- constraints (NULLs distinct, so team-only / player-only rows never collide).
+ALTER TABLE user_follows DROP CONSTRAINT IF EXISTS user_follows_unique_ground;
+ALTER TABLE user_follows ADD CONSTRAINT user_follows_unique_ground UNIQUE (user_id, ground_id);
+CREATE INDEX IF NOT EXISTS idx_user_follows_ground ON user_follows(ground_id) WHERE ground_id IS NOT NULL;
+
+-- ============================================================================
+-- Merchandise — Super Admin managed homepage showcase (Cloudinary URL + data
+-- in Postgres, image bytes stay in Cloudinary). Same storage shape as
+-- `partners` / `advertisements`: a standalone content table, no relations.
+-- `status` follows the app-level VARCHAR + validation convention used by
+-- grounds.status / orders.status (no Postgres enums anywhere in this schema).
+-- Deliberately minimal, but a standalone row so future merchandise_variants /
+-- inventory / cart / order tables can FK to merchandise(id) without reshaping.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS merchandise (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  description TEXT,
+  category VARCHAR(40),
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT,
+  original_price NUMERIC(10, 2),
+  selling_price NUMERIC(10, 2) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT', -- DRAFT | ACTIVE | INACTIVE | OUT_OF_STOCK
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_merchandise_status_sort ON merchandise(status, sort_order, created_at);

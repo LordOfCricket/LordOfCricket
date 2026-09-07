@@ -1,25 +1,39 @@
-node_modules
+node_modules/
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!client/.env.production
 
 # Build outputs
-dist
-build
+dist/
+build/
 
-# User-uploaded content (server/uploads/**) — runtime data, not source
-uploads
+# User-uploaded content
+uploads/*
+!uploads/.gitkeep
+
+# MongoDB backup exports
+backups/
+server/backups/
 
 # Logs
 *.log
 npm-debug.log*
 
+# Old packaged backups
+*.tar
+*.tar.gz
+*.zip
+
 # Coverage
-coverage
+coverage/
+
+# Local mobile project
+mobile/
 
 # OS junk
 .DS_Store
 Thumbs.db
 
-mobile/
-server/backups/
+# Local MCP configuration and API keys
+.mcp.json

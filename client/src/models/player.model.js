@@ -23,6 +23,58 @@ export const BOWLING_STYLE_LABELS = {
   NONE: 'Does not bowl',
 }
 
+// First-Login Player Profile Onboarding — the backend's bowling_style enum
+// (BOWLING_STYLE_LABELS above) already combines arm+pace/spin into one of 9
+// flat values (plus NONE); the brief wants a step-by-step picker instead of
+// one giant dropdown of those 9 raw values. Rather than inventing new enum
+// values or extra columns, this decomposes/composes the SAME existing
+// bowling_style value into the 3 progressive UI questions (arm, pace vs.
+// spin, spin type) and back — the stored value never changes shape.
+export const BOWLING_ARM_LABELS = { RIGHT: 'Right Arm', LEFT: 'Left Arm' }
+
+// "Fast-Medium"/"Medium-Fast" from standard cricket terminology both collapse
+// to the existing MEDIUM enum value — the backend enum only distinguishes
+// FAST vs MEDIUM per arm (no finer pace gradation to store), so offering 5
+// pace options here would produce a UI promise the data model can't keep.
+export const BOWLING_TYPE_LABELS = { FAST: 'Fast', MEDIUM: 'Medium', SPIN: 'Spin' }
+
+// Right-arm spin only ever means off break / leg break in this enum;
+// left-arm spin only ever means orthodox / wrist spin — arm selection
+// determines which pair applies, matching real cricket terminology.
+export const SPIN_TYPE_LABELS_BY_ARM = {
+  RIGHT: { RIGHT_ARM_OFF_BREAK: 'Off Spin', RIGHT_ARM_LEG_BREAK: 'Leg Spin' },
+  LEFT: { LEFT_ARM_ORTHODOX: 'Left-Arm Orthodox', LEFT_ARM_WRIST_SPIN: 'Left-Arm Wrist Spin' },
+}
+
+const BOWLING_STYLE_TO_PARTS = {
+  RIGHT_ARM_FAST: { bowls: true, arm: 'RIGHT', type: 'FAST', spinStyle: null },
+  RIGHT_ARM_MEDIUM: { bowls: true, arm: 'RIGHT', type: 'MEDIUM', spinStyle: null },
+  RIGHT_ARM_OFF_BREAK: { bowls: true, arm: 'RIGHT', type: 'SPIN', spinStyle: 'RIGHT_ARM_OFF_BREAK' },
+  RIGHT_ARM_LEG_BREAK: { bowls: true, arm: 'RIGHT', type: 'SPIN', spinStyle: 'RIGHT_ARM_LEG_BREAK' },
+  LEFT_ARM_FAST: { bowls: true, arm: 'LEFT', type: 'FAST', spinStyle: null },
+  LEFT_ARM_MEDIUM: { bowls: true, arm: 'LEFT', type: 'MEDIUM', spinStyle: null },
+  LEFT_ARM_ORTHODOX: { bowls: true, arm: 'LEFT', type: 'SPIN', spinStyle: 'LEFT_ARM_ORTHODOX' },
+  LEFT_ARM_WRIST_SPIN: { bowls: true, arm: 'LEFT', type: 'SPIN', spinStyle: 'LEFT_ARM_WRIST_SPIN' },
+  NONE: { bowls: false, arm: null, type: null, spinStyle: null },
+}
+
+// `bowling_style` on the player row: undefined/null = not answered yet
+// (onboarding skipped this section), 'NONE' = explicitly "No", any of the
+// other 8 = an actual style. Three real states, never conflated.
+export function decomposeBowlingStyle(bowlingStyle) {
+  if (!bowlingStyle) return { bowls: null, arm: null, type: null, spinStyle: null }
+  return BOWLING_STYLE_TO_PARTS[bowlingStyle] || { bowls: null, arm: null, type: null, spinStyle: null }
+}
+
+export function composeBowlingStyle({ bowls, arm, type, spinStyle }) {
+  if (bowls === false) return 'NONE'
+  if (!bowls || !arm) return null
+  if (type === 'FAST') return arm === 'RIGHT' ? 'RIGHT_ARM_FAST' : 'LEFT_ARM_FAST'
+  if (type === 'MEDIUM') return arm === 'RIGHT' ? 'RIGHT_ARM_MEDIUM' : 'LEFT_ARM_MEDIUM'
+  if (type === 'SPIN') return spinStyle || null
+  return null
+}
+
 export function roleLabel(role) {
   return (role && PLAYING_ROLE_LABELS[role]) || null
 }

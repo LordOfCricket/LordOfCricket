@@ -150,6 +150,28 @@ test('best-bowling: a wicketless spell never qualifies (0/4 is not a bowling ach
   assert.equal(total, 0)
 })
 
+test('highest-score: more runs always wins; equal runs tie-break on not-out over dismissed (mirrors aggregateBatting\'s own tie-break)', () => {
+  const entries = [
+    { player: player('Dismissed80'), career: battingCareer({ batting: { highestScore: { runs: 80, notOut: false } } }) },
+    { player: player('NotOut80'), career: battingCareer({ batting: { highestScore: { runs: 80, notOut: true } } }) },
+    { player: player('Century'), career: battingCareer({ batting: { highestScore: { runs: 104, notOut: false } } }) },
+  ]
+  const { items } = rankPlayers(entries, LEADERBOARD_METRICS['highest-score'])
+  assert.deepEqual(items.map((i) => i.player.publicPlayerId), ['Century', 'NotOut80', 'Dismissed80'])
+})
+
+test('highest-score: a duck (highest score of 0) never qualifies — not a real achievement', () => {
+  const entries = [{ player: player('AlwaysZero'), career: battingCareer({ batting: { highestScore: { runs: 0, notOut: false } } }) }]
+  const { total } = rankPlayers(entries, LEADERBOARD_METRICS['highest-score'])
+  assert.equal(total, 0)
+})
+
+test('highest-score: a player with no innings played (highestScore null) never qualifies', () => {
+  const entries = [{ player: player('NeverBatted'), career: battingCareer({ batting: { highestScore: null } }) }]
+  const { total } = rankPlayers(entries, LEADERBOARD_METRICS['highest-score'])
+  assert.equal(total, 0)
+})
+
 test('catches leaderboard: catches DESC then fewer matches', () => {
   const entries = [
     { player: player('ManyMatches'), career: battingCareer({ matches: 20, fielding: { catches: 3, runOuts: 0, stumpings: 0 } }) },

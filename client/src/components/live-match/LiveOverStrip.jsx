@@ -1,7 +1,7 @@
 import { ballLabel, ballClass } from '../match-summary/ballChip.js'
 
-// Phase 10 Part 3 (Part 32/33/34). Reuses the EXACT same ball-chip
-// convention Phase 9's scorecard already established — no second delivery-
+// Reuses the EXACT same ball-chip
+// convention the scorecard already established — no second delivery-
 // display format invented for the live panel.
 export default function LiveOverStrip({ title, deliveries }) {
   return (

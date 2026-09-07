@@ -42,29 +42,8 @@ export function calculateRequiredRunRate(target, runsScored, ballsRemaining) {
   return runsNeeded / (ballsRemaining / 6)
 }
 
-export function calculateProjectedScore(runs, legalBalls, oversLimit) {
-  if (!legalBalls) return null
-  return Math.round((runs / (legalBalls / 6)) * oversLimit)
-}
-
-export function getMatchPhase(overNumber, format) {
-  const over = overNumber + 1
-  if (over <= format.powerplayOvers) return 'Powerplay'
-  if (over > format.oversPerInnings - 5) return 'Death Overs'
-  return 'Middle Overs'
-}
-
 export function getCurrentOverDeliveries(deliveries, overNumber) {
   return deliveries.filter((d) => d.over === overNumber + 1)
-}
-
-export function getLast5OversStats(deliveries, currentOverNumber) {
-  const fromOver = Math.max(1, currentOverNumber - 4)
-  const relevant = deliveries.filter((d) => d.over >= fromOver && d.over <= currentOverNumber + 1 && !d.isDeadBall)
-  const runs = relevant.reduce((sum, d) => sum + d.totalRuns, 0)
-  const wickets = relevant.filter((d) => d.wicket).length
-  const legalBalls = relevant.filter((d) => d.isLegalDelivery).length
-  return { runs, wickets, runRate: calculateRunRate(runs, legalBalls) }
 }
 
 export function getLastWicket(fallOfWickets) {

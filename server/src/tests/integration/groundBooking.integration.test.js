@@ -9,10 +9,25 @@ import { BookingError } from '../../domain/booking/errors.js'
 import { groundTodayDateStr, addDaysToDateStr, groundLocalToUtc } from '../../domain/booking/timezone.js'
 import { generatePublicId } from '../../utils/publicId.js'
 import * as matchService from '../../services/match.service.js'
+import * as pricingService from '../../services/groundPricing.service.js'
+import { findDefaultGround } from '../../models/ground.model.js'
 
 const TEST_DATE = addDaysToDateStr(groundTodayDateStr(), 10)
 const TEST_DATE_2 = addDaysToDateStr(groundTodayDateStr(), 11)
 const TEST_DATE_3 = addDaysToDateStr(groundTodayDateStr(), 12)
+
+// Ground Pricing UX Polish — this file's tests are about booking/concurrency/
+// cancellation mechanics, not pricing itself, but a CUSTOMER booking now
+// requires an active pricing slot covering its start time (PRICE_UNAVAILABLE
+// otherwise). A single slot spanning the whole default operating window
+// covers every hour this file books at (6/8/10/12/14/18) without needing to
+// touch every individual test. Created once, removed once — never left
+// behind for other files/suites that also use the default ground.
+let fixturePricingSlot = null
+test.before(async () => {
+  const ground = await findDefaultGround()
+  fixturePricingSlot = await pricingService.createPricingSlot(ground, { startTime: '00:00', endTime: '23:59', price: 1000 }, null)
+})
 
 async function makeUser(name) {
   const { rows } = await pool.query(
@@ -62,10 +77,14 @@ test('CONCURRENCY (non-negotiable, Part 51): two simultaneous booking requests f
 })
 
 test('OVERLAP (Part 52): the database exclusion constraint correctly rejects every overlapping shape and allows touching ranges', async () => {
+  // Phase 24 — ground_id is NOT NULL; this direct-SQL test (deliberately
+  // bypassing the service layer to exercise the raw constraint) needs the
+  // same ground every other booking in this suite implicitly uses.
+  const { rows: [{ id: groundId }] } = await pool.query('SELECT id FROM grounds ORDER BY id ASC LIMIT 1')
   const insert = (ref, startHour, startMin, endHour, endMin) =>
     pool.query(
-      `INSERT INTO ground_bookings (public_booking_id, customer_name, start_time, end_time) VALUES ($1,'t',$2,$3)`,
-      [ref, groundLocalToUtc(TEST_DATE_2, startHour, startMin), groundLocalToUtc(TEST_DATE_2, endHour, endMin)]
+      `INSERT INTO ground_bookings (ground_id, public_booking_id, customer_name, start_time, end_time) VALUES ($1,$2,'t',$3,$4)`,
+      [groundId, ref, groundLocalToUtc(TEST_DATE_2, startHour, startMin), groundLocalToUtc(TEST_DATE_2, endHour, endMin)]
     )
   const tryInsert = async (...args) => {
     try {
@@ -156,6 +175,25 @@ test('CANCELLATION: cancelling an already-cancelled booking is rejected, not a s
   }
 })
 
+test('MY BOOKINGS (Priority 4): listMyBookings carries the ground identity each booking was made at', async () => {
+  const user = await makeUser('My Bookings Ground User')
+  try {
+    const ground = await findDefaultGround()
+    await bookingService.createBooking({ dateStr: TEST_DATE_2, hour: 14, minute: 0, userId: user.id, customerName: user.name })
+
+    const rows = await bookingService.listMyBookings(user.id)
+    assert.equal(rows.length, 1)
+    // The repo now LEFT JOINs grounds; the serializer turns these aliased
+    // columns into a public-safe { publicGroundId, name, city } block.
+    assert.equal(rows[0].ground_public_id, ground.public_ground_id)
+    assert.equal(rows[0].ground_name, ground.name)
+    assert.ok(!('email' in rows[0]) || rows[0].email == null) // no ground-owner private data leaked in
+  } finally {
+    await cleanupBookingsOnDates([TEST_DATE_2])
+    await cleanupUsers([user.id])
+  }
+})
+
 test('IDEMPOTENCY: retrying the same clientActionId returns the original booking, never a duplicate', async () => {
   const user = await makeUser('Idempotency User')
   const clientActionId = '11111111-1111-4111-8111-111111111111'
@@ -238,4 +276,8 @@ test.after(async () => {
   await cleanupBookingsOnDates([TEST_DATE])
   await cleanupBookingsOnDates([TEST_DATE_2])
   await cleanupBookingsOnDates([TEST_DATE_3])
+  if (fixturePricingSlot) {
+    const ground = await findDefaultGround()
+    await pricingService.deletePricingSlot(ground, fixturePricingSlot.id, null)
+  }
 })

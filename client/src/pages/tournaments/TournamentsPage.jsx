@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus } from 'lucide-react'
 import { useTournaments } from '../../hooks/useTournaments.js'
 import { useAuth } from '../../hooks/useAuth.js'
 import TournamentCard from '../../components/tournaments/TournamentCard.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
 const TABS = [
   { key: 'LIVE', label: 'Live' },
@@ -13,7 +14,6 @@ const TABS = [
 ]
 
 export default function TournamentsPage() {
-  const navigate = useNavigate()
   const { user } = useAuth()
   const [category, setCategory] = useState('LIVE')
   const { result, loading, error } = useTournaments(category)
@@ -25,10 +25,7 @@ export default function TournamentsPage() {
     >
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-between">
-          <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </button>
+          <BackButton fallback="/" />
           {user?.role === 'staff' && (
             <Link
               to="/tournaments/new"

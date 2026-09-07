@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { fetchPublicPlayerInfo } from '../../services/statisticsApi.js'
 import { useCareerStats } from '../../hooks/useCareerStats.js'
 import Avatar from '../../components/ui/Avatar.jsx'
@@ -14,8 +13,13 @@ import RecentFormStrip from '../../components/stats/RecentFormStrip.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchPlayerInsight } from '../../services/aiInsightApi.js'
 import PlayerAnalyticsSection from '../../components/analytics/PlayerAnalyticsSection.jsx'
+import PlayerAchievements from '../../components/player/PlayerAchievements.jsx'
+import CareerTimeline from '../../components/player/CareerTimeline.jsx'
+import FollowButton from '../../components/common/FollowButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
-const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ANALYTICS']
+const TABS = ['OVERVIEW', 'BATTING', 'BOWLING', 'FIELDING', 'MATCHES', 'ACHIEVEMENTS', 'TIMELINE', 'ANALYTICS']
 
 function Field({ label, value }) {
   return (
@@ -80,14 +84,7 @@ export default function PublicPlayerProfilePage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.78), rgba(2,6,23,0.78)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-5xl">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/players" />
 
         {playerLoading && <div className="mt-6"><StatsLoadingGrid tiles={4} /></div>}
         {!playerLoading && playerError && (
@@ -99,12 +96,35 @@ export default function PublicPlayerProfilePage() {
         {!playerLoading && !playerError && player && (
           <>
             <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm sm:p-8">
-              <div className="flex items-center gap-5">
-                <Avatar name={player.name} photoUrl={player.photoUrl} size="lg" />
-                <div>
-                  <h1 className="text-2xl font-bold text-white sm:text-3xl">{player.name}</h1>
-                  <p className="mt-1 text-sm font-semibold text-emerald-300">{player.publicPlayerId}</p>
-                  <p className="text-sm text-slate-300">{roleLabel(player.role) || 'Playing role not set'}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-5">
+                  <Avatar name={player.name} photoUrl={player.photoUrl} size="lg" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-white sm:text-3xl">{player.name}</h1>
+                    <p className="mt-1 text-sm font-semibold text-emerald-300">{player.publicPlayerId}</p>
+                    <p className="text-sm text-slate-300">{roleLabel(player.role) || 'Playing role not set'}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <FollowButton type="player" id={publicPlayerId} />
+                    <ShareButton
+                      size="sm"
+                      title={player.name}
+                      text={
+                        stats && stats.career.matches > 0
+                          ? `${player.name} — ${stats.career.batting.runs} career runs on Lord Of Cricket`
+                          : `${player.name} on Lord Of Cricket`
+                      }
+                      path={`/players/${publicPlayerId}`}
+                    />
+                  </div>
+                  <Link
+                    to={`/players/head-to-head?p1=${publicPlayerId}`}
+                    className="text-xs font-semibold text-emerald-300 hover:text-emerald-200"
+                  >
+                    Head-to-Head →
+                  </Link>
                 </div>
               </div>
 
@@ -164,13 +184,21 @@ export default function PublicPlayerProfilePage() {
                   {tab === 'BATTING' && <BattingStatsPanel matches={stats.career.matches} batting={stats.career.batting} />}
                   {tab === 'BOWLING' && <BowlingStatsPanel bowling={stats.career.bowling} />}
                   {tab === 'FIELDING' && <FieldingStatsPanel fielding={stats.career.fielding} />}
-                  {tab === 'MATCHES' && <MatchHistoryPanel matchHistory={stats.matchHistory} onLoadMore={loadMoreMatchHistory} />}
+                  {tab === 'MATCHES' && (
+                    <MatchHistoryPanel
+                      matchHistory={stats.matchHistory}
+                      onLoadMore={loadMoreMatchHistory}
+                      teamNamesById={Object.fromEntries((stats.teamHistory ?? []).map((t) => [t.teamId, t.shortName || t.name]))}
+                    />
+                  )}
+                  {tab === 'ACHIEVEMENTS' && <PlayerAchievements achievements={stats.achievements} />}
+                  {tab === 'TIMELINE' && <CareerTimeline timeline={stats.careerTimeline} onOpenMatch={(matchId) => navigate(`/matches/${matchId}/summary`)} />}
                   {tab === 'ANALYTICS' && <PlayerAnalyticsSection publicPlayerId={publicPlayerId} />}
                 </>
               )}
             </div>
 
-            {/* Phase 16 — bounded, independently-loading; career stats above remain primary. */}
+            {/* Bounded, independently-loading; career stats above remain primary. */}
             <div className="mt-6">
               <AIInsightSection title="AI Performance Insight" fetchFn={fetchPlayerInsight} id={publicPlayerId} kind="person" />
             </div>

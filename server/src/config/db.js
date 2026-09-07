@@ -5,7 +5,19 @@ import { logger } from '../utils/logger.js'
 
 dotenv.config()
 
-const { Pool } = pg
+const { Pool, types } = pg
+
+// pg's default DATE (OID 1082) parser returns a JS Date built from local
+// server time, which JSON serialization (res.json -> toISOString) then
+// re-renders in UTC — a date stored as exactly '1998-04-12' can round-trip
+// back to the API response as '1998-04-11' whenever the server's local
+// offset is ahead of UTC. players.date_of_birth (First-Login Player Profile
+// Onboarding) is the first bare DATE column in this schema — returning the
+// raw 'YYYY-MM-DD' string instead avoids the round-trip entirely and is
+// exactly what every caller (controller validation, the frontend's <input
+// type="date">) already expects. Safe globally: no other column uses OID
+// 1082 today.
+types.setTypeParser(1082, (value) => value)
 
 export const pool = new Pool({
   user: process.env.PG_USER,
@@ -41,6 +53,15 @@ export async function connectPostgres() {
   }
 }
 
+// MongoDB cleanup, Phase 6 — MongoDB is no longer part of the production
+// runtime startup path (server.js's start() no longer calls this). Every
+// live business feature (GalleryImage/AiInsight/MenuItem/TodayMenu/Order)
+// is PostgreSQL-backed as of Phases 1-5. These two functions are kept,
+// unchanged, ONLY for migration/rollback tooling
+// (scripts/migrate*ToPostgres.js, scripts/exportMongoBackup.js) and
+// integration tests that verify migration idempotency against disposable
+// Mongo fixtures — each of those callers invokes connectMongo() itself,
+// independently of server.js.
 export async function connectMongo() {
   try {
     await mongoose.connect(process.env.MONGO_URI)

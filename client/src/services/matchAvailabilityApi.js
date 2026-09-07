@@ -1,6 +1,5 @@
 import api from './api.js'
 
-// Phase 14 Part 1 — player match availability/RSVP.
 export async function fetchMyAvailability(matchId) {
   const { data } = await api.get(`/me/availability/${matchId}`)
   return data

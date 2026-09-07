@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { formatMatchResultLine } from '../../models/matchDiscovery.model.js'
 
 const STATUS_BADGE = {
   upcoming: { text: 'Upcoming', className: 'bg-sky-500/15 text-sky-200' },
@@ -52,7 +53,7 @@ export default function MatchHero({ summary, liveScore = null }) {
                 </div>
               )
             }
-            // Phase 10 Part 3: if the live poller is tracking THIS exact
+            // If the live poller is tracking THIS exact
             // innings, its numbers supersede the page-load snapshot — one
             // authoritative score, never two drifting apart on screen.
             const score = liveScore && liveScore.inningsId === latest.inningsId ? liveScore : latest.score
@@ -75,9 +76,7 @@ export default function MatchHero({ summary, liveScore = null }) {
 
       {result && (
         <p className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-center text-sm font-bold text-emerald-200">
-          {result.resultType === 'TIE'
-            ? result.text
-            : `${result.winnerTeamId === teams.teamA.id ? teams.teamA.name : teams.teamB.name} ${result.text.charAt(0).toLowerCase()}${result.text.slice(1)}`}
+          {formatMatchResultLine(result, teams.teamA, teams.teamB)}
         </p>
       )}
     </div>

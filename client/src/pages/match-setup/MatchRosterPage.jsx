@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Check, Trophy } from 'lucide-react'
+import { Check, Trophy } from 'lucide-react'
+import BackButton from '../../components/common/BackButton.jsx'
 import { fetchMatch, setToss as setTossApi, startMatch as startMatchApi, finalizeMatch as finalizeMatchApi, fetchMatchInnings } from '../../services/matchApi.js'
 import { fetchTeamPlayers } from '../../services/playerApi.js'
 import { fetchMatchAvailability } from '../../services/matchAvailabilityApi.js'
@@ -9,6 +10,7 @@ import { battingTeamIdFromToss, bowlingTeamIdFromToss } from '../../models/match
 import { roleLabel } from '../../models/player.model.js'
 import Button from '../../components/ui/Button.jsx'
 import Avatar from '../../components/ui/Avatar.jsx'
+import PostMatchFeedbackPrompt from '../../components/feedback/PostMatchFeedbackPrompt.jsx'
 
 function formatOvers(legalBalls, ballsPerOver) {
   return `${Math.floor(legalBalls / ballsPerOver)}.${legalBalls % ballsPerOver}`
@@ -32,7 +34,7 @@ function topBowler(state, playersById) {
   return entries.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0]
 }
 
-// Phase 14 Part 1 (3) — availability is informational only, shown to help the
+// Availability is informational only, shown to help the
 // organizer build the roster; it never drives selection/locking itself.
 const AVAILABILITY_BADGE = {
   AVAILABLE: { label: 'Available', className: 'bg-emerald-500/15 text-emerald-300' },
@@ -73,7 +75,7 @@ function PlayerCheckboxList({ players, selectedIds, disabledIds, onToggle, avail
   )
 }
 
-// Phase 13 — captain/wicketkeeper designation. The backend/summary display
+// Captain/wicketkeeper designation. The backend/summary display
 // already fully support isCaptain/isWicketkeeper (match_players columns,
 // rendered as "(C)"/"(WK)" badges); this was the missing input. Only players
 // selected but not yet locked into a saved roster are eligible, since
@@ -256,7 +258,26 @@ export default function MatchRosterPage() {
       await startMatchApi(matchId)
       await loadAll()
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to start the match.')
+      const details = err.response?.data?.details
+      // U9 — a soft warning, not a hard block: the backend refuses only
+      // because confirmUnderstaffed wasn't sent yet, not because starting
+      // is actually disallowed. Ask once, then retry with the real
+      // confirmation rather than just showing the raw error.
+      if (details?.understaffed) {
+        const proceed = window.confirm(
+          `Only ${details.filledSlots} of ${details.totalSlots} required umpire slots are filled. Start the match anyway?`,
+        )
+        if (proceed) {
+          try {
+            await startMatchApi(matchId, { confirmUnderstaffed: true })
+            await loadAll()
+          } catch (retryErr) {
+            setError(retryErr.response?.data?.message || 'Unable to start the match.')
+          }
+        }
+      } else {
+        setError(err.response?.data?.message || 'Unable to start the match.')
+      }
     } finally {
       setBusy(false)
     }
@@ -330,14 +351,7 @@ export default function MatchRosterPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.82), rgba(2,6,23,0.82)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button
-          type="button"
-          onClick={() => navigate('/player/dashboard')}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </button>
+        <BackButton label="Back to Dashboard" fallback="/player/dashboard" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">Match Setup</h1>
         <p className="mt-1 text-sm text-slate-300">
@@ -609,6 +623,8 @@ export default function MatchRosterPage() {
             ) : (
               <p className="mt-6 border-t border-white/10 pt-5 text-sm text-slate-300">This match is finalized. The official record is locked.</p>
             )}
+
+            <PostMatchFeedbackPrompt matchId={match.id} />
           </section>
         )}
       </div>

@@ -17,7 +17,7 @@ import { ScrollEnvironmentProvider } from '../../../context/ScrollEnvironmentCon
  * it, which is what makes the whole page read as one environment instead
  * of a Hero with a plain page below it. Hero keeps its own existing
  * backdrop layered on top of this for its own viewport-height (untouched,
- * Phase 3 doesn't modify Hero.jsx) — both use the same loc-dark/grass/gold
+ * this system doesn't modify Hero.jsx) — both use the same loc-dark/grass/gold
  * palette, so the handoff between them reads as continuous.
  *
  * Six GPU-cheap layers (gradient, fog, floodlight rays, drifting light,
@@ -38,7 +38,7 @@ import { ScrollEnvironmentProvider } from '../../../context/ScrollEnvironmentCon
  * can't end up above real content regardless of what z-index a future
  * section adds.
  *
- * Phase 4 — each layer (except FloatingParticles, which already animates)
+ * Each layer (except FloatingParticles, which already animates)
  * is wrapped in ParallaxLayer for a few px of mouse-parallax, sourced from
  * Hero's pointer listener via MouseParallaxProvider (see HomePage.jsx).
  * Background moves least, glow moves most — a subtle depth cue, not a
@@ -46,14 +46,14 @@ import { ScrollEnvironmentProvider } from '../../../context/ScrollEnvironmentCon
  * identical to the outer `fixed inset-0` div it sits inside, so every
  * layer's own offsets (-top-32, top-1/3, etc.) resolve exactly as before.
  *
- * Phase 5 — Ambient + Glow (the two lighting layers) are additionally
+ * Ambient + Glow (the two lighting layers) are additionally
  * wrapped in one shared ScrollAtmosphere, a slow opacity "breathe" tied to
  * page-scroll progress. Gradient/Fog/FloodLightRays/Particles are
  * untouched — only the lighting reads as "evolving" while scrolling, per
  * the brief's "lighting may shift slightly, do not create dramatic
  * changes."
  *
- * Phase 6 — ScrollEnvironmentProvider replaces Phase 5's private scroll
+ * ScrollEnvironmentProvider replaces the previous private scroll
  * listener (inside the old ScrollAtmosphere) with one shared scroll-
  * progress source, scoped to this subtree only. ScrollAtmosphere's
  * "breathe" curve now follows a section-anchored lighting progression

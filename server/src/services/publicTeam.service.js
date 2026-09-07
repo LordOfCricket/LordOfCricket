@@ -42,8 +42,10 @@ export async function listPublicTeams({ search, limit, offset } = {}) {
 
 // Explicit public-safe mapping (Part 49) — findPlayersByTeam's raw row
 // includes user_id and other internal columns that must never reach a
-// public response.
-function mapPublicSquadPlayer(row) {
+// public response. Exported (Player Role Audit) so team.controller.js's
+// GET /teams/:id/players can reuse the exact same allowlist instead of
+// leaking the raw row (it previously did) — same fix, one source of truth.
+export function mapPublicSquadPlayer(row) {
   return {
     publicPlayerId: row.public_player_id,
     name: row.name,

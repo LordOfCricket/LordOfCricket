@@ -14,11 +14,29 @@ import * as scoringService from '../../services/scoring.service.js'
 import * as matchService from '../../services/match.service.js'
 import { createPlayer } from '../../models/player.model.js'
 
+// Phase 8 — test-debt fix: this fixture is documented as "a staff user to
+// act as scorer", but never actually had a `staff_role_id`, so `staff_role`
+// resolved to null and `requireMatchScorer`'s isSuperAdminUser/
+// isApprovedUmpireUser checks always rejected it with 403 — real, confirmed
+// pre-existing bug (not a Phase 6/7 regression; the fixture never worked for
+// HTTP-level scorer-gated routes). Harmless to the many other callers of
+// createFixture/createTeamsFixture that only ever use `userId` as an
+// attribution field for direct scoringService/matchService calls (those
+// never go through the HTTP scorer-authorization middleware at all) — only
+// the two files that hit the real HTTP scoring API
+// (commentary.integration.test.js, cricketRealtimePublish.integration.test.js)
+// were actually affected by the missing role, and are the fix this resolves.
+async function superAdminStaffRoleId() {
+  const { rows } = await pool.query(`SELECT id FROM staff_roles WHERE name = 'super_admin'`)
+  return rows[0].id
+}
+
 export async function createFixture({ ballsPerOver = 6 } = {}) {
+  const staffRoleId = await superAdminStaffRoleId()
   const scorerUser = (
     await pool.query(
-      `INSERT INTO users (name, email, password_hash, role) VALUES ('Integration Test Scorer', $1, 'not-a-real-hash', 'staff') RETURNING *`,
-      [`integration-test-scorer-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`]
+      `INSERT INTO users (name, email, password_hash, role, staff_role_id) VALUES ('Integration Test Scorer', $1, 'not-a-real-hash', 'staff', $2) RETURNING *`,
+      [`integration-test-scorer-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, staffRoleId]
     )
   ).rows[0]
 
@@ -100,10 +118,11 @@ export async function createFixture({ ballsPerOver = 6 } = {}) {
  * match.service.js / scoring.service.js flow being exercised.
  */
 export async function createTeamsFixture({ squadSize = 3 } = {}) {
+  const staffRoleId = await superAdminStaffRoleId()
   const scorerUser = (
     await pool.query(
-      `INSERT INTO users (name, email, password_hash, role) VALUES ('Integration Test Scorer', $1, 'not-a-real-hash', 'staff') RETURNING *`,
-      [`integration-test-scorer-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`]
+      `INSERT INTO users (name, email, password_hash, role, staff_role_id) VALUES ('Integration Test Scorer', $1, 'not-a-real-hash', 'staff', $2) RETURNING *`,
+      [`integration-test-scorer-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`, staffRoleId]
     )
   ).rows[0]
 

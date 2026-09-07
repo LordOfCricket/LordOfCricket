@@ -1260,8 +1260,20 @@ Teams discovery pages via a "Compare" button.
 ### 18.1 Mission and scope
 
 This phase turns LOC from "a cricket scoring platform with a booking module bolted on" into a
-complete operations system for **one physical ground** — never a multi-ground platform (no `ground_id`
-column was added anywhere; every query implicitly means "the one ground this deployment manages").
+complete operations system for **one physical ground** — at the time this phase was written, no
+`ground_id` column existed anywhere, so every query implicitly meant "the one ground this deployment
+manages."
+
+**Update (Phase 2A audit, corrected in place):** this is no longer true and should not be read as
+current architecture. Later phases (Phase 8 grounds/canteens, Phase 9 `ground_users` ground-scoped RBAC,
+Phase 12 ground_id on ground_photos/amenities, Phase 21 matches.ground_id) built a real, active
+multi-ground platform on top of this original single-ground design. See `docs/DATABASE.md` for the
+current, accurate state. **Update 2 (Phase 24, corrected in place):** `ground_bookings` also gained a
+`ground_id` column — the one remaining single-ground holdout described above no longer holds; see
+`docs/BOOKING.md` for the full multi-ground booking/team/player conflict engine this enabled.
+`advertisements`/`partners`/`gallery_images`/`ai_insights` remain deliberately global/ground-less by
+design, not by oversight.
+
 The mandate was explicit: reuse Phase 14's existing booking architecture, never redesign a working
 module, never touch scoring or the tournament engine. Every decision below follows directly from
 that constraint.

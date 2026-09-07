@@ -3,12 +3,12 @@ import LiveBowlerCard from './LiveBowlerCard.jsx'
 import LiveOverStrip from './LiveOverStrip.jsx'
 import LiveStatusBar from './LiveStatusBar.jsx'
 
-// Phase 10 Part 3 — the spectator "alive" section (Part 42/44): batsmen,
+// The spectator "alive" section: batsmen,
 // bowler, this over, chase, innings-break/connection state. Purely
-// presentational — polling lives one level up in MatchSummaryPage (Part 53:
+// presentational — polling lives one level up in MatchSummaryPage (
 // one poller per page, not one per panel), so this component only renders
 // whatever `liveState` it's handed. Every number is server-computed
-// (buildLiveMatchState.js); nothing here recalculates cricket facts (Part 73).
+// (buildLiveMatchState.js); nothing here recalculates cricket facts.
 
 function chaseLine(chase) {
   if (!chase) return null

@@ -20,12 +20,18 @@ function resultBadge(won) {
   return { text: 'Tied', className: 'bg-slate-500/15 text-slate-300' }
 }
 
-export default function MatchHistoryPanel({ matchHistory, onLoadMore }) {
+export default function MatchHistoryPanel({ matchHistory, onLoadMore, teamNamesById }) {
   const navigate = useNavigate()
 
   if (matchHistory.items.length === 0) {
     return <p className="text-sm text-slate-300">No finalized match history yet.</p>
   }
+
+  // Only worth showing the per-match team when the player has represented
+  // more than one — otherwise it's redundant with the profile header. The
+  // value is the real match_players.team_id snapshot (perf.teamId), never
+  // the player's current team.
+  const showRepresented = teamNamesById && Object.keys(teamNamesById).length > 1
 
   return (
     <div className="space-y-3">
@@ -41,6 +47,9 @@ export default function MatchHistoryPanel({ matchHistory, onLoadMore }) {
             <div>
               <p className="text-xs font-semibold text-slate-400">{formatDate(perf.date)}</p>
               <p className="text-sm font-semibold text-white">vs {perf.opponent}</p>
+              {showRepresented && perf.teamId != null && teamNamesById[perf.teamId] && (
+                <p className="text-xs text-slate-400">Represented: {teamNamesById[perf.teamId]}</p>
+              )}
               <p className="text-xs text-slate-400">{perf.result || '—'}</p>
             </div>
             <div className="flex items-center gap-3">

@@ -1,4 +1,4 @@
-// Phase 10 Part 3 (Part 30/31). Before any ball has been bowled in the
+// Before any ball has been bowled in the
 // innings, `bowler` is null — shown honestly as "Awaiting next bowler"
 // rather than crashing or displaying a stale previous bowler.
 export default function LiveBowlerCard({ bowler }) {

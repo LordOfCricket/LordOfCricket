@@ -2,8 +2,8 @@
 //
 // PostgreSQL (authoritative) -> existing services (matchSummary/statistics/
 // publicTeam, all UNCHANGED) -> domain/ai context builders (pure) ->
-// AI provider (server-only) -> structured-output validation -> MongoDB
-// cache -> API DTO.
+// AI provider (server-only) -> structured-output validation -> PostgreSQL
+// `ai_insights` cache (MongoDB cleanup, Phase 2 — was MongoDB before) -> API DTO.
 //
 // Non-negotiables enforced here, not hoped-for:
 //  - AI is NEVER on the critical path of any existing read — a provider
@@ -13,22 +13,25 @@
 //  - AI output is validated, then POST-PROCESSED to strip any key-moment
 //    candidateId or player id the model referenced that isn't actually in
 //    the supplied context (Part 11/48) — never trusted blindly.
-//  - AI never writes to PostgreSQL, ever. The only write this file performs
-//    is an upsert into the `AiInsight` Mongo cache document.
+//  - AI never writes to any cricket-authoritative PostgreSQL table, ever.
+//    The only write this file performs is an upsert into the `ai_insights`
+//    cache table — itself never a source of cricket truth (README
+//    principle #4/#9), just colocated with the facts it narrates since
+//    Phase 2.
 //  - A finalized match / a player or team with zero eligible data never
 //    gets a fabricated insight (Part 24/38/39) — returns INSUFFICIENT_DATA.
 
-import AiInsight from '../models/aiInsight.model.js'
-import { isMongoReady } from '../config/db.js'
+import { findAiInsight, upsertAiInsight } from '../models/aiInsight.model.js'
 import * as aiProvider from '../ai/aiProvider.js'
 import { validateStructuredOutput } from '../domain/ai/validateStructuredOutput.js'
 import { computeSourceFingerprint } from '../domain/ai/computeSourceFingerprint.js'
 import { buildMatchAIContext } from '../domain/ai/buildMatchAIContext.js'
 import { buildPlayerAIContext } from '../domain/ai/buildPlayerAIContext.js'
 import { buildTeamAIContext } from '../domain/ai/buildTeamAIContext.js'
+import { buildUmpireAIContext } from '../domain/ai/buildUmpireAIContext.js'
 import { MATCH_INSIGHT_SCHEMA } from '../ai/schemas/matchInsightSchema.js'
 import { PERSON_INSIGHT_SCHEMA } from '../ai/schemas/personInsightSchema.js'
-import { MATCH_INSIGHT_SYSTEM_PROMPT, PLAYER_INSIGHT_SYSTEM_PROMPT, TEAM_INSIGHT_SYSTEM_PROMPT } from '../ai/prompts/systemPrompts.js'
+import { MATCH_INSIGHT_SYSTEM_PROMPT, PLAYER_INSIGHT_SYSTEM_PROMPT, TEAM_INSIGHT_SYSTEM_PROMPT, UMPIRE_INSIGHT_SYSTEM_PROMPT } from '../ai/prompts/systemPrompts.js'
 
 import * as matchSummaryService from './matchSummary.service.js'
 import * as scoringService from './scoring.service.js'
@@ -36,6 +39,8 @@ import * as commentaryRepo from '../repositories/commentary.repository.js'
 import * as statisticsService from './statistics.service.js'
 import * as publicTeamService from './publicTeam.service.js'
 import { findPlayerByPublicId } from '../models/player.model.js'
+import { buildReputationSummary } from './umpireReputation.service.js'
+import { findMonthlyOfficiatingTrend } from '../models/umpireTrend.model.js'
 import { logger } from '../utils/logger.js'
 
 // Part 29 — bounded, in-process single-flight de-dup: N spectators hitting
@@ -76,12 +81,15 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
 
   const { facts, fingerprintInput } = built
   const fingerprint = computeSourceFingerprint(fingerprintInput)
-  const mongoUp = isMongoReady()
 
-  if (mongoUp && !forceRegenerate) {
-    const cached = await AiInsight.findOne({ sourceType, sourceId: String(sourceId) })
-    if (cached && cached.sourceFingerprint === fingerprint) {
-      return { available: true, insight: cached.payload, generatedAt: cached.generatedAt, model: cached.model, stale: false, cached: true }
+  // PostgreSQL is a hard dependency for this whole app (connectPostgres()
+  // exits the process on failure — see config/db.js) — unlike the retired
+  // Mongo-backed version, there's no "cache store temporarily unavailable"
+  // gate needed here: if the process is running, ai_insights is reachable.
+  if (!forceRegenerate) {
+    const cached = await findAiInsight({ sourceType, sourceId })
+    if (cached && cached.source_fingerprint === fingerprint) {
+      return { available: true, insight: cached.payload, generatedAt: cached.generated_at, model: cached.model, stale: false, cached: true }
     }
   }
 
@@ -111,13 +119,15 @@ async function getOrGenerate({ sourceType, sourceId, buildFacts, systemPrompt, t
       const cleaned = postProcess ? postProcess(parsed, facts) : parsed
       const generatedAt = new Date()
 
-      if (mongoUp) {
-        await AiInsight.findOneAndUpdate(
-          { sourceType, sourceId: String(sourceId) },
-          { sourceFingerprint: fingerprint, provider: process.env.AI_PROVIDER || 'anthropic', model: raw.model, payload: cleaned, generatedAt },
-          { upsert: true }
-        )
-      }
+      await upsertAiInsight({
+        sourceType,
+        sourceId,
+        sourceFingerprint: fingerprint,
+        provider: process.env.AI_PROVIDER || 'anthropic',
+        model: raw.model,
+        payload: cleaned,
+        generatedAt,
+      })
       return { available: true, insight: cleaned, generatedAt, model: raw.model, stale: false, cached: false }
     } catch (err) {
       const reason = err.code === 'AI_NOT_CONFIGURED' ? 'NOT_CONFIGURED' : err.code === 'AI_REFUSAL' ? 'DECLINED' : 'PROVIDER_ERROR'
@@ -181,6 +191,39 @@ export async function getPlayerInsight(publicPlayerId, opts = {}) {
       },
       systemPrompt: PLAYER_INSIGHT_SYSTEM_PROMPT,
       taskInstruction: 'Write the player performance insight now, as a single JSON object matching the schema. Nothing else.',
+      schema: PERSON_INSIGHT_SCHEMA,
+    },
+    opts
+  )
+}
+
+// Umpire Intelligence & Scale 2.0, Workstreams L/M/N — self-scoped (userId
+// comes from the authenticated caller, never a route param — see
+// aiInsight.routes.js's own comment), unlike the public player/team
+// insights: an umpire's performance narrative is personal-insight
+// territory (Workstream W), not a public profile page.
+export async function getUmpireInsight(userId, opts = {}) {
+  return getOrGenerate(
+    {
+      sourceType: 'UMPIRE',
+      sourceId: String(userId),
+      buildFacts: async () => {
+        const [summary, trend] = await Promise.all([buildReputationSummary(userId), findMonthlyOfficiatingTrend(userId, 6)])
+        if (!summary || (summary.matchesOfficiated === 0 && summary.ratingCount === 0)) return null // Part 38 equivalent — never a forced insight with no data
+        const facts = buildUmpireAIContext(summary, trend)
+        return {
+          facts,
+          fingerprintInput: {
+            matchesOfficiated: summary.matchesOfficiated,
+            reliability: summary.reliability,
+            ratingAvg: summary.ratingAvg,
+            ratingCount: summary.ratingCount,
+            trend,
+          },
+        }
+      },
+      systemPrompt: UMPIRE_INSIGHT_SYSTEM_PROMPT,
+      taskInstruction: 'Write the umpire performance insight now, as a single JSON object matching the schema. Nothing else.',
       schema: PERSON_INSIGHT_SCHEMA,
     },
     opts

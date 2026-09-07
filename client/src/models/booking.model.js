@@ -1,4 +1,4 @@
-// Phase 14 Part 3 — pure display formatting only. No availability/conflict
+// Pure display formatting only. No availability/conflict
 // logic lives here — the server is always authoritative for that.
 export function formatSlotTime(isoStart, isoEnd) {
   const opts = { hour: 'numeric', minute: '2-digit', hour12: true }
@@ -24,7 +24,7 @@ export function addDaysToDateStr(dateStr, days) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
-// Phase 18 Feature 3/15 — mirrors server/src/domain/booking/blockTypes.js.
+// Mirrors server/src/domain/booking/blockTypes.js.
 // Display-only; the server independently validates every value.
 export const GROUND_BLOCK_TYPES = {
   GRASS_MAINTENANCE: 'Grass Maintenance',

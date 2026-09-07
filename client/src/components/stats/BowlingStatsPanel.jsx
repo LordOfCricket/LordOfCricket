@@ -11,8 +11,8 @@ export default function BowlingStatsPanel({ bowling }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Innings" value={bowling.innings} />
         <StatTile label="Wickets" value={bowling.wickets} emphasis />
-        {/* Career workload spans matches that may use different balls-per-over
-            (Phase 3+), so it's shown as an exact legal-ball count rather than
+        {/* Career workload spans matches that may use different balls-per-over,
+            so it's shown as an exact legal-ball count rather than
             an "overs" string that would silently assume six-ball overs. */}
         <StatTile label="Legal Balls" value={bowling.legalBalls} />
         <StatTile label="Maidens" value={bowling.maidens} />

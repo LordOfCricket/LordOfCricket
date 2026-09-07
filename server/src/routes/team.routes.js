@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { listTeams, getTeam, listTeamPlayers, getPublicTeams, getTeamProfile, addTeamPlayer, removeTeamPlayer } from '../controllers/team.controller.js'
+import { listTeams, getTeam, listTeamPlayers, getPublicTeams, getTeamProfile, addTeamPlayer, removeTeamPlayer, createTeam } from '../controllers/team.controller.js'
 import { requireAuth, requireRole } from '../middlewares/auth.js'
 import { searchLimiter } from '../middlewares/rateLimit.js'
 import { requireIntParam } from '../middlewares/validateParams.js'
@@ -18,6 +18,9 @@ router.get('/', listTeams)
 router.get('/:id/profile', requireIntParam('id'), getTeamProfile)
 router.get('/:id', requireIntParam('id'), requireAuth, getTeam)
 router.get('/:id/players', requireIntParam('id'), requireAuth, listTeamPlayers)
+
+// Phase 5D.4 — authenticated players can create teams (owner becomes authenticated user)
+router.post('/', requireAuth, requireRole('player'), createTeam)
 
 // Phase 13 — staff-only team roster management (join/leave a team's squad).
 router.post('/:id/players', requireIntParam('id'), requireAuth, requireRole('staff'), addTeamPlayer)

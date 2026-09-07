@@ -10,7 +10,9 @@ export async function listFinalizedMatchParticipation(playerId, client = pool) {
     `SELECT mp.id AS match_player_id, mp.match_id, mp.team_id, mp.is_wicketkeeper,
             m.match_date, m.venue, m.team_a_id, m.team_b_id,
             m.winner_team_id, m.result_type, m.result_margin, m.result,
-            ta.name AS team_a_name, tb.name AS team_b_name
+            ta.name AS team_a_name, tb.name AS team_b_name,
+            ta.short_name AS team_a_short, tb.short_name AS team_b_short,
+            ta.logo_url AS team_a_logo, tb.logo_url AS team_b_logo
      FROM match_players mp
      JOIN matches m ON m.id = mp.match_id
      JOIN teams ta ON ta.id = m.team_a_id
@@ -95,6 +97,72 @@ export async function searchPlayers({ q = null, role = null, teamId = null, limi
   )
   const total = rows.length ? Number(rows[0].total_count) : 0
   return { rows, total }
+}
+
+// Priority 3 — LOC Cricket Records. Five cheap aggregate reads over the
+// authoritative innings/matches cache columns (innings.runs / wickets /
+// legal_balls and matches.result_type / result_margin / winner_team_id — the
+// same columns tournamentAnalytics.service.js already trusts) across ALL
+// finalized matches. No per-innings replay, no N+1: every figure is a plain
+// column value or a SUM, team names joined in SQL so the service never does a
+// second lookup. `limit` is small (see CRICKET_RECORD_LIMIT).
+export async function getCricketRecordRows(limit, client = pool) {
+  const teamTotalSelect = `
+    SELECT i.runs, i.wickets, i.legal_balls, i.batting_team_id, i.bowling_team_id,
+           m.id AS match_id, m.match_date,
+           bat.name AS batting_team_name, bat.short_name AS batting_team_short,
+           bowl.name AS bowling_team_name, bowl.short_name AS bowling_team_short
+    FROM innings i
+    JOIN matches m ON m.id = i.match_id
+    JOIN teams bat ON bat.id = i.batting_team_id
+    JOIN teams bowl ON bowl.id = i.bowling_team_id
+    WHERE m.status = 'finalized'`
+
+  const victorySelect = `
+    SELECT m.id AS match_id, m.match_date, m.result_margin, m.result_type, m.result, m.winner_team_id,
+           m.team_a_id, m.team_b_id,
+           ta.name AS team_a_name, ta.short_name AS team_a_short,
+           tb.name AS team_b_name, tb.short_name AS team_b_short
+    FROM matches m
+    JOIN teams ta ON ta.id = m.team_a_id
+    JOIN teams tb ON tb.id = m.team_b_id
+    WHERE m.status = 'finalized' AND m.result_margin IS NOT NULL AND m.winner_team_id IS NOT NULL
+      AND m.result_type = $2`
+
+  const [highestTeamTotals, highestMatchAggregates, biggestWinsByRuns, biggestWinsByWickets, highestSuccessfulChases] =
+    await Promise.all([
+      client.query(`${teamTotalSelect} ORDER BY i.runs DESC, m.match_date DESC, m.id DESC LIMIT $1`, [limit]),
+      client.query(
+        `SELECT m.id AS match_id, m.match_date, SUM(i.runs)::int AS total_runs,
+                m.team_a_id, m.team_b_id,
+                ta.name AS team_a_name, ta.short_name AS team_a_short,
+                tb.name AS team_b_name, tb.short_name AS team_b_short
+         FROM matches m
+         JOIN innings i ON i.match_id = m.id
+         JOIN teams ta ON ta.id = m.team_a_id
+         JOIN teams tb ON tb.id = m.team_b_id
+         WHERE m.status = 'finalized'
+         GROUP BY m.id, m.match_date, m.team_a_id, m.team_b_id, ta.name, ta.short_name, tb.name, tb.short_name
+         ORDER BY total_runs DESC, m.match_date DESC, m.id DESC
+         LIMIT $1`,
+        [limit]
+      ),
+      client.query(`${victorySelect} ORDER BY m.result_margin DESC, m.match_date DESC, m.id DESC LIMIT $1`, [limit, 'RUNS']),
+      client.query(`${victorySelect} ORDER BY m.result_margin DESC, m.match_date DESC, m.id DESC LIMIT $1`, [limit, 'WICKETS']),
+      client.query(
+        `${teamTotalSelect} AND i.innings_number = 2 AND m.winner_team_id = i.batting_team_id
+         ORDER BY i.runs DESC, m.match_date DESC, m.id DESC LIMIT $1`,
+        [limit]
+      ),
+    ])
+
+  return {
+    highestTeamTotals: highestTeamTotals.rows,
+    highestMatchAggregates: highestMatchAggregates.rows,
+    biggestWinsByRuns: biggestWinsByRuns.rows,
+    biggestWinsByWickets: biggestWinsByWickets.rows,
+    highestSuccessfulChases: highestSuccessfulChases.rows,
+  }
 }
 
 /** Public-safe player identity + current team, for a public profile header

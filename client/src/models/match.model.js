@@ -1,4 +1,4 @@
-// Phase 5 — real match setup helpers. Display/setup-time convenience only:
+// Real match setup helpers. Display/setup-time convenience only:
 // nothing here participates in scoring replay (that stays server-only, see
 // scoringApi.js). Deriving "who bats first" from a toss result already on the
 // match record is trivial bookkeeping, not a cricket-rules decision.
@@ -12,10 +12,4 @@ export function bowlingTeamIdFromToss(match) {
   const battingTeamId = battingTeamIdFromToss(match)
   if (!battingTeamId) return null
   return battingTeamId === match.team_a_id ? match.team_b_id : match.team_a_id
-}
-
-export const MATCH_STATUS_LABELS = {
-  upcoming: 'Upcoming',
-  live: 'Live',
-  completed: 'Completed',
 }

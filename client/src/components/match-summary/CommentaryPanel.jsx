@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useMatchCommentary } from '../../hooks/useMatchCommentary.js'
 import CommentaryEntry from './CommentaryEntry.jsx'
 
-// Phase 12 — the professional commentary feed. Filters operate on
-// structured tags/types (Part 51), never by parsing commentary text.
+// The professional commentary feed. Filters operate on
+// structured tags/types, never by parsing commentary text.
 // Newest-first, matching the existing MatchTimelinePanel convention.
 const FILTERS = [
   { key: 'ALL', label: 'All' },

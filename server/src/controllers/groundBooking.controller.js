@@ -3,6 +3,7 @@ import { BookingError, BOOKING_ERROR_CODES } from '../domain/booking/errors.js'
 import { utcToGroundLocalParts } from '../domain/booking/timezone.js'
 import { deriveDisplayStatus } from '../domain/booking/bookingStatus.js'
 import * as groundReportService from '../services/groundReport.service.js'
+import { findPublicActiveGroundByPublicId } from '../models/ground.model.js'
 
 // Phase 14 Part 3 — thin HTTP glue only, same convention as every other
 // controller in this codebase (scoring.controller.js, team.controller.js) —
@@ -34,6 +35,11 @@ function serializeBooking(row) {
     purpose: row.purpose,
     expectedPlayers: row.expected_players,
     notes: row.notes,
+    // Ground Pricing UX Polish — the server-computed, immutable price
+    // snapshot taken at booking-creation time (never recalculated later).
+    // null only for a STAFF_BLOCK (never priced) — a CUSTOMER booking always
+    // has one now that PRICE_UNAVAILABLE blocks creation without it.
+    amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
     googleSyncStatus: row.google_sync_status,
     createdAt: row.created_at,
     cancelledAt: row.cancelled_at,
@@ -43,14 +49,40 @@ function serializeBooking(row) {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     customerName: row.customer_name,
+    // Priority 4 — which ground this booking is for. Only present on rows
+    // that came through listByUser's LEFT JOIN (My Bookings); create/cancel/
+    // staff-schedule responses select ground_bookings alone, so this stays
+    // undefined there rather than a fabricated null object. Public-safe:
+    // publicGroundId + name + city are the same fields the ground card and
+    // ground discovery already expose to anyone.
+    ...(row.ground_public_id
+      ? { ground: { publicGroundId: row.ground_public_id, name: row.ground_name, city: row.ground_city } }
+      : {}),
   }
+}
+
+// Ground Time-Slot Pricing — this legacy walk-in path predates ground_id on
+// bookings (Phase 6 added optional groundId support to the service layer,
+// but no caller here ever passed it, so every request silently booked the
+// platform's single default ground regardless of which ground's page the
+// customer was on). An optional publicGroundId now resolves to a real,
+// ACTIVE ground via the exact same lookup the public ground profile route
+// already uses (findPublicActiveGroundByPublicId) — never a raw internal id
+// trusted from the client. Omitted, this falls back to the identical
+// default-ground behavior every existing caller already relies on.
+async function resolveOptionalGroundId(publicGroundId) {
+  if (!publicGroundId) return null
+  const ground = await findPublicActiveGroundByPublicId(String(publicGroundId))
+  if (!ground) throw new BookingError(BOOKING_ERROR_CODES.BOOKING_NOT_FOUND, 'Ground not found.')
+  return ground.id
 }
 
 export async function getAvailability(req, res, next) {
   try {
     const dateStr = String(req.query.date || '')
     const isStaff = req.user?.role === 'staff'
-    const slots = await bookingService.getDayAvailability(dateStr, { isStaff })
+    const groundId = await resolveOptionalGroundId(req.query.publicGroundId)
+    const slots = await bookingService.getDayAvailability(dateStr, { isStaff, groundId })
     res.json({ date: dateStr, slots })
   } catch (err) {
     next(err)
@@ -59,8 +91,9 @@ export async function getAvailability(req, res, next) {
 
 export async function createBooking(req, res, next) {
   try {
-    const { purpose, expectedPlayers, notes, contactPhone, contactEmail, clientActionId } = req.body
+    const { purpose, expectedPlayers, notes, contactPhone, contactEmail, clientActionId, publicGroundId } = req.body
     const { dateStr, hour, minute } = resolveSlotInput(req.body)
+    const groundId = await resolveOptionalGroundId(publicGroundId)
     const { booking, idempotentReplay } = await bookingService.createBooking({
       dateStr,
       hour,
@@ -73,6 +106,8 @@ export async function createBooking(req, res, next) {
       expectedPlayers: expectedPlayers != null ? Number(expectedPlayers) : null,
       notes: notes || null,
       clientActionId: clientActionId || null,
+      groundId,
+      io: req.io,
     })
     if (!idempotentReplay) bookingService.notifyBookingDateChanged(req.io, dateStr)
     res.status(201).json({ booking: serializeBooking(booking) })
@@ -93,7 +128,7 @@ export async function listMyBookings(req, res, next) {
 export async function cancelBooking(req, res, next) {
   try {
     const isStaff = req.user.role === 'staff'
-    const booking = await bookingService.cancelBooking(req.params.publicBookingId, { actingUserId: req.user.id, isStaff })
+    const booking = await bookingService.cancelBooking(req.params.publicBookingId, { actingUserId: req.user.id, isStaff, io: req.io })
     bookingService.notifyBookingDateChanged(req.io, new Date(booking.start_time).toISOString().slice(0, 10))
     res.json({ booking: serializeBooking(booking) })
   } catch (err) {

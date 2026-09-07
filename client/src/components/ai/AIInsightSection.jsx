@@ -2,12 +2,12 @@ import { Link } from 'react-router-dom'
 import { Sparkles } from 'lucide-react'
 import { useAIInsight } from '../../hooks/useAIInsight.js'
 
-// Phase 16 Part 33/37/38 — a clearly-labeled, bounded, independently-loading
-// section. Never rendered in a way that could be mistaken for the
-// authoritative scorecard/stats above it — a distinct "✨ AI ..." badge, a
-// visually separate card, and every unavailable state (not configured, not
-// enough data yet, provider hiccup) fails soft with a plain sentence, never
-// an error banner or a broken layout.
+// A clearly-labeled, bounded, independently-loading section. Never rendered
+// in a way that could be mistaken for the authoritative scorecard/stats
+// above it — a distinct "✨ AI ..." badge, a visually separate card, and
+// every unavailable state (not configured, not enough data yet, provider
+// hiccup) fails soft with a plain sentence, never an error banner or a
+// broken layout.
 
 const UNAVAILABLE_COPY = {
   NOT_CONFIGURED: 'AI insight is not configured for this site.',

@@ -37,7 +37,7 @@ export function useStaffDashboard() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Phase 13 — order history. The live "Orders" tab/queue above is
+  // Order history. The live "Orders" tab/queue above is
   // deliberately active-only (fetchOrders(..., 'active')); staff previously
   // had no UI path at all to review a completed/cancelled order after it left
   // that queue, even though the backend already supports an unfiltered fetch.
@@ -114,10 +114,15 @@ export function useStaffDashboard() {
   }, [tab, historyPage, loadHistory])
 
   useEffect(() => {
-    const socket = io(socketUrl)
+    // withCredentials — join-staff-room now authenticates via the same
+    // HttpOnly session cookie every REST call already sends (see server.js/
+    // realtime/socketAuth.js); without this, the handshake carries no
+    // credential and the join is silently rejected. Same option
+    // useMatchChat.js already uses for the identical reason.
+    const socket = io(socketUrl, { withCredentials: true })
     let hasConnectedBefore = false
 
-    // Phase 13 fix — Socket.IO drops room membership on disconnect and never
+    // Socket.IO drops room membership on disconnect and never
     // auto-rejoins an app-level room on its own reconnect; re-emit the join
     // every time, and resync orders/menu via HTTP on any reconnect (not the
     // first connect) so a status change published while the staff dashboard

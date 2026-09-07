@@ -1,15 +1,16 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
-import { motion, useReducedMotion } from 'motion/react'
+import { Suspense, lazy, useState } from 'react'
+import { motion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
 import IndiaMatchPanel from './IndiaMatchPanel.jsx'
+import BookStadiumPanel from './BookStadiumPanel.jsx'
 import ParallaxLayer from '../common/ParallaxLayer.jsx'
 import useMouseParallax from '../../hooks/useMouseParallax.js'
-import useWebGLCapability from '../../hooks/useWebGLCapability.js'
+import useHeroSceneMount from '../../hooks/useHeroSceneMount.js'
 import HeroSceneBoundary from './hero3d/HeroSceneBoundary.jsx'
 import { reveal } from '../../lib/motion.js'
 
-// Phase 7.1 — its own chunk, never bundled with Hero/HomePage. Import
+// Its own chunk, never bundled with Hero/HomePage. Import
 // deferred until after first paint (see the idle-mount effect below), so
 // this never competes with the critical render path.
 const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
@@ -19,41 +20,14 @@ const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 // is "show the ground and the scores fast", not stage a headline moment.
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 
-export default function Hero() {
-  const reduceMotion = useReducedMotion()
+export default function Hero({ ground, onViewGallery, onBook }) {
+  const [bookingOpen, setBookingOpen] = useState(false)
+  const { showScene, reduceMotion } = useHeroSceneMount()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
-  // Phase 4 — Hero is the pointer "source": one listener here drives the
+  // Hero is the pointer "source": one listener here drives the
   // shared parallax MotionValues that BackgroundSystem's layers and the
   // panels below all read from (see MouseParallaxContext.jsx).
   const { onPointerMove, onPointerLeave, enabled: parallaxEnabled } = useMouseParallax()
-
-  // Phase 7.1 — mount decision happens here, before HeroScene's dynamic
-  // import ever fires: unsupported/low-end devices (useWebGLCapability)
-  // and reduced-motion users (accessibility default: scene doesn't mount
-  // at all) never download the three.js chunk. Approved devices still
-  // defer the import until the browser is idle after first paint, so the
-  // 3D scene can never delay Hero's own content from appearing.
-  const webglCapable = useWebGLCapability()
-  const [sceneReady, setSceneReady] = useState(false)
-
-  useEffect(() => {
-    if (!webglCapable || reduceMotion) return undefined
-    let cancelled = false
-    const idleId = window.requestIdleCallback
-      ? window.requestIdleCallback(() => {
-          if (!cancelled) setSceneReady(true)
-        })
-      : setTimeout(() => {
-          if (!cancelled) setSceneReady(true)
-        }, 200)
-    return () => {
-      cancelled = true
-      if (window.requestIdleCallback && window.cancelIdleCallback) window.cancelIdleCallback(idleId)
-      else clearTimeout(idleId)
-    }
-  }, [webglCapable, reduceMotion])
-
-  const showScene = webglCapable && !reduceMotion && sceneReady
 
   return (
     <section
@@ -84,7 +58,7 @@ export default function Hero() {
         )}
       </div>
 
-      {/* Phase 7.1 — Hero 3D foundation. Sits above the CSS backdrop and
+      {/* Hero 3D foundation. Sits above the CSS backdrop and
           below the content grid (z-10) purely by DOM order, matching the
           backdrop div's own convention of not needing an explicit
           z-index. Decorative only: pointer-events-none + aria-hidden, and
@@ -108,19 +82,24 @@ export default function Hero() {
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:h-140 lg:grid-cols-[2fr_1fr] lg:gap-5 xl:h-155">
             <motion.div {...motionProps(DELAY.gallery)} className="lg:h-full">
               <ParallaxLayer strength={10} tilt tiltStrength={3} className="lg:h-full">
-                <GroundGallery className="lg:h-full" />
+                <GroundGallery className="lg:h-full" photos={ground.photos} groundName={ground.name} onViewGallery={onViewGallery} />
               </ParallaxLayer>
             </motion.div>
 
-            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:h-full lg:grid-cols-1 lg:gap-5">
-              <motion.div {...motionProps(DELAY.loc)} className="lg:h-full">
-                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
-                  <LocMatchPanel className="lg:h-full" />
+            <div className="flex flex-col gap-3 sm:gap-4 lg:gap-5">
+              <motion.div {...motionProps(DELAY.gallery)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <BookStadiumPanel groundName={ground.name} publicGroundId={ground.publicGroundId} onBook={() => onBook?.()} />
                 </ParallaxLayer>
               </motion.div>
-              <motion.div {...motionProps(DELAY.india)} className="lg:h-full">
-                <ParallaxLayer strength={6} tilt tiltStrength={2} className="lg:h-full">
-                  <IndiaMatchPanel className="lg:h-full" />
+              <motion.div {...motionProps(DELAY.loc)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <LocMatchPanel />
+                </ParallaxLayer>
+              </motion.div>
+              <motion.div {...motionProps(DELAY.india)}>
+                <ParallaxLayer strength={6} tilt tiltStrength={2}>
+                  <IndiaMatchPanel />
                 </ParallaxLayer>
               </motion.div>
             </div>

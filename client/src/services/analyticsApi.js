@@ -1,8 +1,8 @@
-// Phase 17 — thin wrappers for the Advanced Cricket Analytics read endpoints.
+// Thin wrappers for the Advanced Cricket Analytics read endpoints.
 // Every analytics endpoint is a public GET (same posture as Match Summary/
 // Player/Team profiles) and always returns 200 with real data (match
 // analytics uses an `available` flag for the "no innings yet" case, same
-// convention Phase 16's AI Insight endpoints established).
+// convention the AI Insight endpoints established).
 import api from './api.js'
 
 export async function fetchPlayerAnalytics(publicPlayerId, { recent, tournamentId } = {}) {
@@ -27,6 +27,13 @@ export async function fetchTournamentAnalytics(publicTournamentId) {
 
 export async function fetchPlayerComparison(p1, p2) {
   const { data } = await api.get('/players/compare', { params: { p1, p2 } })
+  return data
+}
+
+// Real batter-vs-bowler ENCOUNTERS in the finalized matches where both
+// players appeared — distinct from fetchPlayerComparison (career totals).
+export async function fetchPlayerHeadToHead(p1, p2) {
+  const { data } = await api.get('/players/head-to-head', { params: { p1, p2 } })
   return data
 }
 

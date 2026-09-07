@@ -4,10 +4,10 @@ import TeamBadge from '../teams/TeamBadge.jsx'
 import useGlowHover from '../../hooks/useGlowHover.js'
 import GlowOverlay from '../common/GlowOverlay.jsx'
 
-// Phase 10 Part 1 — one adaptive card for all three categories (Part 12),
+// One adaptive card for all three categories,
 // never three unrelated implementations. Every number shown is already
 // computed server-side by buildMatchCard.js; this component only formats
-// display strings (Part 73).
+// display strings.
 
 const STATUS_BADGE_CLASS = {
   upcoming: 'bg-sky-500/15 text-sky-200',

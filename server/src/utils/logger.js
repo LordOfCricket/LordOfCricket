@@ -7,11 +7,28 @@
 // `meta` — callers are responsible for that, same as they already are for
 // existing console.log/console.error call sites this replaces.
 
+import { AsyncLocalStorage } from 'async_hooks'
+
+// Phase 21.2 — request-id propagation. middlewares/requestId.js enters this
+// context once per request (wrapping `next()`); every log call made
+// anywhere during that request's lifetime — including deep in a
+// service/model several async hops away — automatically picks up the same
+// id with zero changes to any of the ~40+ existing logger.* call sites.
+// Outside a request (startup, background scripts) getStore() is undefined
+// and the field is simply omitted, exactly as before this change.
+const requestContext = new AsyncLocalStorage()
+
+export function runWithRequestId(id, fn) {
+  return requestContext.run({ requestId: id }, fn)
+}
+
 function write(stream, level, message, meta) {
+  const requestId = requestContext.getStore()?.requestId
   const line = {
     ts: new Date().toISOString(),
     level,
     message,
+    ...(requestId ? { requestId } : {}),
     ...(meta && Object.keys(meta).length ? { meta } : {}),
   }
   stream.write(JSON.stringify(line) + '\n')

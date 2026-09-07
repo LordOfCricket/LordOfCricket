@@ -1,7 +1,7 @@
 import { CanvasTexture, RepeatWrapping } from 'three'
 
 /**
- * Phase 7.2 — procedurally generates the cricket ball's surface detail
+ * Procedurally generates the cricket ball's surface detail
  * (leather grain + stitched seam) as a single grayscale canvas texture, at
  * runtime, entirely in memory. This is a deliberate choice over an
  * external asset:
@@ -33,7 +33,7 @@ function drawLeatherGrain(ctx) {
   ctx.fillStyle = `rgb(${BASE},${BASE},${BASE})`
   ctx.fillRect(0, 0, SIZE, SIZE)
 
-  // Phase 7.4 — a soft, larger-scale pass first: real leather has broad,
+  // A soft, larger-scale pass first: real leather has broad,
   // gentle tonal variation (hide grain, tanning irregularity) under the
   // fine speckle, not just uniform noise. Low opacity, low count — this
   // should only ever be visible through lighting, never as visible blobs.
@@ -65,7 +65,7 @@ function drawSeam(ctx) {
   const stitchLength = SIZE * 0.032
   const spacing = SIZE / stitchCount
 
-  // Phase 7.4 — a soft shadowed channel underneath everything else: a real
+  // A soft shadowed channel underneath everything else: a real
   // stitched seam sits in a shallow recessed groove across the whole
   // leather panel join, not just two hairline strokes. This gradient reads
   // as gentle ambient-occlusion-style depth once lit, and is drawn first so

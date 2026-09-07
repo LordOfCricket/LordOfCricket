@@ -1,7 +1,7 @@
 import { EASE } from './motion.js'
 
 /**
- * Phase 5 — scroll-reveal variant library. Each homepage section gets its
+ * Scroll-reveal variant library. Each homepage section gets its
  * own entrance "personality" (per the cinematic-scroll brief: no two
  * sections should move identically), all built from the same EASE curve
  * Hero/Navbar/GroundGallery's entrance animations already use so the whole
@@ -26,13 +26,6 @@ export const fadeUpSoft = {
 export const mapReveal = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, delay: 0.15, ease: EASE } },
-}
-
-// Gallery — "slowly appears from the atmosphere": slower, a touch of scale,
-// more upward travel than the others.
-export const atmosphereReveal = {
-  hidden: { opacity: 0, y: 32, scale: 0.97 },
-  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.9, ease: EASE } },
 }
 
 // Match Activity — energetic, but restrained (no aggressive movement).

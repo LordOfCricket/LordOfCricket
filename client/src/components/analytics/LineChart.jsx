@@ -1,10 +1,10 @@
-// Phase 17 — a small, dependency-free SVG line/worm chart. No chart library
+// A small, dependency-free SVG line/worm chart. No chart library
 // exists anywhere in this repo (audited before building this — see
-// docs/ARCHITECTURE.md's Phase 17 section), and three simple line charts
+// docs/ARCHITECTURE.md), and three simple line charts
 // don't justify adding one. `viewBox`-based (never a fixed pixel width) so it
 // scales to its container at any screen size, and every point carries an
 // SVG <title> (native hover tooltip) plus a visually-hidden data table so the
-// same values are available without relying on hover/color alone (Part 41/42).
+// same values are available without relying on hover/color alone.
 
 const WIDTH = 300
 const HEIGHT = 140
@@ -72,7 +72,7 @@ export default function LineChart({ series, formatY = (v) => v, xTickLabel = (x)
       </div>
 
       {/* Visually-hidden data summary — the same values LineChart plots, for
-          screen readers / non-hover access (Part 42). Plain text, not a
+          screen readers / non-hover access. Plain text, not a
           <table>: an auto-layout table's intrinsic content width can leak
           into the page's scrollable area even under sr-only's `overflow:
           hidden` (a real bug caught by the mobile/tablet E2E sweep — see

@@ -79,6 +79,25 @@ export const LEADERBOARD_METRICS = Object.freeze({
     sortKey: (c) => [c.batting.hundreds, c.batting.runs],
     secondary: battingSecondary,
   },
+  // Homepage redesign Stage 2 — "Maximum Score" (Hall of Fame). A single
+  // best-innings figure, not a career total — the batting-side twin of
+  // 'best-bowling' below. c.batting.highestScore ({runs, notOut}) already
+  // exists (aggregateBatting's own per-innings MAX over the same
+  // battingPerfs array `runs` is summed from) — no new query, no new
+  // replay logic, just registering it here.
+  'highest-score': {
+    title: 'Highest Score',
+    category: 'batting',
+    unit: 'runs',
+    value: (c) => c.batting.highestScore,
+    // A highest score of 0 (never got off the mark) isn't a real
+    // achievement — mirrors best-bowling's "wickets >= 1" floor.
+    qualifies: (c) => c.batting.highestScore != null && c.batting.highestScore.runs > 0,
+    // runs DESC, then not-out preferred on a tie — mirrors
+    // aggregateBatting's own tie-break rule exactly (battingStats.js).
+    sortKey: (c) => [c.batting.highestScore?.runs, c.batting.highestScore?.notOut ? 1 : 0],
+    secondary: battingSecondary,
+  },
   'batting-average': {
     title: 'Best Batting Average',
     category: 'batting',

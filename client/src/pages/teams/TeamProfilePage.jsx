@@ -1,5 +1,4 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { useTeamProfile } from '../../hooks/useTeamProfile.js'
 import { useAuth } from '../../hooks/useAuth.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -10,6 +9,9 @@ import TeamSquadList from '../../components/teams/TeamSquadList.jsx'
 import TeamSquadManager from '../../components/teams/TeamSquadManager.jsx'
 import TeamTopPerformers from '../../components/teams/TeamTopPerformers.jsx'
 import TeamMatchSection from '../../components/teams/TeamMatchSection.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
+import FollowButton from '../../components/common/FollowButton.jsx'
+import ShareButton from '../../components/common/ShareButton.jsx'
 import MatchCard from '../../components/matches/MatchCard.jsx'
 import AIInsightSection from '../../components/ai/AIInsightSection.jsx'
 import { fetchTeamInsight } from '../../services/aiInsightApi.js'
@@ -54,10 +56,22 @@ export default function TeamProfilePage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl space-y-6">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <BackButton fallback="/teams" />
+          <div className="flex items-center gap-2">
+            <FollowButton type="team" id={team.id} />
+            <ShareButton
+              size="sm"
+              title={team.name}
+              text={
+                record && record.matches > 0
+                  ? `${team.name} — ${record.wins}W / ${record.losses}L on Lord Of Cricket`
+                  : `${team.name} on Lord Of Cricket`
+              }
+              path={`/teams/${team.id}`}
+            />
+          </div>
+        </div>
 
         <TeamHero team={team} squadCount={squad.length} />
 
@@ -117,7 +131,7 @@ export default function TeamProfilePage() {
           </div>
         </div>
 
-        {/* Phase 16 — bounded, independently-loading; record/recent matches/top performers above remain primary. */}
+        {/* Bounded, independently-loading; record/recent matches/top performers above remain primary. */}
         <AIInsightSection title="AI Team Insight" fetchFn={fetchTeamInsight} id={team.id} kind="person" />
       </div>
     </main>

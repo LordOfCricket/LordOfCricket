@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 
-// Phase 10 Part 2 (Part 25/66) — newest-first W/L/T/NR sequence. Text labels
+// Newest-first W/L/T/NR sequence. Text labels
 // carry the meaning, not color alone (accessibility) — color is a secondary
 // reinforcement only.
 const RESULT_STYLE = {

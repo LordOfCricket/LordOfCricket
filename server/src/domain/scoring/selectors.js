@@ -78,7 +78,15 @@ export function groupDeliveriesByOver(deliveries) {
 
 export function selectWagonWheelShots(deliveries, shotsByDeliveryId) {
   return deliveries
-    .filter((d) => shotsByDeliveryId.has(d.id) && !d.isDeadBall)
+    // Phase 4 (Umpire Module) — a void-only correction (correction.service.js's
+    // applyCorrection) only deletes a delivery's shot row when `shot` is
+    // explicitly part of the patch, so a delivery voided without also
+    // clearing its shot can leave a stale row in wagon_wheel_shots. Excluding
+    // `voided` here (same reasoning as the existing `isDeadBall` exclusion —
+    // neither should ever visually count as a real shot) is the minimal fix:
+    // it can never render regardless of whether the write side left a stale
+    // row behind.
+    .filter((d) => shotsByDeliveryId.has(d.id) && !d.isDeadBall && !d.voided)
     .map((d) => {
       const shot = shotsByDeliveryId.get(d.id)
       return {

@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Trophy } from 'lucide-react'
+import { Trophy, Share2, Check } from 'lucide-react'
+import BackButton from '../../components/common/BackButton.jsx'
 import { useMatchSummary } from '../../hooks/useMatchSummary.js'
 import { useLiveMatch } from '../../hooks/useLiveMatch.js'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
@@ -39,19 +40,19 @@ function requiredRunRateLabel(chase) {
 export default function MatchSummaryPage() {
   const { matchId } = useParams()
   const navigate = useNavigate()
+  const [shareCopied, setShareCopied] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { summary, loading, error, retry, reload } = useMatchSummary(matchId)
 
-  // Phase 10 Part 3 — the ONE live poller for this page (Part 53). Disabled
+  // The ONE live poller for this page. Disabled
   // until `summary` has loaded once (initialStatus known), and self-latches
-  // off once the server reports a terminal match status (Part 17/96).
+  // off once the server reports a terminal match status.
   const { liveState, loading: liveLoading, connectionStatus, lastUpdatedAt, refresh: refreshLive } = useLiveMatch(matchId, { initialStatus: summary?.match?.status })
 
   // When the live poller detects a lifecycle transition the initial summary
   // fetch doesn't know about yet (upcoming -> live, innings break -> second
-  // innings, live -> completed), silently refetch the full Phase 9 summary
-  // so the static scorecard/Playing XI/result catch up too — no page reload
-  // (Part 20/22/39).
+  // innings, live -> completed), silently refetch the full summary
+  // so the static scorecard/Playing XI/result catch up too — no page reload.
   const liveLifecycleSignature = liveState ? `${liveState.match.status}:${liveState.match.isInningsBreak}:${liveState.currentInnings?.number ?? 0}` : null
   const summaryLifecycleSignature = summary ? `${summary.match.status}:${summary.match.isInningsBreak}:${summary.innings.length}` : null
   useEffect(() => {
@@ -69,6 +70,23 @@ export default function MatchSummaryPage() {
 
   const selectTab = (key) => setSearchParams((prev) => ({ ...Object.fromEntries(prev), tab: key }), { replace: true })
   const selectInnings = (id) => setSearchParams((prev) => ({ ...Object.fromEntries(prev), innings: String(id) }), { replace: true })
+
+  // This page's URL is already a stable, public deep link to the match.
+  const handleShare = async () => {
+    const url = window.location.href
+    const title = summary ? `${summary.teams.teamA.name} vs ${summary.teams.teamB.name} — Lord Of Cricket` : 'Lord Of Cricket'
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url })
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url)
+        setShareCopied(true)
+        setTimeout(() => setShareCopied(false), 2000)
+      }
+    } catch {
+      // user dismissed the share sheet — nothing to do
+    }
+  }
 
   if (loading) {
     return (
@@ -107,13 +125,20 @@ export default function MatchSummaryPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <BackButton fallback="/matches" />
+          <button
+            type="button"
+            onClick={handleShare}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10"
+          >
+            {shareCopied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Share2 className="h-3.5 w-3.5" />}
+            {shareCopied ? 'Link copied' : 'Share'}
+          </button>
+        </div>
 
         <div className="mt-4 space-y-4">
-          {/* Phase 15 Part 55 — only present for a tournament-linked match; never clutters a normal match. */}
+          {/* Only present for a tournament-linked match; never clutters a normal match. */}
           {summary.tournamentContext && (
             <Link
               to={`/tournaments/${summary.tournamentContext.publicTournamentId}`}
@@ -179,7 +204,7 @@ export default function MatchSummaryPage() {
             </>
           )}
 
-          {/* Phase 16 — clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
+          {/* Clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
           <AIInsightSection title="AI Match Insight" fetchFn={fetchMatchInsight} id={matchId} kind="match" />
         </div>
       </div>

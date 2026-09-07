@@ -1,11 +1,16 @@
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, Clock } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CalendarDays, Clock, MapPin } from 'lucide-react'
 import { useMyBookings } from '../../hooks/useMyBookings.js'
 import { formatBookingDate, formatSlotTime } from '../../models/booking.model.js'
 import Button from '../../components/ui/Button.jsx'
+import BackButton from '../../components/common/BackButton.jsx'
 
+// Keyed by the server's derived displayStatus (APPROVED / COMPLETED /
+// CANCELLED) — the same lifecycle label mobile's booking cards already show,
+// so the two platforms read identically.
 const STATUS_BADGE = {
-  CONFIRMED: 'bg-emerald-500/15 text-emerald-300',
+  APPROVED: 'bg-emerald-500/15 text-emerald-300',
+  COMPLETED: 'bg-white/10 text-slate-300',
   CANCELLED: 'bg-white/10 text-slate-400',
 }
 
@@ -19,7 +24,16 @@ function BookingCard({ booking, onCancel, cancelling }) {
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-white">
+          {booking.ground && (
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-white">
+              <MapPin className="h-4 w-4 text-emerald-300" />
+              <Link to={`/grounds/${booking.ground.publicGroundId}`} className="hover:text-emerald-300">
+                {booking.ground.name}
+              </Link>
+              {booking.ground.city && <span className="font-normal text-slate-400">· {booking.ground.city}</span>}
+            </p>
+          )}
+          <p className={`flex items-center gap-1.5 text-sm ${booking.ground ? 'mt-1 text-slate-300' : 'font-semibold text-white'}`}>
             <CalendarDays className="h-4 w-4 text-emerald-300" />
             {formatBookingDate(booking.startTime)}
           </p>
@@ -29,8 +43,11 @@ function BookingCard({ booking, onCancel, cancelling }) {
           </p>
           {booking.purpose && <p className="mt-1 text-xs text-slate-400">{booking.purpose}</p>}
           <p className="mt-2 text-xs font-semibold text-emerald-300">{booking.publicBookingId}</p>
+          {booking.amount != null && <p className="mt-1 text-sm font-bold text-[#F5D547]">₹{Number(booking.amount).toLocaleString('en-IN')}</p>}
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase ${STATUS_BADGE[booking.status] || 'bg-white/10 text-slate-300'}`}>{booking.status}</span>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase ${STATUS_BADGE[booking.displayStatus] || 'bg-white/10 text-slate-300'}`}>
+          {booking.displayStatus || booking.status}
+        </span>
       </div>
       {canCancel && (
         <button
@@ -56,10 +73,7 @@ export default function MyBookingsPage() {
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-3xl">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-medium text-emerald-100/70 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <BackButton fallback="/" />
 
         <h1 className="mt-6 text-3xl font-bold text-white">My Bookings</h1>
 

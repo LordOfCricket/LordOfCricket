@@ -28,22 +28,92 @@ Not applied to every route — only the classes below, chosen because they're ei
 
 | Class | Limit | Applies to |
 |---|---|---|
-| Auth | 20 / 15 min | `POST /auth/login`, `POST /auth/signup` |
+| OTP request | 10 / 15 min, per IP | `POST /auth/send-otp`, `POST /auth/register/player`, `POST /auth/register/umpire` |
+| OTP verify | 20 / 15 min, per IP | `POST /auth/verify-otp` |
+| OTP request, per identifier | 5 / hour | any of the three OTP-request routes above, keyed by the identifier itself (real Postgres read — correct under horizontal scaling; see `docs/AUTH.md`) |
+| Ground registration writes | 10 / 10 min | `POST /grounds`, `POST /ground-owner-requests` |
 | AI | 30 / 15 min | every `GET/POST .../ai-insight*` route |
 | Booking writes | 30 / 10 min | `POST /bookings`, `POST /bookings/:id/cancel`, `POST /bookings/staff/block` |
 | Public search | 120 / 5 min | `GET /players` (search), `GET /teams/discover` |
 | Commentary | 300 / 5 min | `GET /matches/:id/commentary` |
 | Analytics | 120 / 5 min | every `.../analytics` and `/compare` route |
+| MFA verify (Phase 6) | 10 / 15 min, per user | `/auth/mfa/*/verify`, `/auth/mfa/webauthn/register/verify` — the ceremony/verification-attempt endpoints |
+| MFA manage (Phase 6) | 20 / 15 min, per user | `/auth/mfa/status`, enroll/disable/regenerate/remove endpoints |
+| Step-up (Phase 6) | 15 / 15 min, per user | `/auth/step-up/options`, `/auth/step-up/verify` |
 
 ## Auth (`/api/auth`)
 
+Unified OTP login/registration (Phase 3/4 — see `docs/AUTH.md`, `docs/ACCOUNT_CREATION.md`) is the only
+login/signup path — the legacy email+password `/signup`/`/login` routes were removed in Phase 8 (zero
+reachable frontend callers; see `docs/AUTH.md`'s "Legacy JWT" section).
+
 | Method & Path | Access | Notes |
 |---|---|---|
-| `POST /signup` | Public | Creates a user account, returns `{ token, user }` |
-| `POST /login` | Public | Returns `{ token, user }` |
+| `POST /send-otp` | Public | `{ identifier }` (email or phone). Always returns a generic success message — never reveals whether an account exists. |
+| `POST /register/player` | Public | `{ name, identifier }`. `409` if the identifier already has a real account (unlike `/send-otp`, this does reveal that). |
+| `POST /register/umpire` | Public | Same shape as `/register/player`; completing it also files a pending umpire request. |
+| `POST /verify-otp` | Public | `{ identifier, code }`. Completes whichever of the three requests above created the pending code (branches on its `purpose`) — logs in, registers a Player, or registers an Umpire, then sets the session cookie. |
+| `POST /logout` | Public | Revokes the current session, clears the cookie. |
 | `GET /me` | Auth | Current user |
 | `PATCH /role` | Auth | `role` = `'player'` \| `'staff'` |
 | `PATCH /player-type` | Auth | `playerType` = `'team_player'` \| `'umpire'`; selecting `'umpire'` files an umpire request |
+
+### MFA / step-up (`/api/auth/mfa`, `/api/auth/step-up`) — Phase 6
+
+Mandatory for SUPER_ADMIN/GROUND_OWNER only — see `docs/MFA.md` for the full policy, factor lifecycle, and
+step-up scope list. `GET /me` above gained a new top-level `mfa: {enrolled, required, verified}` key
+alongside the unchanged `user` key.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /mfa/status` | Auth | Factors + `{enrolled, required, verified}` |
+| `POST /mfa/webauthn/register/options` | Auth | Registration challenge |
+| `POST /mfa/webauthn/register/verify` | Auth | Bootstrap-or-step-up-gated (`WEBAUTHN_ADD`) |
+| `DELETE /mfa/webauthn/:credentialId` | Auth | Step-up-gated (`WEBAUTHN_REMOVE`), last-factor-protected |
+| `POST /mfa/totp/enroll` | Auth | Returns a QR code; not yet active |
+| `POST /mfa/totp/verify` | Auth | Activates enrollment (bootstrap-or-step-up-gated, `TOTP_ENABLE`) |
+| `POST /mfa/totp/disable` | Auth | Step-up-gated (`TOTP_DISABLE`), last-factor-protected |
+| `POST /mfa/recovery-codes/regenerate` | Auth | Step-up-gated (`RECOVERY_CODES_REGENERATE`) |
+| `POST /mfa/disable` | Auth | Ground Owner only (`403` for Super Admin — non-disableable by design), step-up-gated (`MFA_DISABLE`) |
+| `POST /mfa/verify/options` \| `/mfa/verify` | Auth | Baseline MFA verification — sets `sessions.mfa_verified_at` |
+| `POST /step-up/options` \| `/step-up/verify` | Auth | `{ actionScope }` — short-lived, single-use grant for one of the 10 gated scopes |
+
+## Ground Owner Requests (`/api/ground-owner-requests`) — Phase 4
+
+Request/approval flow for becoming a Ground Owner — see `docs/ACCOUNT_CREATION.md` for the full transaction
+detail. `POST /api/grounds` (requireAuth) is a thin repoint into the same `submitRequest`, using the
+session user as the applicant.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `POST /` | Public | Submits a request; no ground or membership is created yet |
+| `GET /status/:publicRequestId` | Public | `{ status, rejectionReason?, moreInfoNotes? }` only — never `reviewedBy` or any internal id |
+| `GET /` | Super Admin | `?status=` filter |
+| `GET /:publicRequestId` | Super Admin | Full detail; auto-transitions `PENDING` → `UNDER_REVIEW` on first view |
+| `POST /:publicRequestId/approve` | Super Admin | Creates the ground (`ACTIVE`) + `GROUND_OWNER` membership, atomically. `409` if already decided. NOT step-up-gated (intentional exemption, 2026-08-24) — see `docs/MFA.md`. |
+| `POST /:publicRequestId/reject` | Super Admin | `{ reason }` required |
+| `POST /:publicRequestId/request-information` | Super Admin | `{ notes }` required, sets `MORE_INFORMATION_REQUIRED` |
+
+## Ground Owner — Staff & Permissions (`/api/ground-owner/grounds/:publicGroundId/staff`) — Phase 4/5
+
+Ground-scoped staff (`GROUND_ADMIN` \| `CANTEEN_STAFF`), distinct from the platform-wide `POST /staff`
+below. See `docs/ACCOUNT_CREATION.md` for the find-or-create/no-invitation-token rationale and
+`docs/AUTHORIZATION.md` for the full permission model.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `GET /` | `STAFF_VIEW` permission (or Owner/Super Admin) | Lists staff for the ground, each row including its current `permissions: string[]` |
+| `POST /` | Owner-only (hardcoded, never delegable) | `{ name, identifier, role }`. Reuses an existing account's identity without changing its `role`; `409` if that person already holds that exact role at this ground. |
+| `POST /:membershipId/permissions` | Owner-only | `{ permissionKey }`. `400` unknown key, `404` `membershipId` not on this ground, `409` already granted. Step-up-gated (`PERMISSION_GRANT`, Phase 6). |
+| `DELETE /:membershipId/permissions/:permissionKey` | Owner-only | `404` if not currently active (never a silent no-op). Never step-up-gated — revoking only reduces privilege. |
+| `PATCH /:membershipId/disable` | Owner-only | Deactivates the membership — every permission-gated check re-verifies `is_active` fresh on every request, so this takes effect immediately, no re-login needed. Step-up-gated (`STAFF_DISABLE`, Phase 6). |
+| `GET /api/ground-owner/permissions/catalog` | `requireAuth` only | `{ permissions: [{key, description}] }` — the static 4-entry catalog, not ground-scoped. |
+
+Every other route under `/api/ground-owner/grounds/:publicGroundId/...` (matches, umpire slots, proposals,
+umpire-operations-summary) is gated by one of `MATCH_VIEW`/`MATCH_MANAGE`/`UMPIRE_MANAGE` — see
+`docs/AUTHORIZATION.md`'s full API authorization matrix for the exact route-by-route mapping. The Ground
+Owner of that ground always passes regardless of grants (ownership is itself the grant); Super Admin
+bypasses every ground-scoped check unconditionally.
 
 ## Self-service profile (`/api/me`)
 
@@ -188,6 +258,25 @@ sync-only, never queried for availability.
 Every booking/block response also carries `displayStatus` (Phase 18): `APPROVED` (confirmed, still
 upcoming), `COMPLETED` (confirmed, slot has passed), or `CANCELLED` — see docs/ARCHITECTURE.md §18.5
 for why LOC has no separate PENDING/REJECTED state.
+
+## Team Bookings & Match Proposals (`/api/grounds/:publicGroundId/bookings`, `/proposals`) — Phase 24/25
+
+Multi-ground, team/player-aware conflict engine — see `docs/BOOKING.md` for the full design. Distinct
+from the legacy walk-in flow above; a `booking_purpose` of `MATCH`/`PRACTICE` (never `WALK_IN`).
+`teamId` authorization is always derived from the caller's own current `players.team_id`, never
+trusted from the request body.
+
+| Method & Path | Access | Notes |
+|---|---|---|
+| `POST /grounds/:publicGroundId/bookings` | Auth | Body: `{bookingPurpose: 'MATCH'\|'PRACTICE', startTime, endTime, teamId?, participantPlayerIds, matchFormat?, purpose?, notes?, clientActionId?}`. `teamId` required for `MATCH`. Straight to `CONFIRMED`; `409 GROUND_SLOT_UNAVAILABLE`/`TEAM_TIME_CONFLICT`/`PLAYER_TIME_CONFLICT` names the specific axis that lost |
+| `GET /grounds/:publicGroundId/bookings/:publicBookingId` | Auth (owner, teammate, or ground staff with `BOOKING_VIEW`/`BOOKING_MANAGE`) | `404` for a WALK_IN booking, a wrong-ground booking, or an unauthorized viewer — same shape either way |
+| `POST /grounds/:publicGroundId/bookings/:publicBookingId/cancel` | Auth (owner or any team on the booking) | |
+| `POST /grounds/:publicGroundId/bookings/:publicBookingId/staff-cancel` \| `/check-in` \| `/no-show` | `requireGroundPermission('BOOKING_MANAGE')` | Ground-scoped staff/owner only; tenancy-checked against the booking's real `ground_id`, not just the URL |
+| `GET /grounds/:publicGroundId/proposals` | Public | Every OPEN, unexpired proposal at this ground — discovery is deliberately public, same posture as `GET /bookings/availability` |
+| `GET /grounds/:publicGroundId/proposals/:publicProposalId` | Public | |
+| `POST /grounds/:publicGroundId/proposals` | Auth | Same body as a MATCH booking; `teamId` required. Reserves the ground + proposing team/players immediately (`status: 'PROPOSED'`) |
+| `POST /grounds/:publicGroundId/proposals/:publicProposalId/accept` | Auth | Body: `{teamId, participantPlayerIds}`. Atomic claim-then-attach (only one concurrent acceptor can ever win); `409 PROPOSAL_ALREADY_ACCEPTED`/`PROPOSAL_EXPIRED`/`PROPOSAL_CANCELLED`, `400 SELF_ACCEPT_NOT_ALLOWED` |
+| `POST /grounds/:publicGroundId/proposals/:publicProposalId/cancel` | Auth (proposing-team member) | OPEN proposals only — a `CONFIRMED` one must be withdrawn via the ordinary booking-cancel route above |
 
 ## Ground Operations (`/api/ground`) — Phase 18
 

@@ -1,19 +1,21 @@
 import axios from 'axios'
-import { getStoredToken } from '../utils/authToken.js'
 
 // The merged backend serves canteen routes under /api/canteen (see server/src/app.js).
 // VITE_API_URL already points at ".../api" (e.g. http://localhost:5000/api),
 // same as the LOC client, so we just add the "/canteen" segment here.
+//
+// Phase 8 — this instance never had `withCredentials: true` and instead
+// relied entirely on a localStorage JWT that no real OTP-authenticated user
+// has had since Phase 3 replaced password login as the reachable login UI
+// (confirmed: nothing writes to localStorage's authToken key anymore, and
+// hasn't since Phase 3 shipped). Every requireAuth-gated canteen route
+// (order placement, order history, staff menu management) was therefore
+// sending zero authentication credential at all — a real, previously
+// undiscovered production-blocking bug, not merely stale code. Fixed to
+// match api.js's pattern: the HttpOnly session cookie via `withCredentials`.
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/canteen`,
-})
-
-api.interceptors.request.use((config) => {
-  const token = getStoredToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
+  withCredentials: true,
 })
 
 export async function fetchMenu() {
@@ -27,21 +29,11 @@ export async function fetchMasterMenu() {
 }
 
 export async function createMenuItem(payload) {
-  if (payload instanceof FormData) {
-    const response = await api.post('/menu/master', payload)
-    return response.data.item
-  }
-
   const response = await api.post('/menu/master', payload)
   return response.data.item
 }
 
 export async function updateMenuItem(id, payload) {
-  if (payload instanceof FormData) {
-    const response = await api.patch(`/menu/master/${id}`, payload)
-    return response.data.item
-  }
-
   const response = await api.patch(`/menu/master/${id}`, payload)
   return response.data.item
 }

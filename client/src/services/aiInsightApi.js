@@ -1,6 +1,6 @@
-// Phase 16 — thin wrapper for the three AI Insight read endpoints. Every
+// Thin wrapper for the three AI Insight read endpoints. Every
 // response is 200 with an `available` flag (never an error for "no insight
-// yet") — see docs/API.md's Phase 16 section.
+// yet") — see docs/API.md.
 import api from './api.js'
 
 export async function fetchMatchInsight(matchId) {
