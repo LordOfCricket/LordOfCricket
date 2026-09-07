@@ -106,8 +106,15 @@ follow these steps if you want the AI Insight narrative sections to actually gen
 
 ## Deploying — platform notes
 
-LOC is a standard Node/Express API + a static Vite SPA + PostgreSQL (+ optional MongoDB). No platform
-is required by the architecture; pick whichever fits. Concrete config included in this repo:
+LOC is a standard Node/Express API + a static Vite SPA + PostgreSQL. Current architecture:
+
+```
+Frontend (Vite SPA) → Backend (Node/Express API) → PostgreSQL
+```
+
+No container platform or orchestrator is required. Run the backend as a plain Node process
+(`npm ci`, then `npm start` → `node src/server.js`) and serve the frontend as a static build
+(`npm run build`, output directory `dist`) from any static host.
 
 - **Frontend (static SPA) — Vercel**: `client/vercel.json` sets the build/output directory and
   rewrites every path to `index.html` (required for client-side routing — without it, a direct visit
@@ -115,47 +122,8 @@ is required by the architecture; pick whichever fits. Concrete config included i
 - **Frontend (static SPA) — Netlify / Render Static Site**: `client/public/_redirects` (copied
   verbatim into `client/dist` by the Vite build) provides the same SPA-fallback rewrite; both
   platforms auto-detect this file.
-- **Backend — any container platform (Railway / Fly.io / Render Web Service / self-hosted)**:
-  `server/Dockerfile` — multi-stage-free, `node:20-alpine`, `npm ci --omit=dev`, runs `npm start`,
-  includes a container-level `HEALTHCHECK` hitting `/api/health`. Not required — Railway/Render also
-  auto-detect a plain Node app (`npm install` + `npm start`) with no Dockerfile at all; the Dockerfile
-  exists for platforms/workflows that specifically want a container and to pin the exact Node version
-  (`node:20-alpine`, matching the `engines.node` field in both `package.json`s).
-- **Backend build/start commands** (for a non-container platform): build command `npm ci` (or
-  nothing — no compile step), start command `npm start` (→ `node src/server.js`).
-- **Frontend build/start commands**: build command `npm run build`, output directory `dist`, no
-  start command needed (static files only).
-
-## Kubernetes / Cloudflare tunnel
-
-`k8s/` holds manifests for a Kubernetes deployment with a Cloudflare Tunnel front door: the tunnel
-(`k8s/cloudflared-deployment.yaml`/`cloudflared-config.yaml`) routes `lordofcricket.com` to an
-in-cluster `nginx-ingress-controller` Service, which the Ingress (`k8s/loc-ingress.yaml`) then routes to
-`loc-backend`/`loc-frontend` by path. Both backend and frontend `Service`s are `ClusterIP` (Phase 7 — see
-`docs/SECURITY.md` finding #3) precisely because that traffic path never needs a node-level port; a
-`NodePort` there would bypass the tunnel and ingress controller entirely. Both container images run as
-non-root where practical (`server/Dockerfile` — the frontend's Nginx image is a documented, deferred
-exception; see `docs/SECURITY.md`).
-
-## Container image tagging
-
-**Never deploy `:latest` to production.** Both `k8s/loc-backend-deployment.yaml` and
-`k8s/loc-frontend-deployment.yaml` check in `image: loc-*:latest` as a placeholder only (commented
-in-file) — a real release must override it to an immutable, per-commit tag before applying:
-
-```
-docker build -t loc-backend:$(git rev-parse --short HEAD) -f server/Dockerfile server
-docker build -t loc-frontend:$(git rev-parse --short HEAD) -f client/Dockerfile client
-kubectl set image deployment/loc-backend  loc-backend=loc-backend:$(git rev-parse --short HEAD)   -n loc
-kubectl set image deployment/loc-frontend loc-frontend=loc-frontend:$(git rev-parse --short HEAD) -n loc
-```
-
-This repo has no Kustomize/Helm templating (introducing one is a bigger change than a tagging fix
-warrants at this scale) — the tag substitution above is a documented step in the deployment procedure
-(below), not automated. `.github/workflows/ci.yml` builds both images tagged by the commit SHA on every
-push as a build-reproducibility smoke test (not pushed anywhere — no container registry is configured
-in this repo yet); wiring that build step to also push to a real registry is the natural next step once
-one is chosen.
+- **Backend**: any platform that runs a plain Node process (Railway / Fly.io / Render Web Service /
+  self-hosted). Build command `npm ci`, start command `npm start`.
 
 ## Pre-deploy checklist
 
@@ -312,8 +280,8 @@ at that point. Not needed today; noted here so it isn't rediscovered the hard wa
 
 The server exits the process (`process.exit(1)`) on: a failed Postgres connection at startup, or an
 uncaught exception at runtime. Both are deliberate — continuing in either state is worse than a clean
-restart. Run the process under a supervisor (pm2, systemd, Docker's own restart policy, or your
-platform's equivalent) so it comes back up automatically.
+restart. Run the process under a supervisor (pm2, systemd, or your platform's equivalent) so it comes
+back up automatically.
 
 ## What this app does not need
 

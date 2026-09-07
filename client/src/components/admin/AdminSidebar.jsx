@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Handshake,
   Sparkles,
+  ShoppingBag,
   LogOut,
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
@@ -31,6 +32,7 @@ const LINKS = [
   { to: '/admin/umpires', label: 'Umpires', icon: Trophy, allow: ['super_admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
   { to: '/admin/sponsors', label: 'Sponsors', icon: Handshake, allow: ['super_admin'] },
+  { to: '/admin/merchandise', label: 'Merchandise', icon: ShoppingBag, allow: ['super_admin'] },
   { to: '/admin/amenities', label: 'Amenities', icon: Sparkles, allow: ['super_admin'] },
   { to: '/security', label: 'Account Security', icon: ShieldCheck, allow: ['super_admin', 'admin'] },
   { to: '/admin/audit-log', label: 'Audit Logs', icon: ClipboardList, allow: ['super_admin'] },

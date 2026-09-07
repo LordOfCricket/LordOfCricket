@@ -2876,3 +2876,28 @@ ALTER TABLE user_follows ADD CONSTRAINT user_follows_exactly_one_target
 ALTER TABLE user_follows DROP CONSTRAINT IF EXISTS user_follows_unique_ground;
 ALTER TABLE user_follows ADD CONSTRAINT user_follows_unique_ground UNIQUE (user_id, ground_id);
 CREATE INDEX IF NOT EXISTS idx_user_follows_ground ON user_follows(ground_id) WHERE ground_id IS NOT NULL;
+
+-- ============================================================================
+-- Merchandise — Super Admin managed homepage showcase (Cloudinary URL + data
+-- in Postgres, image bytes stay in Cloudinary). Same storage shape as
+-- `partners` / `advertisements`: a standalone content table, no relations.
+-- `status` follows the app-level VARCHAR + validation convention used by
+-- grounds.status / orders.status (no Postgres enums anywhere in this schema).
+-- Deliberately minimal, but a standalone row so future merchandise_variants /
+-- inventory / cart / order tables can FK to merchandise(id) without reshaping.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS merchandise (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  description TEXT,
+  category VARCHAR(40),
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT,
+  original_price NUMERIC(10, 2),
+  selling_price NUMERIC(10, 2) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT', -- DRAFT | ACTIVE | INACTIVE | OUT_OF_STOCK
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_merchandise_status_sort ON merchandise(status, sort_order, created_at);

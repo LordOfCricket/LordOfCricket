@@ -9,6 +9,7 @@ import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import BookGroundSection from '../../components/ground/BookGroundSection.jsx'
 import HallOfFameSection from '../../components/home/HallOfFameSection.jsx'
 import NextGenerationSection from '../../components/home/NextGenerationSection.jsx'
+import MerchandiseSection from '../../components/home/MerchandiseSection.jsx'
 import SponsorsSection from '../../components/home/SponsorsSection.jsx'
 import FinalCtaSection from '../../components/home/FinalCtaSection.jsx'
 import SiteFooter from '../../components/home/SiteFooter.jsx'
@@ -18,7 +19,7 @@ import SiteFooter from '../../components/home/SiteFooter.jsx'
 // ground (that's GroundHomePage, Level 2, at /grounds/:publicGroundId).
 //
 // Full story order: PlatformHero -> About Us -> Book Ground -> Hall of Fame
-// -> Next Generation -> Sponsors -> Final CTA -> Footer. "Find Your Perfect
+// -> Next Generation -> Merchandise -> Sponsors -> Final CTA -> Footer. "Find Your Perfect
 // Ground" (city/nearby search + results grid), "Featured Grounds",
 // "Ecosystem" ("More Than A Ground."), and "Beyond the Scorecard" ("Every
 // Run Has A Direction") were all removed from here — ground browsing/
@@ -55,6 +56,8 @@ export default function DiscoveryPage() {
         <HallOfFameSection />
 
         <NextGenerationSection />
+
+        <MerchandiseSection />
         <SponsorsSection />
       </main>
 

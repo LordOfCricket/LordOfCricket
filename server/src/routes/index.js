@@ -9,6 +9,7 @@ import advertisementRoutes from './advertisement.routes.js'
 import matchRoutes from './match.routes.js'
 import indiaMatchRoutes from './indiaMatch.routes.js'
 import partnerRoutes from './partner.routes.js'
+import merchandiseRoutes from './merchandise.routes.js'
 import groundRoutes from './ground.routes.js'
 import groundOwnerRequestRoutes from './groundOwnerRequest.routes.js'
 import geocodeRoutes from './geocode.routes.js'
@@ -57,6 +58,7 @@ router.use('/matches', matchScoringRoutes)
 router.use('/innings', inningsScoringRoutes)
 router.use('/india-match', indiaMatchRoutes)
 router.use('/partners', partnerRoutes)
+router.use('/merchandise', merchandiseRoutes)
 
 // Phase 17 — MUST be mounted before teamRoutes: playerAnalyticsRoutes/
 // teamAnalyticsRoutes register a bare `/compare` route, which would otherwise

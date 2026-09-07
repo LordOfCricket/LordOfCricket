@@ -33,7 +33,10 @@ const CheckGroundRegistrationStatusPage = lazy(() => import('../pages/register-g
 const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground/GroundRegistrationStatusPage.jsx'))
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminSponsorsPage = lazy(() => import('../pages/admin-sponsors/AdminSponsorsPage.jsx'))
+const AdminMerchandisePage = lazy(() => import('../pages/admin-merchandise/AdminMerchandisePage.jsx'))
 const AdminAmenityCatalogPage = lazy(() => import('../pages/admin-amenities/AdminAmenityCatalogPage.jsx'))
+const MerchandiseCatalogPage = lazy(() => import('../pages/merchandise/MerchandiseCatalogPage.jsx'))
+const MerchandiseDetailPage = lazy(() => import('../pages/merchandise/MerchandiseDetailPage.jsx'))
 
 // Super Admin Staff Dashboard
 const AdminDashboardPage = lazy(() => import('../pages/admin-dashboard/AdminDashboardPage.jsx'))
@@ -175,7 +178,12 @@ const router = createBrowserRouter([
       { path: '/register-ground/check', element: withSuspense(<CheckGroundRegistrationStatusPage />) },
       { path: '/register-ground/status/:publicRequestId', element: withSuspense(<GroundRegistrationStatusPage />) },
       { path: '/grounds/:publicGroundId', element: withSuspense(<GroundHomePage />) },
+      // Merchandise — public read-only catalog + product detail (the
+      // homepage MerchandiseSection's CTAs). No cart/checkout.
+      { path: '/merchandise', element: withSuspense(<MerchandiseCatalogPage />) },
+      { path: '/merchandise/:id', element: withSuspense(<MerchandiseDetailPage />) },
       { path: '/admin/sponsors', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminSponsorsPage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/merchandise', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminMerchandisePage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminAmenityCatalogPage />)}</RequireMfaVerified></RequireStaffRole> },
 
       // Super Admin Staff Dashboard — RequireMfaVerified is a no-op for a

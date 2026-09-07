@@ -90,14 +90,3 @@ jobs:
         env:
           VITE_API_URL: http://localhost:5000/api
           VITE_SOCKET_URL: http://localhost:5000
-
-  docker-build:
-    # Phase 8 — Section 12/43: proves both production images actually build,
-    # tagged by commit SHA (immutable, never `latest`), on every push. Not
-    # pushed anywhere — no container registry is configured in this repo yet
-    # (see docs/DEPLOYMENT.md's "Container image tagging" section).
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t loc-backend:${{ github.sha }} -f server/Dockerfile server
-      - run: docker build -t loc-frontend:${{ github.sha }} -f client/Dockerfile client

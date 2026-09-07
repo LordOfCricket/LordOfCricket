@@ -1,14 +1,16 @@
-node_modules
+node_modules/
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!client/.env.production
 
 # Build outputs
-dist
-build
+dist/
+build/
 
 # User-uploaded content (server/uploads/**) — runtime data, not source
-uploads
+uploads/*
+!uploads/.gitkeep
 
 # MongoDB backup exports (server/backups/**, Phase 6) — a data snapshot, not source
 backups
@@ -17,9 +19,15 @@ backups
 *.log
 npm-debug.log*
 
+# Old packaged backups — never commit these again
+*.tar
+
 # Coverage
 coverage
 
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Contains an API key — see .mcp.json (untracked now, rotate key before recommitting any form of it)
+.mcp.json
