@@ -23,7 +23,7 @@ import { findPermissionByKey, hasActivePermission, grantPermission } from '../mo
 import { pool as db } from '../config/db.js'
 
 // Testing Environment Seed — creates ONE deterministic, clearly-labeled test
-// account per role (loc-test-*@loctest.local) plus one disposable "LOC Test
+// account per role (<role>@gmail.com) plus one disposable "LOC Test
 // Ground" and a small amount of test data, so a non-developer tester can log
 // in with email+password and exercise every role WITHOUT needing Twilio/OTP.
 //
@@ -51,11 +51,11 @@ const GROUND_SLUG = 'loc-test-ground'
 const GROUND_NAME = 'LOC Test Ground'
 
 const ACCOUNTS = {
-  superAdmin: { label: 'SUPER_ADMIN', email: 'loc-test-superadmin@loctest.local', name: 'LOC Test Super Admin' },
-  owner: { label: 'GROUND_OWNER', email: 'loc-test-owner@loctest.local', name: 'LOC Test Ground Owner' },
-  staff: { label: 'STAFF / GROUND_ADMIN', email: 'loc-test-staff@loctest.local', name: 'LOC Test Staff' },
-  umpire: { label: 'UMPIRE', email: 'loc-test-umpire@loctest.local', name: 'LOC Test Umpire' },
-  player: { label: 'PLAYER', email: 'loc-test-player@loctest.local', name: 'LOC Test Player' },
+  superAdmin: { label: 'SUPER_ADMIN', email: 'superadmin@gmail.com', name: 'LOC Test Super Admin' },
+  owner: { label: 'GROUND_OWNER', email: 'owner@gmail.com', name: 'LOC Test Ground Owner' },
+  staff: { label: 'STAFF / GROUND_ADMIN', email: 'staff@gmail.com', name: 'LOC Test Staff' },
+  umpire: { label: 'UMPIRE', email: 'umpire@gmail.com', name: 'LOC Test Umpire' },
+  player: { label: 'PLAYER', email: 'player@gmail.com', name: 'LOC Test Player' },
 }
 
 const STAFF_PERMISSIONS = ['MATCH_VIEW', 'MATCH_MANAGE', 'UMPIRE_MANAGE', 'BOOKING_VIEW', 'BOOKING_MANAGE', 'PRICING_VIEW', 'PRICING_MANAGE', 'STAFF_VIEW']
@@ -64,6 +64,48 @@ function todayPlusDays(days) {
   const d = new Date()
   d.setDate(d.getDate() + days)
   return d.toISOString().slice(0, 10)
+}
+
+// Legacy -> current test-account email map. Older seeded databases hold the
+// `loc-test-*@loctest.local` addresses; rename those rows in place so every
+// FK-linked thing (password, role, player_type, permissions, umpire request,
+// ground/team membership, match assignments, verification state) is kept
+// exactly as-is. Only ever matches these 5 known local test addresses, so
+// it's a no-op on a fresh DB and on production.
+const LEGACY_EMAIL_MAP = {
+  'loc-test-superadmin@loctest.local': ACCOUNTS.superAdmin.email,
+  'loc-test-owner@loctest.local': ACCOUNTS.owner.email,
+  'loc-test-staff@loctest.local': ACCOUNTS.staff.email,
+  'loc-test-umpire@loctest.local': ACCOUNTS.umpire.email,
+  'loc-test-player@loctest.local': ACCOUNTS.player.email,
+}
+
+async function renameLegacyTestAccounts() {
+  const results = []
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const [oldEmail, newEmail] of Object.entries(LEGACY_EMAIL_MAP)) {
+      // Rename only when the legacy row exists AND the new address is free —
+      // never merge, never overwrite an existing account.
+      const { rows } = await client.query(
+        `UPDATE users
+            SET email = $2, updated_at = NOW()
+          WHERE email = $1
+            AND NOT EXISTS (SELECT 1 FROM users WHERE email = $2)
+        RETURNING id`,
+        [oldEmail, newEmail],
+      )
+      if (rows.length) results.push({ from: oldEmail, to: newEmail, userId: rows[0].id })
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+  return results
 }
 
 async function upsertPasswordUser({ name, email, role, staffRoleId = null, playerType = null }) {
@@ -103,7 +145,12 @@ async function ensureStaffPermission(groundUserId, permissionKey, grantedBy) {
 }
 
 async function main() {
-  const report = { accounts: {}, ground: null, pricingSlot: null, staffPermissions: [], team: null, bookings: [], match: null, umpireAssignment: null }
+  const report = { renamedLegacyAccounts: [], accounts: {}, ground: null, pricingSlot: null, staffPermissions: [], team: null, bookings: [], match: null, umpireAssignment: null }
+
+  // Bring any previously-seeded DB up to the current email scheme BEFORE the
+  // upserts below run, so they find the renamed rows instead of inserting
+  // duplicates.
+  report.renamedLegacyAccounts = await renameLegacyTestAccounts()
 
   const superAdminRoleId = (await findStaffRoleByName('super_admin')).id
   const { user: superAdmin, inserted: superAdminInserted } = await upsertPasswordUser({ ...ACCOUNTS.superAdmin, role: 'staff', staffRoleId: superAdminRoleId })

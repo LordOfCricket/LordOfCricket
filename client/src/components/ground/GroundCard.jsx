@@ -20,9 +20,9 @@ export default function GroundCard({ ground }) {
   return (
     <Link
       to={`/grounds/${ground.publicGroundId}`}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent shadow-lg shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-400/40 hover:shadow-emerald-500/20"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-loc-border bg-loc-surface  transition-all duration-300 hover:-translate-y-1 hover:border-loc-green hover:shadow-loc-md"
     >
-      <div className="relative h-44 w-full overflow-hidden bg-loc-card-dark">
+      <div className="relative h-44 w-full overflow-hidden bg-loc-mint">
         {ground.primaryPhoto ? (
           <img
             src={ground.primaryPhoto}
@@ -40,7 +40,7 @@ export default function GroundCard({ ground }) {
           />
         )}
         {typeof ground.distanceKm === 'number' && (
-          <span className="absolute top-3 right-3 rounded-full bg-loc-dark/80 px-3 py-1 text-xs font-semibold text-emerald-100 backdrop-blur-sm">
+          <span className="absolute top-3 right-3 rounded-full bg-loc-navy/80 px-3 py-1 text-xs font-semibold text-loc-muted backdrop-blur-sm">
             {formatDistance(ground.distanceKm)}
           </span>
         )}
@@ -48,27 +48,27 @@ export default function GroundCard({ ground }) {
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div>
-          <h3 className="text-lg font-semibold text-white">{ground.name}</h3>
+          <h3 className="text-lg font-semibold text-loc-navy">{ground.name}</h3>
           {(ground.city || ground.state) && (
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-emerald-100/60">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-loc-muted">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-green" aria-hidden="true" />
               {[ground.city, ground.state].filter(Boolean).join(', ')}
             </p>
           )}
           <div className="mt-1.5">
             <RatingBadge ratingAvg={ground.ratingAvg} ratingCount={ground.ratingCount} />
           </div>
-          <p className="mt-1.5 text-sm font-medium text-emerald-300">{formatStartingPrice(ground.startingPrice)}</p>
+          <p className="mt-1.5 text-sm font-medium text-loc-green">{formatStartingPrice(ground.startingPrice)}</p>
         </div>
 
         {facilities.length > 0 && (
           <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
             {facilities.slice(0, MAX_VISIBLE_FACILITIES).map((facility) => (
-              <span key={facility} className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-emerald-100/70">
+              <span key={facility} className="rounded-full bg-loc-mint px-2.5 py-1 text-[11px] font-medium text-loc-muted">
                 {facility}
               </span>
             ))}
-            {extraCount > 0 && <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-emerald-100/50">+{extraCount} more</span>}
+            {extraCount > 0 && <span className="rounded-full bg-loc-mint px-2.5 py-1 text-[11px] font-medium text-loc-faint">+{extraCount} more</span>}
           </div>
         )}
       </div>

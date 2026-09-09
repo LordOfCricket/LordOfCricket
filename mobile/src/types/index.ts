@@ -4,10 +4,28 @@ export interface User {
   email: string
   phone?: string
   role: 'user' | 'player' | 'staff' | 'ground_owner' | 'super_admin'
+  // Only meaningful when role === 'player'. An Umpire is role 'player' +
+  // player_type 'umpire' + an approved umpire_requests row.
+  player_type?: 'team_player' | 'umpire' | null
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
   force_password_change?: boolean
   created_at: string
 }
+
+export type UmpireRequestStatus = 'pending' | 'approved' | 'rejected'
+
+export interface UmpireRequest {
+  id: number
+  user_id: number
+  status: UmpireRequestStatus
+  requested_at: string
+  decided_at: string | null
+  decided_by: number | null
+}
+
+// Resolved client-side after auth. 'none' = umpire account with no request
+// row; 'unknown' = the status request itself failed (retryable).
+export type UmpireApproval = UmpireRequestStatus | 'none' | 'unknown' | null
 
 export interface Player {
   id: number

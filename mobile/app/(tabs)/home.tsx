@@ -1,39 +1,40 @@
 import React, { useMemo, useState } from 'react'
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-  Alert,
-} from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native'
+import Animated from 'react-native-reanimated'
 import { useRouter } from 'expo-router'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { useAuthStore } from '../../src/store/authStore'
 import { useMyPlayer } from '../../src/hooks/usePlayer'
 import { useTeamMatches } from '../../src/hooks/useTeams'
-import { useFeaturedGrounds } from '../../src/hooks/useGrounds'
 import { useMyAvailability, useSetMyAvailability } from '../../src/hooks/useMatchAvailability'
-import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../src/constants/colors'
+import { LocColors, Spacing, Typography, BorderRadius } from '../../src/constants/colors'
 import { MatchCard } from '../../src/components/MatchCard'
+import { HomeHeader } from '../../src/components/home/HomeHeader'
+import { useTabBarScroll } from '../../src/components/navigation/TabBarScrollContext'
+import { WhoWeAreSection } from '../../src/components/home/WhoWeAreSection'
+import { FeaturedGroundsSection } from '../../src/components/home/FeaturedGroundsSection'
 import { HallOfFameSection } from '../../src/components/home/HallOfFameSection'
 import { SponsorsSection } from '../../src/components/home/SponsorsSection'
 import { getErrorMessage } from '../../src/utils/errors'
 import { Match } from '../../src/types'
 
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}
+const YEAR = new Date().getFullYear()
+
+const EXPLORE_LINKS: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; title: string; sub: string; href: string }[] = [
+  { icon: 'trophy-outline', title: 'Player Rankings', sub: 'Official leaderboards from finalized matches', href: '/(tabs)/rankings' },
+  { icon: 'tournament', title: 'Tournaments', sub: 'Live, upcoming and completed competitions', href: '/(tabs)/tournaments' },
+]
+
+const FOOTER_LINKS: { label: string; href: string }[] = [
+  { label: 'Grounds', href: '/(tabs)/grounds' },
+  { label: 'Matches', href: '/(tabs)/matches' },
+  { label: 'Teams', href: '/(tabs)/teams' },
+  { label: 'Players', href: '/(tabs)/players' },
+  { label: 'Tournaments', href: '/(tabs)/tournaments' },
+]
 
 export default function HomeScreen() {
   const router = useRouter()
-  const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
   const [refreshing, setRefreshing] = useState(false)
 
@@ -41,12 +42,6 @@ export default function HomeScreen() {
   const playerQuery = useMyPlayer(isPlayer)
   const teamId = playerQuery.data?.team_id ?? null
   const teamMatchesQuery = useTeamMatches(teamId as number)
-
-  // Real, already-available platform-scale metric — same GET /grounds
-  // endpoint FeaturedGroundsSection uses; limit=1 keeps the payload small
-  // since only pagination.total is needed here.
-  const groundsCountQuery = useFeaturedGrounds(1)
-  const trustedGroundsCount = groundsCountQuery.data?.pagination.total ?? null
 
   const nextMatch = useMemo<Match | null>(() => {
     const matches: Match[] = teamMatchesQuery.data || []
@@ -59,6 +54,8 @@ export default function HomeScreen() {
   const availabilityQuery = useMyAvailability(nextMatch?.id ?? null)
   const setAvailability = useSetMyAvailability(nextMatch?.id ?? null)
 
+  const { scrollHandler } = useTabBarScroll()
+
   const handleRsvp = async (status: 'AVAILABLE' | 'NOT_AVAILABLE') => {
     try {
       await setAvailability.mutateAsync(status)
@@ -69,36 +66,55 @@ export default function HomeScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await Promise.all([teamMatchesQuery.refetch(), groundsCountQuery.refetch()])
+    await teamMatchesQuery.refetch()
     setRefreshing(false)
-  }
-
-  const navigateToGrounds = () => {
-    router.push('/(tabs)/grounds')
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
-        {/* Branding */}
-        <View style={[styles.brandBlock, { paddingTop: insets.top + Spacing.lg }]}>
-          <Text style={styles.brandName}>LORD OF CRICKET</Text>
-          <Text style={styles.brandTagline}>Your Cricket. Your Legacy.</Text>
-        </View>
+      <HomeHeader />
 
-        {/* Personalized Welcome */}
-        <View style={styles.welcomeBlock}>
-          <Text style={styles.welcomeText}>
-            {getGreeting()}, {user?.name || 'Cricket Lover'} 👋
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={LocColors.green} />}
+      >
+        {/* Hero */}
+        <View style={styles.hero}>
+          <Text style={styles.heroHeadline}>
+            Your Game.{'\n'}Your Ground.{'\n'}Your Legacy.
           </Text>
+          <Text style={styles.heroSubtext}>
+            Discover cricket grounds, matches, teams and players in one powerful platform built for the game you love.
+          </Text>
+          <View style={styles.heroActions}>
+            <TouchableOpacity
+              style={styles.heroBtnSolid}
+              onPress={() => router.push('/(tabs)/matches')}
+              accessibilityRole="button"
+              accessibilityLabel="Explore matches"
+            >
+              <Text style={styles.heroBtnSolidText}>Explore Matches</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.heroBtnOutline}
+              onPress={() => router.push('/(tabs)/players' as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Discover players"
+            >
+              <Text style={styles.heroBtnOutlineText}>Discover Players</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Next Match / Availability (personalized — kept from the existing Home) */}
+        {/* Personalized Next Match / Availability (logged-in players only) */}
         {isPlayer && teamId && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Next Match</Text>
             {teamMatchesQuery.isLoading ? (
-              <ActivityIndicator color={Colors.primary} style={styles.inlineLoader} />
+              <ActivityIndicator color={LocColors.green} style={styles.inlineLoader} />
             ) : nextMatch ? (
               <>
                 <MatchCard match={nextMatch} />
@@ -154,87 +170,60 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Hero */}
-        <View style={styles.hero}>
-          <Text style={styles.heroHeadline}>Every Game Has a Story.{'\n'}Make Yours Count.</Text>
-          <Text style={styles.heroSubtext}>
-            Play. Compete. Perform. Build your cricketing legacy with Lord Of Cricket.
-          </Text>
-          <TouchableOpacity
-            style={styles.heroButton}
-            onPress={navigateToGrounds}
-            accessibilityRole="button"
-            accessibilityLabel="Find a ground"
-          >
-            <Text style={styles.heroButtonText}>Find a Ground</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Who We Are */}
+        <WhoWeAreSection />
 
-        {/* About */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>More Than Just a Cricket Ground</Text>
-          <Text style={styles.aboutText}>
-            Lord Of Cricket brings players, teams, grounds, matches and cricketing communities together in one
-            place.
-          </Text>
-        </View>
-
-        {/* Platform Scale / Trust */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cricket, Wherever You Play.</Text>
-          {groundsCountQuery.isLoading ? (
-            <ActivityIndicator color={Colors.primary} style={styles.inlineLoader} />
-          ) : trustedGroundsCount !== null ? (
-            <View style={styles.statTile}>
-              <Text style={styles.statValue}>{trustedGroundsCount}</Text>
-              <Text style={styles.statLabel}>Trusted Grounds</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Rankings entry — the public leaderboards live on their own
-            screen (hidden route); Home and the Players directory are the
-            two entry points. */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.rankingsCta}
-            onPress={() => router.push('/(tabs)/rankings' as any)}
-            accessibilityRole="button"
-            accessibilityLabel="Open player rankings"
-          >
-            <MaterialCommunityIcons name="trophy-outline" size={22} color={Colors.primary} />
-            <View style={styles.rankingsCtaText}>
-              <Text style={styles.rankingsCtaTitle}>Player Rankings</Text>
-              <Text style={styles.rankingsCtaSub}>Official leaderboards from finalized matches</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Tournaments entry — public tournament hub (hidden route); reached
-            from Home and the Matches tab. */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.rankingsCta}
-            onPress={() => router.push('/(tabs)/tournaments' as any)}
-            accessibilityRole="button"
-            accessibilityLabel="Browse tournaments"
-          >
-            <MaterialCommunityIcons name="tournament" size={22} color={Colors.primary} />
-            <View style={styles.rankingsCtaText}>
-              <Text style={styles.rankingsCtaTitle}>Tournaments</Text>
-              <Text style={styles.rankingsCtaSub}>Live, upcoming and completed competitions</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
+        {/* Featured Grounds */}
+        <FeaturedGroundsSection />
 
         {/* Hall of Fame */}
-        <HallOfFameSection title="The Ones Who Made Their Mark" />
+        <HallOfFameSection title="Hall of Fame" />
 
-        {/* Sponsors */}
-        <SponsorsSection title="Proudly Supported By" />
-      </ScrollView>
+        {/* Explore — entry points to the rankings & tournament hubs
+            (hidden routes reached only from Home). */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Explore</Text>
+          <View style={styles.exploreList}>
+            {EXPLORE_LINKS.map((link) => (
+              <TouchableOpacity
+                key={link.href}
+                style={styles.exploreCard}
+                onPress={() => router.push(link.href as any)}
+                accessibilityRole="button"
+                accessibilityLabel={link.title}
+              >
+                <MaterialCommunityIcons name={link.icon} size={22} color={LocColors.green} />
+                <View style={styles.exploreText}>
+                  <Text style={styles.exploreTitle}>{link.title}</Text>
+                  <Text style={styles.exploreSub}>{link.sub}</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={22} color={LocColors.faint} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Our Network */}
+        <SponsorsSection title="Our Network" />
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <View style={styles.footerBrand}>
+            <View style={styles.footerLogoChip}>
+              <Text style={styles.footerLogoEmoji}>🏏</Text>
+            </View>
+            <Text style={styles.footerLogoText}>LOC</Text>
+          </View>
+          <View style={styles.footerLinks}>
+            {FOOTER_LINKS.map((link) => (
+              <TouchableOpacity key={link.href} onPress={() => router.push(link.href as any)}>
+                <Text style={styles.footerLink}>{link.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.footerCopy}>© {YEAR} LOC</Text>
+        </View>
+      </Animated.ScrollView>
     </View>
   )
 }
@@ -242,85 +231,105 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: LocColors.mint,
   },
-  brandBlock: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
-  brandName: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.text,
-    letterSpacing: 1,
-  },
-  brandTagline: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  welcomeBlock: {
-    paddingHorizontal: Spacing.lg,
+  scrollContent: {
+    // Small resting gap only. The tab bar sits in its own layout slot
+    // below the scroll view and collapses to 0 when hidden, so the
+    // content reclaims that space with no spacer left behind.
     paddingBottom: Spacing.lg,
   },
-  welcomeText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.medium,
-    color: Colors.text,
-  },
   section: {
-    padding: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xl,
   },
   sectionTitle: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: LocColors.navy,
     marginBottom: Spacing.md,
   },
   inlineLoader: {
     marginVertical: Spacing.md,
   },
   emptyStateSmall: {
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: BorderRadius.md,
+    backgroundColor: LocColors.mint,
+    borderWidth: 1,
+    borderColor: LocColors.border,
+    borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rankingsCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.backgroundAlt,
-  },
-  rankingsCtaText: {
-    flex: 1,
-  },
-  rankingsCtaTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
-  },
-  rankingsCtaSub: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
   emptySubtext: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    color: LocColors.muted,
   },
+
+  // Hero
+  hero: {
+    backgroundColor: LocColors.surface,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing['2xl'],
+    paddingBottom: Spacing['2xl'],
+  },
+  heroHeadline: {
+    fontSize: Typography.fontSize['3xl'],
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: LocColors.navy,
+    lineHeight: Typography.fontSize['3xl'] * 1.1,
+  },
+  heroSubtext: {
+    marginTop: Spacing.lg,
+    fontSize: Typography.fontSize.base,
+    color: LocColors.muted,
+    lineHeight: Typography.fontSize.base * Typography.lineHeight.relaxed,
+  },
+  heroActions: {
+    marginTop: Spacing.xl,
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  heroBtnSolid: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: LocColors.green,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  heroBtnSolidText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.surface,
+  },
+  heroBtnOutline: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: LocColors.green,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  heroBtnOutlineText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.greenStrong,
+  },
+
+  // RSVP
   rsvpRow: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
   rsvpLabel: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
-    color: Colors.textSecondary,
+    color: LocColors.muted,
     marginBottom: Spacing.sm,
   },
   rsvpButtons: {
@@ -330,83 +339,100 @@ const styles = StyleSheet.create({
   rsvpButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: LocColors.borderSoft,
     borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
-    backgroundColor: Colors.backgroundAlt,
+    backgroundColor: LocColors.surface,
   },
   rsvpButtonAvailableActive: {
-    borderColor: Colors.success,
-    backgroundColor: Colors.success,
+    borderColor: LocColors.green,
+    backgroundColor: LocColors.green,
   },
   rsvpButtonUnavailableActive: {
-    borderColor: Colors.error,
-    backgroundColor: Colors.error,
+    borderColor: '#DC2626',
+    backgroundColor: '#DC2626',
   },
   rsvpButtonText: {
     fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.ink,
   },
   rsvpButtonTextActive: {
-    color: Colors.white,
+    color: LocColors.surface,
   },
-  hero: {
-    margin: Spacing.lg,
-    padding: Spacing.xl,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.primary,
-    // RN New Architecture (Expo 57) supports CSS-style boxShadow directly.
-    boxShadow: Shadows.lg,
+
+  // Explore
+  exploreList: {
+    gap: Spacing.md,
   },
-  heroHeadline: {
-    fontSize: Typography.fontSize['2xl'],
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.white,
-    lineHeight: Typography.fontSize['2xl'] * Typography.lineHeight.tight,
-    marginBottom: Spacing.md,
-  },
-  heroSubtext: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.white,
-    opacity: 0.9,
-    lineHeight: Typography.fontSize.base * Typography.lineHeight.relaxed,
-    marginBottom: Spacing.lg,
-  },
-  heroButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.white,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  heroButtonText: {
-    color: Colors.primary,
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.bold,
-  },
-  aboutText: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
-    lineHeight: Typography.fontSize.base * Typography.lineHeight.relaxed,
-  },
-  statTile: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing['2xl'],
+  exploreCard: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: LocColors.border,
+    backgroundColor: LocColors.surface,
+    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)',
   },
-  statValue: {
-    fontSize: Typography.fontSize['3xl'],
+  exploreText: {
+    flex: 1,
+  },
+  exploreTitle: {
+    fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.primary,
+    color: LocColors.navy,
   },
-  statLabel: {
+  exploreSub: {
+    fontSize: Typography.fontSize.xs,
+    color: LocColors.muted,
+    marginTop: 2,
+  },
+
+  // Footer
+  footer: {
+    backgroundColor: LocColors.darkBandDeep,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing['2xl'],
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  footerBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  footerLogoChip: {
+    // website footer: h-9 w-9, rounded-lg, bg-loc-green-bright
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    backgroundColor: LocColors.greenBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerLogoEmoji: {
+    fontSize: 18, // website footer: text-lg
+  },
+  footerLogoText: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.surface,
+  },
+  footerLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: Spacing.lg,
+  },
+  footerLink: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
+    color: LocColors.onDarkMuted,
+  },
+  footerCopy: {
+    fontSize: Typography.fontSize.xs,
+    color: LocColors.onDarkMuted,
   },
 })

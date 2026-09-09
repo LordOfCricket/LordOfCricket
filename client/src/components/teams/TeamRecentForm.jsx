@@ -9,12 +9,18 @@ const RESULT_STYLE = {
   T: 'bg-amber-500/15 text-amber-300',
   NR: 'bg-white/10 text-slate-300',
 }
+const RESULT_STYLE_LIGHT = {
+  W: 'bg-loc-mint text-loc-green',
+  L: 'bg-red-100 text-red-700',
+  T: 'bg-amber-100 text-amber-700',
+  NR: 'bg-slate-100 text-slate-600',
+}
 
-export default function TeamRecentForm({ recentForm }) {
+export default function TeamRecentForm({ recentForm, light = false }) {
   const navigate = useNavigate()
 
   if (recentForm.length === 0) {
-    return <p className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-6 text-center text-sm text-slate-300">No official results yet.</p>
+    return <p className={`rounded-2xl border border-dashed px-6 py-6 text-center text-sm ${light ? "border-loc-border bg-loc-mint text-loc-muted" : "border-white/10 bg-white/5 text-slate-300"}`}>No official results yet.</p>
   }
 
   return (
@@ -25,7 +31,7 @@ export default function TeamRecentForm({ recentForm }) {
           type="button"
           onClick={() => navigate(`/matches/${f.matchId}/summary`)}
           title={f.result === 'W' ? 'Win' : f.result === 'L' ? 'Loss' : f.result === 'T' ? 'Tie' : 'No Result'}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-transform hover:scale-105 ${RESULT_STYLE[f.result] || RESULT_STYLE.NR}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-transform hover:scale-105 ${(light ? RESULT_STYLE_LIGHT : RESULT_STYLE)[f.result] || (light ? RESULT_STYLE_LIGHT : RESULT_STYLE).NR}`}
         >
           {f.result}
         </button>

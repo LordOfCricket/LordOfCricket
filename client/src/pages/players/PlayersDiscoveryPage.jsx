@@ -8,9 +8,6 @@ import { PLAYING_ROLE_LABELS } from '../../models/player.model.js'
 import PlayerCard from '../../components/players/PlayerCard.jsx'
 import { StatsLoadingGrid, StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import Navbar from '../../components/home/Navbar.jsx'
-import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
-import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
-import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
 import { fadeUpSoft } from '../../lib/revealVariants.js'
 
@@ -23,7 +20,7 @@ function LeftSidebar({ role, onRoleChange, teamId, onTeamChange, teams }) {
       <div className="sticky top-32 space-y-6">
         {/* Role Filter */}
         <div className="space-y-3">
-          <h3 className="text-sm font-bold uppercase text-loc-gold">Playing Role</h3>
+          <h3 className="text-sm font-bold uppercase text-loc-green">Playing Role</h3>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {ROLE_OPTIONS.map((opt) => (
               <button
@@ -31,8 +28,8 @@ function LeftSidebar({ role, onRoleChange, teamId, onTeamChange, teams }) {
                 onClick={() => onRoleChange(opt.value)}
                 className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
                   role === opt.value
-                    ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
-                    : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                    ? 'bg-loc-mint text-loc-navy font-semibold'
+                    : 'text-loc-muted hover:bg-loc-mint'
                 }`}
               >
                 {opt.label}
@@ -43,14 +40,14 @@ function LeftSidebar({ role, onRoleChange, teamId, onTeamChange, teams }) {
 
         {/* Team Filter */}
         <div className="space-y-3">
-          <h3 className="text-sm font-bold uppercase text-loc-gold">Team</h3>
+          <h3 className="text-sm font-bold uppercase text-loc-green">Team</h3>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             <button
               onClick={() => onTeamChange('')}
               className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
                 teamId === ''
-                  ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
-                  : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                  ? 'bg-loc-mint text-loc-navy font-semibold'
+                  : 'text-loc-muted hover:bg-loc-mint'
               }`}
             >
               All Teams
@@ -61,8 +58,8 @@ function LeftSidebar({ role, onRoleChange, teamId, onTeamChange, teams }) {
                 onClick={() => onTeamChange(t.id)}
                 className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
                   teamId === t.id
-                    ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
-                    : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                    ? 'bg-loc-mint text-loc-navy font-semibold'
+                    : 'text-loc-muted hover:bg-loc-mint'
                 }`}
               >
                 {t.name}
@@ -141,32 +138,28 @@ export default function PlayersDiscoveryPage() {
   }
 
   return (
-    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
-      <MouseParallaxProvider>
-        <BackgroundSystem />
-        <CursorGlow />
-        <Navbar />
-      </MouseParallaxProvider>
+    <div className="loc-page overflow-x-hidden">
+      <Navbar theme="light" />
 
       <main className="relative mx-auto w-full max-w-7xl px-6 pt-32 pb-20 lg:px-10">
         {/* Page Title */}
         <ScrollReveal variant={fadeUpSoft} amount={0.4} className="mb-10 flex w-full flex-col items-center gap-3 text-center">
-          <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+          <h1 className="loc-heading text-3xl sm:text-4xl">
             Discover Players
           </h1>
-          <p className="max-w-2xl text-loc-text2-dark">Explore talented cricket players across Lord Of Cricket.</p>
+          <p className="max-w-2xl text-loc-muted">Explore talented cricket players across Lord Of Cricket.</p>
         </ScrollReveal>
 
         {/* Search Bar */}
         <div className="mb-8 flex justify-center">
           <div className="relative w-full max-w-2xl">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-loc-gold" />
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-loc-green" />
             <input
               type="search"
               value={query}
               onChange={(e) => changeQuery(e.target.value)}
               placeholder="Search players by name or ID..."
-              className="w-full rounded-2xl border border-loc-gold/20 bg-loc-stadium/20 py-3 pl-12 pr-4 text-sm text-loc-warmwhite placeholder:text-loc-muted-dark focus:border-loc-gold/50 focus:outline-none transition-colors"
+              className="w-full rounded-2xl border border-loc-border bg-loc-surface py-3 pl-12 pr-4 text-sm text-loc-navy placeholder:text-loc-faint focus:border-loc-border focus:outline-none transition-colors"
             />
           </div>
         </div>
@@ -175,14 +168,14 @@ export default function PlayersDiscoveryPage() {
         <div className="mb-8 flex flex-wrap justify-center gap-2">
           <Link
             to="/players/compare"
-            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-stadium px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-all duration-200 hover:bg-loc-stadium-hover"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-green px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition-all duration-200 hover:bg-loc-green-strong"
           >
             <Users className="h-4 w-4" />
             Compare Players
           </Link>
           <Link
             to="/players/head-to-head"
-            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-stadium px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-all duration-200 hover:bg-loc-stadium-hover"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-loc-green px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition-all duration-200 hover:bg-loc-green-strong"
           >
             <Swords className="h-4 w-4" />
             Head-to-Head
@@ -199,7 +192,7 @@ export default function PlayersDiscoveryPage() {
             <div className="flex w-full flex-col gap-6">
               {/* Results Header */}
               {result && result.items.length > 0 && (
-                <p className="text-sm font-semibold uppercase tracking-widest text-loc-muted-dark">
+                <p className="text-sm font-semibold uppercase tracking-widest text-loc-faint">
                   {result.items.length} {result.items.length === 1 ? 'Player' : 'Players'}
                 </p>
               )}
@@ -207,12 +200,12 @@ export default function PlayersDiscoveryPage() {
               {/* Players Grid */}
               {loading && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <StatsLoadingGrid tiles={6} />
+                  <StatsLoadingGrid tiles={6} light />
                 </div>
               )}
-              {!loading && error && <StatsErrorState message={error} onRetry={load} />}
+              {!loading && error && <StatsErrorState message={error} onRetry={load} light />}
               {!loading && !error && result && result.items.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-loc-gold/20 bg-loc-stadium/10 px-6 py-16 text-center text-sm text-loc-text2-dark">
+                <div className="rounded-2xl border border-dashed border-loc-border bg-loc-surface px-6 py-16 text-center text-sm text-loc-muted">
                   No players match your search.
                 </div>
               )}
@@ -220,28 +213,28 @@ export default function PlayersDiscoveryPage() {
                 <>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {result.items.map((item) => (
-                      <PlayerCard key={item.player.publicPlayerId} player={item.player} career={item.career} />
+                      <PlayerCard key={item.player.publicPlayerId} player={item.player} career={item.career} light />
                     ))}
                   </div>
 
                   {result.pagination.total > PAGE_SIZE && (
-                    <div className="mt-8 flex items-center justify-between gap-4 rounded-full border border-loc-gold/20 bg-loc-stadium/10 px-6 py-4">
+                    <div className="mt-8 flex items-center justify-between gap-4 rounded-full border border-loc-border bg-loc-surface px-6 py-4">
                       <button
                         type="button"
                         disabled={offset === 0}
                         onClick={() => changePage(Math.max(0, offset - PAGE_SIZE))}
-                        className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-full border border-loc-border px-4 py-2 text-sm font-semibold text-loc-navy transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Previous
                       </button>
-                      <span className="text-sm text-loc-text2-dark">
+                      <span className="text-sm text-loc-muted">
                         {offset + 1}–{Math.min(offset + PAGE_SIZE, result.pagination.total)} of {result.pagination.total}
                       </span>
                       <button
                         type="button"
                         disabled={offset + PAGE_SIZE >= result.pagination.total}
                         onClick={() => changePage(offset + PAGE_SIZE)}
-                        className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-full border border-loc-border px-4 py-2 text-sm font-semibold text-loc-navy transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Next
                       </button>

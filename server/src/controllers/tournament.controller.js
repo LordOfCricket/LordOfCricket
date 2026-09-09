@@ -4,6 +4,40 @@ import * as standingsService from '../services/tournamentStandings.service.js'
 import * as statsService from '../services/tournamentStats.service.js'
 import * as repo from '../repositories/tournament.repository.js'
 import { TournamentError, TOURNAMENT_ERROR_CODES as CODES } from '../domain/tournament/errors.js'
+import { formatOvers, getBallsRemaining, calculateRequiredRunRate } from '../domain/scoring/selectors.js'
+
+// Live score for a fixture card, from the same innings CACHE columns
+// buildMatchCard reads (runs/wickets/legal_balls — kept current by replay.js
+// on every delivery). Returns null unless the linked match is actually
+// 'live'; a finalized fixture keeps using f.match_result_* exactly as before.
+function fixtureLiveScore(f) {
+  if (f.match_status !== 'live' || f.i1_id == null) return null
+  const bpo = f.balls_per_over || 6
+  const inn = (n) =>
+    f[`i${n}_id`] == null
+      ? null
+      : {
+          inningsNumber: n,
+          battingTeamId: f[`i${n}_batting_team_id`],
+          runs: f[`i${n}_runs`],
+          wickets: f[`i${n}_wickets`],
+          oversLabel: formatOvers(f[`i${n}_legal_balls`], bpo),
+        }
+  const i1 = inn(1)
+  const i2 = inn(2)
+  let chase = null
+  if (i1 && i2 && f.i2_status === 'live') {
+    const target = i1.runs + 1
+    const ballsRemaining = f.overs_per_innings != null ? getBallsRemaining(f.overs_per_innings, f.i2_legal_balls, bpo) : null
+    chase = {
+      target,
+      runsNeeded: Math.max(target - i2.runs, 0),
+      ballsRemaining,
+      requiredRunRate: ballsRemaining != null ? calculateRequiredRunRate(target, i2.runs, ballsRemaining, bpo) : null,
+    }
+  }
+  return { innings: [i1, i2].filter(Boolean), chase }
+}
 
 async function resolveTournamentId(publicTournamentId) {
   const tournament = await repo.findTournamentByPublicId(publicTournamentId)
@@ -64,6 +98,7 @@ function serializeFixture(f) {
     resultText: f.match_result_text ?? null,
     manualResultWinnerTeamId: f.manual_result_winner_team_id ?? null,
     awaitingResolution,
+    liveScore: fixtureLiveScore(f),
   }
 }
 

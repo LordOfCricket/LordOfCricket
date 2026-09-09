@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { Trophy, Share2, Check } from 'lucide-react'
 import BackButton from '../../components/common/BackButton.jsx'
@@ -59,6 +59,32 @@ export default function MatchSummaryPage() {
     if (liveLifecycleSignature && summaryLifecycleSignature && liveLifecycleSignature !== summaryLifecycleSignature) reload()
   }, [liveLifecycleSignature, summaryLifecycleSignature, reload])
 
+  // In-innings freshness: the live poller advances `currentInnings.version`
+  // every recorded ball, but the lifecycle signature above only changes at
+  // an innings/match boundary — so BattingScorecard / BowlingScorecard /
+  // WagonWheelSection / FallOfWicketsPanel / PartnershipsPanel / OversPanel
+  // (all fed from `summary.innings`) would stay frozen for the whole innings.
+  // Silently reload the summary when the version advances, but at most once
+  // per RELOAD_MIN_INTERVAL_MS so a fast over never triggers a burst of
+  // /summary fetches. Fires only while the poller has LIVE coverage of an
+  // innings the summary already knows about — so it self-stops at an innings
+  // break / completion (leaving the lifecycle effect to do that transition).
+  const liveInnings = liveState?.currentInnings
+  const summaryKnowsLiveInnings = Boolean(summary && liveInnings && summary.innings.some((i) => i.inningsId === liveInnings.id))
+  const liveInningsVersionKey =
+    liveInnings && liveInnings.status === 'live' && summaryKnowsLiveInnings ? `${liveInnings.id}:${liveInnings.version}` : null
+  const lastVersionReloadRef = useRef({ key: null, ts: 0 })
+  useEffect(() => {
+    if (!liveInningsVersionKey || lastVersionReloadRef.current.key === liveInningsVersionKey) return
+    const RELOAD_MIN_INTERVAL_MS = 4000
+    const wait = Math.max(0, RELOAD_MIN_INTERVAL_MS - (Date.now() - lastVersionReloadRef.current.ts))
+    const timer = setTimeout(() => {
+      lastVersionReloadRef.current = { key: liveInningsVersionKey, ts: Date.now() }
+      reload()
+    }, wait)
+    return () => clearTimeout(timer)
+  }, [liveInningsVersionKey, reload])
+
   const tab = TABS.some((t) => t.key === searchParams.get('tab')) ? searchParams.get('tab') : 'scorecard'
 
   // Derived directly from the URL + loaded data on every render — no
@@ -90,9 +116,9 @@ export default function MatchSummaryPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-emerald-950 px-4 py-10 text-white sm:px-6 lg:px-8">
+      <main className="loc-page px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl">
-          <StatsLoadingGrid tiles={4} />
+          <StatsLoadingGrid tiles={4} light />
         </div>
       </main>
     )
@@ -100,9 +126,9 @@ export default function MatchSummaryPage() {
 
   if (error || !summary) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-emerald-950 px-4 text-center text-white">
-        <StatsErrorState message={error} onRetry={retry} />
-        <button type="button" onClick={() => navigate('/')} className="text-sm font-semibold text-emerald-300 hover:text-emerald-200">
+      <main className="loc-page flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        <StatsErrorState message={error} onRetry={retry} light />
+        <button type="button" onClick={() => navigate('/')} className="text-sm font-semibold text-loc-green hover:text-loc-green-strong">
           Back to Home
         </button>
       </main>
@@ -121,7 +147,7 @@ export default function MatchSummaryPage() {
 
   return (
     <main
-      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-8 text-white sm:px-6 lg:px-8"
+      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-8 text-loc-navy sm:px-6 lg:px-8"
       style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
     >
       <div className="mx-auto max-w-4xl">
@@ -130,9 +156,9 @@ export default function MatchSummaryPage() {
           <button
             type="button"
             onClick={handleShare}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10"
+            className="inline-flex items-center gap-1.5 rounded-full loc-card px-3 py-1.5 text-xs font-semibold text-loc-muted transition-colors hover:bg-loc-mint"
           >
-            {shareCopied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Share2 className="h-3.5 w-3.5" />}
+            {shareCopied ? <Check className="h-3.5 w-3.5 text-loc-green" /> : <Share2 className="h-3.5 w-3.5" />}
             {shareCopied ? 'Link copied' : 'Share'}
           </button>
         </div>
@@ -142,11 +168,11 @@ export default function MatchSummaryPage() {
           {summary.tournamentContext && (
             <Link
               to={`/tournaments/${summary.tournamentContext.publicTournamentId}`}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/20"
+              className="inline-flex items-center gap-2 rounded-full border border-loc-border bg-loc-mint px-4 py-2 text-xs font-semibold text-loc-green transition-colors hover:bg-loc-surface"
             >
               <Trophy className="h-3.5 w-3.5" />
               {summary.tournamentContext.name}
-              {summary.tournamentContext.stage && <span className="text-emerald-300/70">· {summary.tournamentContext.stage.replace('_', ' ')}</span>}
+              {summary.tournamentContext.stage && <span className="text-loc-green/70">· {summary.tournamentContext.stage.replace('_', ' ')}</span>}
             </Link>
           )}
 
@@ -163,19 +189,19 @@ export default function MatchSummaryPage() {
               <InningsTabs summary={summary} activeInningsId={activeInnings?.inningsId} onSelect={selectInnings} />
 
               {activeInnings?.chase && !liveCoversActiveInnings && (
-                <div className="rounded-[1.5rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm font-semibold text-amber-200">
+                <div className="rounded-[1.5rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm font-semibold text-amber-700">
                   Target {activeInnings.target} · {requiredRunRateLabel(activeInnings.chase)}
                 </div>
               )}
 
-              <div className="flex gap-1 overflow-x-auto rounded-full border border-white/10 bg-slate-900/50 p-1">
+              <div className="flex gap-1 overflow-x-auto rounded-full border border-loc-border bg-loc-surface p-1">
                 {TABS.map((t) => (
                   <button
                     key={t.key}
                     type="button"
                     onClick={() => selectTab(t.key)}
                     className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
-                      tab === t.key ? 'bg-emerald-500 text-emerald-950' : 'text-slate-300 hover:bg-white/5'
+                      tab === t.key ? 'bg-loc-green text-loc-navy' : 'text-loc-muted hover:bg-loc-mint'
                     }`}
                   >
                     {t.label}
@@ -205,7 +231,7 @@ export default function MatchSummaryPage() {
           )}
 
           {/* Clearly-labeled, independently-loading; never part of the deterministic scorecard above. */}
-          <AIInsightSection title="AI Match Insight" fetchFn={fetchMatchInsight} id={matchId} kind="match" />
+          <AIInsightSection title="AI Match Insight" fetchFn={fetchMatchInsight} id={matchId} kind="match" light />
         </div>
       </div>
     </main>

@@ -2901,3 +2901,15 @@ CREATE TABLE IF NOT EXISTS merchandise (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_merchandise_status_sort ON merchandise(status, sort_order, created_at);
+
+-- Merchandise catalogue extension — category-based management (Super Admin).
+-- Category-specific attributes (bat weight, jersey fabric, gear protection
+-- level, ...) live in a single JSONB column so new categories never need a
+-- schema change.
+ALTER TABLE merchandise ADD COLUMN IF NOT EXISTS discount_price NUMERIC(10, 2);
+ALTER TABLE merchandise ADD COLUMN IF NOT EXISTS stock_quantity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE merchandise ADD COLUMN IF NOT EXISTS sku VARCHAR(60);
+ALTER TABLE merchandise ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE merchandise ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_merchandise_category ON merchandise(category, sort_order, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merchandise_sku ON merchandise(sku) WHERE sku IS NOT NULL;

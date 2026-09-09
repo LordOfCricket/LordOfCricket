@@ -58,11 +58,20 @@ class ApiClient {
           const cookieValue = Array.isArray(setCookie) ? setCookie[0] : setCookie
           // Extract the session cookie (before semicolon)
           const sessionCookie = cookieValue.split(';')[0]
-          if (sessionCookie) {
+          const [, cookieVal = ''] = sessionCookie.split('=')
+          if (cookieVal) {
             try {
               await AsyncStorage.setItem(COOKIE_STORAGE_KEY, sessionCookie)
             } catch (error) {
               // Silent fail - continue without persisting cookie
+            }
+          } else {
+            // A cleared cookie (`loc_session=; Expires=1970` from /auth/logout)
+            // must not be persisted as a live session.
+            try {
+              await AsyncStorage.removeItem(COOKIE_STORAGE_KEY)
+            } catch {
+              // Silent fail
             }
           }
         }

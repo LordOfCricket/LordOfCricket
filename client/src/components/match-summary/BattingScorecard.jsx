@@ -13,13 +13,13 @@ export default function BattingScorecard({ innings }) {
   const ytb = innings.batting.filter((r) => r.status === 'YTB')
 
   return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-4 shadow-sm backdrop-blur-sm sm:p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Batting</p>
+    <div className="rounded-[1.5rem] border border-loc-border bg-loc-surface p-4 shadow-sm backdrop-blur-sm sm:p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-loc-faint">Batting</p>
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[420px] text-sm">
           <thead>
-            <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-loc-faint">
               <th className="pb-2">Batter</th>
               <th className="pb-2 text-right">R</th>
               <th className="pb-2 text-right">B</th>
@@ -30,38 +30,38 @@ export default function BattingScorecard({ innings }) {
           </thead>
           <tbody>
             {active.map((row) => (
-              <tr key={row.player.publicPlayerId} className="border-t border-white/5">
+              <tr key={row.player.publicPlayerId} className="border-t border-loc-border">
                 <td className="py-2 pr-2">
                   <button
                     type="button"
                     onClick={() => row.player.publicPlayerId && navigate(`/players/${row.player.publicPlayerId}`)}
-                    className="text-left font-semibold text-white hover:text-emerald-300"
+                    className="text-left font-semibold text-loc-navy hover:text-loc-green"
                   >
                     {row.player.name}
                   </button>
-                  <p className="text-xs text-slate-400">{statusText(row)}</p>
+                  <p className="text-xs text-loc-faint">{statusText(row)}</p>
                 </td>
-                <td className="py-2 text-right font-bold text-white">{row.runs}</td>
-                <td className="py-2 text-right text-slate-300">{row.balls}</td>
-                <td className="py-2 text-right text-slate-300">{row.fours}</td>
-                <td className="py-2 text-right text-slate-300">{row.sixes}</td>
-                <td className="py-2 text-right text-slate-300">{row.strikeRate?.toFixed(2) ?? '—'}</td>
+                <td className="py-2 text-right font-bold text-loc-navy">{row.runs}</td>
+                <td className="py-2 text-right text-loc-muted">{row.balls}</td>
+                <td className="py-2 text-right text-loc-muted">{row.fours}</td>
+                <td className="py-2 text-right text-loc-muted">{row.sixes}</td>
+                <td className="py-2 text-right text-loc-muted">{row.strikeRate?.toFixed(2) ?? '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3 text-sm">
-        <span className="text-slate-300">
+      <div className="mt-3 flex items-center justify-between border-t border-loc-border pt-3 text-sm">
+        <span className="text-loc-muted">
           Extras {innings.extras.total}
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-loc-faint">
             {' '}
             (w {innings.extras.wides}, nb {innings.extras.noBalls}, b {innings.extras.byes}, lb {innings.extras.legByes})
           </span>
         </span>
       </div>
-      <div className="mt-2 flex items-center justify-between text-sm font-bold text-white">
+      <div className="mt-2 flex items-center justify-between text-sm font-bold text-loc-navy">
         <span>Total</span>
         <span>
           {innings.total.runs}/{innings.total.wickets} ({innings.total.oversLabel} ov, RR {innings.total.runRate.toFixed(2)})
@@ -69,15 +69,15 @@ export default function BattingScorecard({ innings }) {
       </div>
 
       {ytb.length > 0 && (
-        <div className="mt-4 border-t border-white/10 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Yet to Bat</p>
-          <p className="mt-1 text-sm text-slate-300">{ytb.map((r) => r.player.name).join(', ')}</p>
+        <div className="mt-4 border-t border-loc-border pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-loc-faint">Yet to Bat</p>
+          <p className="mt-1 text-sm text-loc-muted">{ytb.map((r) => r.player.name).join(', ')}</p>
         </div>
       )}
       {dnb.length > 0 && (
-        <div className="mt-4 border-t border-white/10 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Did Not Bat</p>
-          <p className="mt-1 text-sm text-slate-300">{dnb.map((r) => r.player.name).join(', ')}</p>
+        <div className="mt-4 border-t border-loc-border pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-loc-faint">Did Not Bat</p>
+          <p className="mt-1 text-sm text-loc-muted">{dnb.map((r) => r.player.name).join(', ')}</p>
         </div>
       )}
     </div>

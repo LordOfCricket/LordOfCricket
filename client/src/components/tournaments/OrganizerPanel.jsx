@@ -3,9 +3,9 @@ import { Settings } from 'lucide-react'
 import { fetchTeams, fetchTeamPlayers } from '../../services/playerApi.js'
 import { stageLabel } from '../../models/tournament.model.js'
 
-const inputClass = 'rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white focus:border-emerald-400/50 focus:outline-none'
-const btnClass = 'rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-bold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40'
-const btnGhostClass = 'rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40'
+const inputClass = 'rounded-lg loc-card px-2.5 py-1.5 text-xs text-loc-navy focus:border-loc-green focus:outline-none'
+const btnClass = 'rounded-full bg-loc-green px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-loc-green-strong disabled:cursor-not-allowed disabled:opacity-40'
+const btnGhostClass = 'rounded-full border border-loc-border px-3 py-1.5 text-xs font-semibold text-loc-muted transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40'
 
 /** Staff-only tournament management surface. Every action is
  * server-validated regardless of what this UI allows the organizer to click —
@@ -40,7 +40,7 @@ export default function OrganizerPanel({ detail }) {
 
   return (
     <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5">
-      <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-200">
+      <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-700">
         <Settings className="h-4 w-4" />
         Organizer Tools
       </h2>
@@ -69,7 +69,7 @@ export default function OrganizerPanel({ detail }) {
       {/* Team registration */}
       {tournament.status === 'REGISTRATION' && (
         <div className="mt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-300">Teams ({teams.length}/{tournament.maxTeams})</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-loc-muted">Teams ({teams.length}/{tournament.maxTeams})</h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <select id="register-team-select" className={inputClass} defaultValue="">
               <option value="" disabled>
@@ -95,10 +95,10 @@ export default function OrganizerPanel({ detail }) {
           </div>
           <ul className="mt-2 flex flex-wrap gap-2">
             {teams.map((t) => (
-              <li key={t.id} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+              <li key={t.id} className="inline-flex items-center gap-2 rounded-full loc-card px-3 py-1 text-xs text-loc-muted">
                 {t.teamName}
-                {t.groupName && <span className="text-slate-400">(Grp {t.groupName})</span>}
-                <button type="button" disabled={busy} onClick={() => run(() => removeTeam(t.teamId))} className="text-red-300 hover:text-red-200">
+                {t.groupName && <span className="text-loc-faint">(Grp {t.groupName})</span>}
+                <button type="button" disabled={busy} onClick={() => run(() => removeTeam(t.teamId))} className="text-red-600 hover:text-red-200">
                   ×
                 </button>
               </li>
@@ -115,7 +115,7 @@ export default function OrganizerPanel({ detail }) {
       {/* Scheduling */}
       {unscheduledFixtures.length > 0 && (
         <div className="mt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-300">Schedule Fixtures</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-loc-muted">Schedule Fixtures</h3>
           <div className="mt-2 flex flex-col gap-2">
             {unscheduledFixtures.map((f) => (
               <ScheduleRow key={f.id} fixture={f} busy={busy} onSchedule={(date, venue) => run(() => scheduleFixture(f.id, date, venue))} />
@@ -127,11 +127,11 @@ export default function OrganizerPanel({ detail }) {
       {/* Manual tie/no-result resolution */}
       {awaitingResolution.length > 0 && (
         <div className="mt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-amber-300">Tie-Break Resolution Required</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-amber-700">Tie-Break Resolution Required</h3>
           <div className="mt-2 flex flex-col gap-2">
             {awaitingResolution.map((f) => (
               <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs">
-                <span className="text-slate-200">
+                <span className="text-loc-muted">
                   {stageLabel(f)}: {f.teamA.name} vs {f.teamB.name} ({f.resultType || 'result unresolved'})
                 </span>
                 <span className="flex gap-2">
@@ -155,8 +155,8 @@ function ScheduleRow({ fixture, busy, onSchedule }) {
   const [date, setDate] = useState('')
   const [venue, setVenue] = useState('')
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-3 text-xs">
-      <span className="text-slate-200">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg loc-card p-3 text-xs">
+      <span className="text-loc-muted">
         {stageLabel(fixture)}: {fixture.teamA.name} vs {fixture.teamB.name}
       </span>
       <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
@@ -186,7 +186,7 @@ function SquadManager({ teams, squad, onAdd, onRemove, busy }) {
 
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-slate-300">Squads</h3>
+      <h3 className="text-xs font-bold uppercase tracking-wide text-loc-muted">Squads</h3>
       <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)} className={`${inputClass} mt-2`}>
         {teams.map((t) => (
           <option key={t.teamId} value={t.teamId}>
@@ -221,9 +221,9 @@ function SquadManager({ teams, squad, onAdd, onRemove, busy }) {
 
       <ul className="mt-2 flex flex-wrap gap-2">
         {squadForTeam.map((s) => (
-          <li key={s.id} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+          <li key={s.id} className="inline-flex items-center gap-2 rounded-full loc-card px-3 py-1 text-xs text-loc-muted">
             {s.name}
-            <button type="button" disabled={busy} onClick={() => onRemove(Number(selectedTeamId), s.playerId)} className="text-red-300 hover:text-red-200">
+            <button type="button" disabled={busy} onClick={() => onRemove(Number(selectedTeamId), s.playerId)} className="text-red-600 hover:text-red-200">
               ×
             </button>
           </li>

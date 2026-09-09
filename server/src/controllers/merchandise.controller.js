@@ -1,5 +1,6 @@
 import {
   MERCHANDISE_STATUSES,
+  MERCHANDISE_CATEGORY_NAMES,
   createMerchandise,
   findPublicMerchandise,
   findAllMerchandise,
@@ -11,21 +12,30 @@ import { uploadImageFileDetailed, deleteImageByPublicId, getOptimizedImageUrl } 
 import { logger } from '../utils/logger.js'
 
 const CLOUDINARY_FOLDER = 'LOC/merchandise'
-const DELIVERY_WIDTH = 800 // homepage card + detail page never render larger than this
+const DELIVERY_WIDTH = 800
 
-// NUMERIC columns come back from pg as strings — normalize to numbers (or
-// null) at the edge so every consumer gets real numbers, never "199.00".
 function toMoney(value) {
   if (value === null || value === undefined || value === '') return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
 }
 
-// Public shape — what the homepage / product detail page consume. Internal
-// columns (cloudinary_public_id, raw timestamps beyond createdAt) are not exposed.
+function parseAttributes(raw) {
+  if (raw == null || raw === '') return {}
+  if (typeof raw === 'object') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function toPublicShape(row) {
   const original = toMoney(row.original_price)
   const selling = toMoney(row.selling_price)
+  const discount = toMoney(row.discount_price)
+  const effective = discount ?? selling
   return {
     id: row.id,
     name: row.name,
@@ -34,15 +44,19 @@ function toPublicShape(row) {
     imageUrl: getOptimizedImageUrl(row.cloudinary_public_id, { width: DELIVERY_WIDTH }) || row.image_url,
     originalPrice: original,
     sellingPrice: selling,
-    onSale: original != null && selling != null && original > selling,
+    discountPrice: discount,
+    price: effective,
+    onSale: (discount != null && discount < selling) || (original != null && selling != null && original > selling),
+    stockQuantity: row.stock_quantity ?? 0,
+    sku: row.sku || null,
+    isFeatured: Boolean(row.is_featured),
     status: row.status,
     sortOrder: row.sort_order,
+    attributes: row.attributes || {},
     createdAt: row.created_at,
   }
 }
 
-// Admin shape — adds the fields the management table needs but the public
-// API should not leak.
 function toAdminShape(row) {
   return {
     ...toPublicShape(row),
@@ -57,9 +71,6 @@ function httpError(message, statusCode) {
   return err
 }
 
-// Shared create/update validation. `partial` = true for PATCH, where an
-// absent field simply isn't being changed. Returns a normalized patch of
-// only the provided, valid fields.
 function validateAndNormalize(body, { partial, existing } = {}) {
   const patch = {}
 
@@ -74,9 +85,12 @@ function validateAndNormalize(body, { partial, existing } = {}) {
     patch.description = body.description === null ? null : String(body.description).trim() || null
   }
 
-  if (body.category !== undefined) {
-    const category = body.category === null ? null : String(body.category).trim() || null
-    if (category && category.length > 40) throw httpError('Category must be 40 characters or fewer.', 400)
+  if (body.category !== undefined || !partial) {
+    const category = String(body.category ?? '').trim()
+    if (!category) throw httpError('Category is required.', 400)
+    if (!MERCHANDISE_CATEGORY_NAMES.includes(category)) {
+      throw httpError(`Category must be one of: ${MERCHANDISE_CATEGORY_NAMES.join(', ')}.`, 400)
+    }
     patch.category = category
   }
 
@@ -93,8 +107,29 @@ function validateAndNormalize(body, { partial, existing } = {}) {
     patch.sort_order = sortOrder
   }
 
-  const hasOriginal = body.originalPrice !== undefined && body.originalPrice !== null && body.originalPrice !== ''
+  if (body.stockQuantity !== undefined && body.stockQuantity !== '') {
+    const stock = Number(body.stockQuantity)
+    if (!Number.isInteger(stock) || stock < 0) throw httpError('Stock quantity must be a non-negative whole number.', 400)
+    patch.stock_quantity = stock
+  }
+
+  if (body.sku !== undefined) {
+    const sku = String(body.sku ?? '').trim()
+    if (sku.length > 60) throw httpError('SKU must be 60 characters or fewer.', 400)
+    patch.sku = sku || null
+  }
+
+  if (body.isFeatured !== undefined) {
+    patch.is_featured = body.isFeatured === true || body.isFeatured === 'true'
+  }
+
+  if (body.attributes !== undefined) {
+    patch.attributes = parseAttributes(body.attributes)
+  }
+
   const hasSelling = body.sellingPrice !== undefined && body.sellingPrice !== null && body.sellingPrice !== ''
+  const hasOriginal = body.originalPrice !== undefined && body.originalPrice !== null && body.originalPrice !== ''
+  const hasDiscount = body.discountPrice !== undefined && body.discountPrice !== null && body.discountPrice !== ''
 
   if (hasSelling || !partial) {
     const selling = Number(body.sellingPrice)
@@ -103,27 +138,32 @@ function validateAndNormalize(body, { partial, existing } = {}) {
   }
 
   if (body.originalPrice !== undefined) {
-    if (!hasOriginal) {
-      patch.original_price = null
-    } else {
-      const original = Number(body.originalPrice)
-      if (!Number.isFinite(original) || original <= 0) throw httpError('Original price must be a number greater than 0.', 400)
-      patch.original_price = original
+    patch.original_price = hasOriginal ? Number(body.originalPrice) : null
+    if (hasOriginal && (!Number.isFinite(patch.original_price) || patch.original_price <= 0)) {
+      throw httpError('Original price must be a number greater than 0.', 400)
     }
   }
 
-  // Cross-field: selling must not exceed original when both are known
-  // (either from this request or, for a PATCH, the existing row).
-  const effectiveSelling = patch.selling_price ?? toMoney(existing?.selling_price)
-  const effectiveOriginal = patch.original_price !== undefined ? patch.original_price : toMoney(existing?.original_price)
-  if (effectiveOriginal != null && effectiveSelling != null && effectiveSelling > effectiveOriginal) {
+  if (body.discountPrice !== undefined) {
+    patch.discount_price = hasDiscount ? Number(body.discountPrice) : null
+    if (hasDiscount && (!Number.isFinite(patch.discount_price) || patch.discount_price <= 0)) {
+      throw httpError('Discount price must be a number greater than 0.', 400)
+    }
+  }
+
+  const selling = patch.selling_price ?? toMoney(existing?.selling_price)
+  const original = patch.original_price !== undefined ? patch.original_price : toMoney(existing?.original_price)
+  const discount = patch.discount_price !== undefined ? patch.discount_price : toMoney(existing?.discount_price)
+  if (original != null && selling != null && selling > original) {
     throw httpError('Selling price cannot be greater than the original price.', 400)
+  }
+  if (discount != null && selling != null && discount > selling) {
+    throw httpError('Discount price cannot be greater than the selling price.', 400)
   }
 
   return patch
 }
 
-// GET /merchandise — public homepage section. Only ACTIVE / OUT_OF_STOCK.
 export async function listPublicMerchandise(req, res, next) {
   try {
     const rows = await findPublicMerchandise()
@@ -133,18 +173,34 @@ export async function listPublicMerchandise(req, res, next) {
   }
 }
 
-// GET /merchandise/admin — Super Admin management table. Every product.
+// GET /merchandise/admin?category=&status=&q=&sort=&page=&pageSize=
 export async function listAdminMerchandise(req, res, next) {
   try {
-    const rows = await findAllMerchandise()
-    res.json({ items: rows.map(toAdminShape) })
+    const { category, status, q, sort } = req.query
+    if (category && !MERCHANDISE_CATEGORY_NAMES.includes(category)) {
+      throw httpError('Unknown category.', 400)
+    }
+    if (status && !MERCHANDISE_STATUSES.includes(status)) {
+      throw httpError('Unknown status.', 400)
+    }
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const rawSize = Number(req.query.pageSize)
+    const pageSize = Number.isInteger(rawSize) && rawSize > 0 && rawSize <= 100 ? rawSize : null
+
+    const { rows, total } = await findAllMerchandise({
+      category,
+      status,
+      q,
+      sort,
+      limit: pageSize,
+      offset: pageSize ? (page - 1) * pageSize : 0,
+    })
+    res.json({ items: rows.map(toAdminShape), total, page, pageSize })
   } catch (err) {
     next(err)
   }
 }
 
-// GET /merchandise/:id — public product detail page. Only visible statuses;
-// a DRAFT/INACTIVE id is indistinguishable from a missing one.
 export async function getPublicMerchandise(req, res, next) {
   try {
     const id = Number(req.params.id)
@@ -156,7 +212,6 @@ export async function getPublicMerchandise(req, res, next) {
   }
 }
 
-// GET /merchandise/admin/:id — Super Admin, load a product for editing.
 export async function getAdminMerchandise(req, res, next) {
   try {
     const id = Number(req.params.id)
@@ -168,7 +223,6 @@ export async function getAdminMerchandise(req, res, next) {
   }
 }
 
-// POST /merchandise — Super Admin. Multipart: `image` file + product fields.
 export async function createMerchandiseHandler(req, res, next) {
   try {
     if (!req.file) throw httpError('A product image is required.', 400)
@@ -180,18 +234,21 @@ export async function createMerchandiseHandler(req, res, next) {
       const row = await createMerchandise({
         name: patch.name,
         description: patch.description ?? null,
-        category: patch.category ?? null,
-        imageUrl: uploaded.url,
-        cloudinaryPublicId: uploaded.publicId,
-        originalPrice: patch.original_price ?? null,
-        sellingPrice: patch.selling_price,
+        category: patch.category,
+        image_url: uploaded.url,
+        cloudinary_public_id: uploaded.publicId,
+        original_price: patch.original_price ?? null,
+        selling_price: patch.selling_price,
+        discount_price: patch.discount_price ?? null,
+        stock_quantity: patch.stock_quantity ?? 0,
+        sku: patch.sku ?? null,
+        is_featured: patch.is_featured ?? false,
         status: patch.status ?? 'DRAFT',
-        sortOrder: patch.sort_order ?? 0,
+        sort_order: patch.sort_order ?? 0,
+        attributes: patch.attributes ?? {},
       })
       res.status(201).json(toAdminShape(row))
     } catch (dbErr) {
-      // Cloudinary upload already succeeded — don't orphan it because the
-      // metadata write failed. Same rollback as partner.controller.js.
       try {
         await deleteImageByPublicId(uploaded.publicId)
       } catch (cleanupErr) {
@@ -201,6 +258,7 @@ export async function createMerchandiseHandler(req, res, next) {
           cleanupError: cleanupErr.message,
         })
       }
+      if (dbErr.code === '23505') throw httpError('That SKU is already in use.', 400)
       throw dbErr
     }
   } catch (err) {
@@ -208,8 +266,6 @@ export async function createMerchandiseHandler(req, res, next) {
   }
 }
 
-// PATCH /merchandise/:id — Super Admin. Field updates + optional replacement
-// `image`. Old Cloudinary asset is deleted only AFTER the DB update commits.
 export async function updateMerchandiseHandler(req, res, next) {
   try {
     const id = Number(req.params.id)
@@ -240,6 +296,7 @@ export async function updateMerchandiseHandler(req, res, next) {
           })
         }
       }
+      if (dbErr.code === '23505') throw httpError('That SKU is already in use.', 400)
       throw dbErr
     }
 
@@ -261,8 +318,6 @@ export async function updateMerchandiseHandler(req, res, next) {
   }
 }
 
-// DELETE /merchandise/:id — Super Admin. Hard delete + Cloudinary cleanup,
-// same as partner removal (the soft path is PATCH status = 'INACTIVE').
 export async function deleteMerchandiseHandler(req, res, next) {
   try {
     const id = Number(req.params.id)

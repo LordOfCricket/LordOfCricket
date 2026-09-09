@@ -15,13 +15,13 @@ function PodiumSlot({ item, unit, metric, size }) {
     <button
       type="button"
       onClick={() => navigate(`/players/${item.player.publicPlayerId}`)}
-      className={`flex flex-1 flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-center transition-colors hover:bg-white/10 ${size === 'lg' ? 'sm:py-7' : ''}`}
+      className={`flex flex-1 flex-col items-center gap-2 rounded-2xl loc-card px-4 py-5 text-center transition-colors hover:bg-loc-mint ${size === 'lg' ? 'sm:py-7' : ''}`}
     >
-      {item.rank === 1 && <Trophy className="h-6 w-6 text-amber-300" />}
+      {item.rank === 1 && <Trophy className="h-6 w-6 text-amber-700" />}
       <Avatar name={item.player.name} photoUrl={item.player.photoUrl} size={size === 'lg' ? 'lg' : 'md'} />
-      <p className="text-sm font-bold text-white">#{item.rank} {item.player.name}</p>
-      <p className="text-lg font-extrabold text-emerald-300">
-        {formatValue(item.value, metric)} <span className="text-xs font-semibold text-slate-400">{unit}</span>
+      <p className="text-sm font-bold text-loc-navy">#{item.rank} {item.player.name}</p>
+      <p className="text-lg font-extrabold text-loc-green">
+        {formatValue(item.value, metric)} <span className="text-xs font-semibold text-loc-faint">{unit}</span>
       </p>
     </button>
   )

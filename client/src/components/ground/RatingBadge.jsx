@@ -11,14 +11,14 @@ export default function RatingBadge({ ratingAvg, ratingCount, size = 'sm' }) {
   const textSize = size === 'lg' ? 'text-lg' : 'text-xs'
 
   if (ratingAvg === null || ratingAvg === undefined) {
-    return <span className={`text-emerald-100/50 ${textSize}`}>No reviews yet</span>
+    return <span className={`text-loc-faint ${textSize}`}>No reviews yet</span>
   }
 
   return (
-    <span className={`inline-flex items-center gap-1.5 font-semibold text-emerald-100/80 ${textSize}`}>
+    <span className={`inline-flex items-center gap-1.5 font-semibold text-loc-muted ${textSize}`}>
       <Star className={`${iconSize} shrink-0 fill-amber-400 text-amber-400`} aria-hidden="true" />
-      <span className="text-white">{ratingAvg.toFixed(1)}</span>
-      <span className="text-emerald-100/50">
+      <span className="text-loc-navy">{ratingAvg.toFixed(1)}</span>
+      <span className="text-loc-faint">
         ({ratingCount} {ratingCount === 1 ? 'review' : 'reviews'})
       </span>
     </span>

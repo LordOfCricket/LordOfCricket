@@ -18,7 +18,7 @@ import { fetchTeamInsight } from '../../services/aiInsightApi.js'
 import TeamAnalyticsSection from '../../components/analytics/TeamAnalyticsSection.jsx'
 
 function SectionHeading({ children }) {
-  return <h2 className="text-lg font-bold text-white">{children}</h2>
+  return <h2 className="text-lg font-bold text-loc-navy">{children}</h2>
 }
 
 export default function TeamProfilePage() {
@@ -29,9 +29,9 @@ export default function TeamProfilePage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 px-4 py-10 text-white sm:px-6 lg:px-8">
+      <main className="loc-page px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl">
-          <StatsLoadingGrid tiles={4} />
+          <StatsLoadingGrid tiles={4} light />
         </div>
       </main>
     )
@@ -39,9 +39,9 @@ export default function TeamProfilePage() {
 
   if (error || !profile) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center text-white">
-        <StatsErrorState message={error} onRetry={retry} />
-        <button type="button" onClick={() => navigate('/teams')} className="text-sm font-semibold text-emerald-300 hover:text-emerald-200">
+      <main className="loc-page flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        <StatsErrorState message={error} onRetry={retry} light />
+        <button type="button" onClick={() => navigate('/teams')} className="text-sm font-semibold text-loc-green hover:text-loc-green-strong">
           Back to Teams
         </button>
       </main>
@@ -51,10 +51,7 @@ export default function TeamProfilePage() {
   const { team, squad, record, recentForm, liveMatch, upcomingFixtures, recentMatches, topPerformers } = profile
 
   return (
-    <main
-      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-8 text-white sm:px-6 lg:px-8"
-      style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.85), rgba(2,6,23,0.85)), url('/images/cricket-stadium.jpg')` }}
-    >
+    <main className="loc-page px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex items-center justify-between gap-3">
           <BackButton fallback="/teams" />
@@ -73,19 +70,19 @@ export default function TeamProfilePage() {
           </div>
         </div>
 
-        <TeamHero team={team} squadCount={squad.length} />
+        <TeamHero team={team} squadCount={squad.length} light />
 
         <div>
           <SectionHeading>Official Record</SectionHeading>
           <div className="mt-3">
-            <TeamRecordTiles record={record} />
+            <TeamRecordTiles record={record} light />
           </div>
         </div>
 
         <div>
           <SectionHeading>Recent Form</SectionHeading>
           <div className="mt-3">
-            <TeamRecentForm recentForm={recentForm} />
+            <TeamRecentForm recentForm={recentForm} light />
           </div>
         </div>
 
@@ -93,18 +90,18 @@ export default function TeamProfilePage() {
           <div>
             <SectionHeading>Live Match</SectionHeading>
             <div className="mt-3">
-              <MatchCard match={liveMatch} />
+              <MatchCard match={liveMatch} light />
             </div>
           </div>
         )}
 
-        <TeamMatchSection title="Upcoming Fixtures" matches={upcomingFixtures} emptyMessage="No upcoming fixtures scheduled." />
-        <TeamMatchSection title="Recent Matches" matches={recentMatches} emptyMessage="No completed matches yet." />
+        <TeamMatchSection title="Upcoming Fixtures" matches={upcomingFixtures} emptyMessage="No upcoming fixtures scheduled." light />
+        <TeamMatchSection title="Recent Matches" matches={recentMatches} emptyMessage="No completed matches yet." light />
 
         <div>
           <SectionHeading>Current Squad</SectionHeading>
           <div className="mt-3">
-            <TeamSquadList squad={squad} />
+            <TeamSquadList squad={squad} light />
           </div>
         </div>
 
@@ -112,7 +109,7 @@ export default function TeamProfilePage() {
           <div>
             <SectionHeading>Roster Management</SectionHeading>
             <div className="mt-3">
-              <TeamSquadManager team={team} squad={squad} onChange={retry} />
+              <TeamSquadManager team={team} squad={squad} onChange={retry} light />
             </div>
           </div>
         )}
@@ -120,19 +117,19 @@ export default function TeamProfilePage() {
         <div>
           <SectionHeading>Top Performers</SectionHeading>
           <div className="mt-3">
-            <TeamTopPerformers topPerformers={topPerformers} />
+            <TeamTopPerformers topPerformers={topPerformers} light />
           </div>
         </div>
 
         <div>
           <SectionHeading>Analytics</SectionHeading>
           <div className="mt-3">
-            <TeamAnalyticsSection teamId={team.id} />
+            <TeamAnalyticsSection teamId={team.id} light />
           </div>
         </div>
 
         {/* Bounded, independently-loading; record/recent matches/top performers above remain primary. */}
-        <AIInsightSection title="AI Team Insight" fetchFn={fetchTeamInsight} id={team.id} kind="person" />
+        <AIInsightSection title="AI Team Insight" fetchFn={fetchTeamInsight} id={team.id} kind="person" light />
       </div>
     </main>
   )

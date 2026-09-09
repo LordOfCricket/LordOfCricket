@@ -2,18 +2,18 @@ import { ballLabel, ballClass } from './ballChip.js'
 
 export default function OversPanel({ innings }) {
   if (innings.overs.length === 0) {
-    return <p className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-5 text-sm text-slate-400">No overs bowled yet.</p>
+    return <p className="rounded-[1.5rem] border border-loc-border bg-loc-surface p-5 text-sm text-loc-faint">No overs bowled yet.</p>
   }
 
   return (
     <div className="space-y-3">
       {innings.overs.map((over) => (
-        <div key={over.over} className="rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-4 shadow-sm backdrop-blur-sm sm:p-5">
+        <div key={over.over} className="rounded-[1.5rem] border border-loc-border bg-loc-surface p-4 shadow-sm backdrop-blur-sm sm:p-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Over {over.over} <span className="text-slate-500">· {over.bowler?.name}</span>
+            <p className="text-xs font-semibold uppercase tracking-wide text-loc-faint">
+              Over {over.over} <span className="text-loc-faint">· {over.bowler?.name}</span>
             </p>
-            <p className="text-xs font-semibold text-slate-300">
+            <p className="text-xs font-semibold text-loc-muted">
               {over.runs} run{over.runs === 1 ? '' : 's'}
               {over.wickets > 0 ? ` · ${over.wickets} wicket${over.wickets === 1 ? '' : 's'}` : ''}
             </p>
@@ -25,7 +25,7 @@ export default function OversPanel({ innings }) {
               </span>
             ))}
           </div>
-          <p className="mt-2 text-right text-xs font-semibold text-emerald-300">Score: {over.scoreAfter}</p>
+          <p className="mt-2 text-right text-xs font-semibold text-loc-green">Score: {over.scoreAfter}</p>
         </div>
       ))}
     </div>

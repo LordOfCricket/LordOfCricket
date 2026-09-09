@@ -38,27 +38,24 @@ export default function TopUmpiresPage() {
   }
 
   return (
-    <main
-      className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-10 text-white sm:px-6 lg:px-8"
-      style={{ backgroundImage: `linear-gradient(rgba(2,6,23,0.82), rgba(2,6,23,0.82)), url('/images/cricket-stadium.jpg')` }}
-    >
+    <main className="loc-page px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
         <BackButton fallback="/leaderboards" />
 
         <div className="mt-4 flex items-center gap-3">
-          <Trophy className="h-7 w-7 text-amber-300" />
-          <h1 className="text-3xl font-bold text-white">Top Umpires</h1>
+          <Trophy className="h-7 w-7 text-amber-700" />
+          <h1 className="text-3xl font-bold text-loc-navy">Top Umpires</h1>
         </div>
-        <p className="mt-1 text-sm text-slate-300">Ranked by rating, reliability, and experience together — never rating alone.</p>
+        <p className="mt-1 text-sm text-loc-muted">Ranked by rating, reliability, and experience together — never rating alone.</p>
 
-        <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/50 p-6 shadow-sm backdrop-blur-sm">
-          {loading && <StatsLoadingGrid tiles={6} />}
-          {!loading && error && <StatsErrorState message={error} onRetry={load} />}
+        <div className="mt-6 loc-card p-6">
+          {loading && <StatsLoadingGrid tiles={6} light />}
+          {!loading && error && <StatsErrorState message={error} onRetry={load} light />}
 
           {!loading && !error && board && (
             <>
               {board.items.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-6 py-16 text-center text-sm text-slate-300">
+                <div className="rounded-2xl border border-dashed border-loc-border bg-loc-mint px-6 py-16 text-center text-sm text-loc-muted">
                   No approved umpires yet.
                 </div>
               )}
@@ -66,14 +63,14 @@ export default function TopUmpiresPage() {
               {board.items.length > 0 && (
                 <div className="space-y-2">
                   {board.items.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl loc-card px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <span className="w-6 shrink-0 text-center text-sm font-bold text-slate-400">#{item.rank}</span>
+                        <span className="w-6 shrink-0 text-center text-sm font-bold text-loc-faint">#{item.rank}</span>
                         <div>
-                          <p className="text-sm font-semibold text-white">{item.name}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                          <p className="text-sm font-semibold text-loc-navy">{item.name}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-loc-faint">
                             {item.reputation?.ratingCount > 0 && (
-                              <span className="flex items-center gap-1 text-amber-300">
+                              <span className="flex items-center gap-1 text-amber-700">
                                 <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                                 {Number(item.reputation.ratingAvg).toFixed(1)}
                               </span>
@@ -83,19 +80,19 @@ export default function TopUmpiresPage() {
                           </div>
                         </div>
                       </div>
-                      <ReputationBadges verified={item.reputation?.verified} badges={item.reputation?.badges} size="sm" />
+                      <ReputationBadges verified={item.reputation?.verified} badges={item.reputation?.badges} size="sm" light />
                     </div>
                   ))}
                 </div>
               )}
 
               {board.total > PAGE_SIZE && (
-                <div className="mt-6 flex items-center justify-between text-sm text-slate-300">
+                <div className="mt-6 flex items-center justify-between text-sm text-loc-muted">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => changePage(Math.max(0, offset - PAGE_SIZE))}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-border px-4 py-2 font-semibold transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Previous
                   </button>
@@ -106,7 +103,7 @@ export default function TopUmpiresPage() {
                     type="button"
                     disabled={offset + PAGE_SIZE >= board.total}
                     onClick={() => changePage(offset + PAGE_SIZE)}
-                    className="rounded-full border border-white/10 px-4 py-2 font-semibold transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-border px-4 py-2 font-semibold transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
                   </button>

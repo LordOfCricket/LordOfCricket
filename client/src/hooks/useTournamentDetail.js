@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../services/tournamentApi.js'
+import { useVisibilityAwarePolling } from './useVisibilityAwarePolling.js'
+
+const LIVE_FIXTURES_POLL_MS = 20000
 
 /** The full tournament hub read model — overview/teams/squad/fixtures/
  * standings/statistics loaded together, plus organizer-action wrappers that
@@ -44,6 +47,21 @@ export function useTournamentDetail(publicTournamentId) {
     }, 0)
     return () => window.clearTimeout(timer)
   }, [load])
+
+  // While any fixture's match is live, keep JUST the fixtures list fresh so
+  // its cards show a moving score — one batched /fixtures request per tick
+  // (not per card), on the shared visibility-aware transport (pauses when
+  // the tab is hidden). Re-arms when a fixture transitions to/from live.
+  const hasLiveFixture = fixtures.some((f) => f.matchStatus === 'live')
+  const refetchFixtures = useCallback(
+    () => api.fetchTournamentFixtures(publicTournamentId).then((fx) => setFixtures(fx)),
+    [publicTournamentId]
+  )
+  useVisibilityAwarePolling(refetchFixtures, {
+    intervalMs: LIVE_FIXTURES_POLL_MS,
+    enabled: hasLiveFixture,
+    resetKey: `${publicTournamentId}:${hasLiveFixture}`,
+  })
 
   const runAction = useCallback(
     async (fn) => {

@@ -2,10 +2,47 @@ import { create } from 'zustand'
 import type { QueryClient } from '@tanstack/react-query'
 import * as authApi from '../services/authApi'
 import * as playerApi from '../services/playerApi'
+import * as umpireApi from '../services/umpireApi'
 import api from '../services/api'
-import { User, Player, MfaStatus } from '../types'
+import { User, Player, MfaStatus, UmpireApproval } from '../types'
 
 const DEFAULT_MFA: MfaStatus = { enrolled: false, required: false, verified: false }
+
+function isUmpireAccount(user: User | null): boolean {
+  return user?.role === 'player' && user?.player_type === 'umpire'
+}
+
+// Resolved before `status` flips to 'authenticated' so the root router
+// never renders a Player screen for an Umpire (or vice-versa).
+async function resolveUmpireApproval(user: User | null): Promise<UmpireApproval> {
+  if (!isUmpireAccount(user)) return null
+  try {
+    const request = await umpireApi.getMyUmpireRequest()
+    return request?.status ?? 'none'
+  } catch {
+    return 'unknown'
+  }
+}
+
+// Shared by verifyOtp / loginWithPassword: resolve everything the root
+// router needs, THEN flip status to 'authenticated' in one set() so the
+// first authenticated render is already the right experience.
+async function applyAuthenticatedUser(
+  set: (partial: Partial<AuthStore>) => void,
+  user: User,
+): Promise<void> {
+  const umpire = isUmpireAccount(user)
+  const umpireApproval = await resolveUmpireApproval(user)
+  let player: Player | null = null
+  if (user?.role === 'player' && !umpire) {
+    try {
+      player = await playerApi.fetchMyPlayer()
+    } catch {
+      // Player profile not found yet - not an error
+    }
+  }
+  set({ user, player, isUmpire: umpire, umpireApproval, status: 'authenticated' })
+}
 
 let queryClientInstance: QueryClient | null = null
 
@@ -19,6 +56,13 @@ interface AuthStore {
   mfa: MfaStatus
   status: 'loading' | 'authenticated' | 'unauthenticated'
   error: string | null
+
+  // Umpire routing. `isUmpire` = role player + player_type umpire.
+  // `umpireApproval` is null for non-umpire accounts, otherwise the latest
+  // umpire request status resolved during auth ('none'/'unknown' handled).
+  isUmpire: boolean
+  umpireApproval: UmpireApproval
+  refreshUmpireApproval: () => Promise<UmpireApproval>
 
   // Auth actions
   initialize: () => Promise<void>
@@ -50,27 +94,42 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   mfa: DEFAULT_MFA,
   status: 'loading',
   error: null,
+  isUmpire: false,
+  umpireApproval: null,
+
+  refreshUmpireApproval: async () => {
+    const approval = await resolveUmpireApproval(get().user)
+    set({ umpireApproval: approval })
+    return approval
+  },
 
   initialize: async () => {
     try {
       const { user: fetchedUser, mfa: fetchedMfa } = await authApi.fetchMe()
-      set({
-        user: fetchedUser,
-        mfa: fetchedMfa || DEFAULT_MFA,
-        status: 'authenticated',
-      })
+      const umpire = isUmpireAccount(fetchedUser)
 
-      // Load player profile if role is player
-      if (fetchedUser?.role === 'player') {
+      // Resolve umpire approval BEFORE authenticating so the first
+      // rendered screen is the correct one for this account type.
+      const umpireApproval = await resolveUmpireApproval(fetchedUser)
+      let fetchedPlayer: Player | null = null
+      if (fetchedUser?.role === 'player' && !umpire) {
         try {
-          const fetchedPlayer = await playerApi.fetchMyPlayer()
-          set({ player: fetchedPlayer })
+          fetchedPlayer = await playerApi.fetchMyPlayer()
         } catch {
           // Player profile not found yet - not an error
         }
       }
+
+      set({
+        user: fetchedUser,
+        player: fetchedPlayer,
+        mfa: fetchedMfa || DEFAULT_MFA,
+        isUmpire: umpire,
+        umpireApproval,
+        status: 'authenticated',
+      })
     } catch (error) {
-      set({ status: 'unauthenticated', user: null, player: null })
+      set({ status: 'unauthenticated', user: null, player: null, isUmpire: false, umpireApproval: null })
     }
   },
 
@@ -88,24 +147,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       set({ error: null })
       const verifiedUser = await authApi.verifyOtp(identifier, code)
-      set({
-        user: verifiedUser,
-        status: 'authenticated',
-      })
-
-      // Load player profile if role is player
-      if (verifiedUser?.role === 'player') {
-        try {
-          const fetchedPlayer = await playerApi.fetchMyPlayer()
-          set({ player: fetchedPlayer })
-        } catch {
-          // Player profile not found yet - not an error
-        }
-      }
-
-      // Refresh MFA status
+      await applyAuthenticatedUser(set, verifiedUser)
       await get().refreshMfaStatus()
-
       return verifiedUser
     } catch (error) {
       set({ error: 'Failed to verify OTP' })
@@ -117,22 +160,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       set({ error: null })
       const loggedInUser = await authApi.loginWithPassword(identifier, password)
-      set({
-        user: loggedInUser,
-        status: 'authenticated',
-      })
-
-      if (loggedInUser?.role === 'player') {
-        try {
-          const fetchedPlayer = await playerApi.fetchMyPlayer()
-          set({ player: fetchedPlayer })
-        } catch {
-          // Player profile not found yet
-        }
-      }
-
+      await applyAuthenticatedUser(set, loggedInUser)
       await get().refreshMfaStatus()
-
       return loggedInUser
     } catch (error) {
       set({ error: 'Failed to login' })
@@ -157,6 +186,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       user: null,
       player: null,
       mfa: DEFAULT_MFA,
+      isUmpire: false,
+      umpireApproval: null,
       status: 'unauthenticated',
       error: null,
     })

@@ -17,13 +17,13 @@ const UNAVAILABLE_COPY = {
   INVALID_OUTPUT: 'AI insight is temporarily unavailable.',
 }
 
-function Highlights({ items }) {
+function Highlights({ items, light }) {
   if (!items || items.length === 0) return null
   return (
-    <ul className="mt-3 flex flex-col gap-1.5 text-sm text-slate-300">
+    <ul className={`mt-3 flex flex-col gap-1.5 text-sm ${light ? 'text-loc-muted' : 'text-slate-300'}`}>
       {items.map((h, i) => (
         <li key={i} className="flex gap-2">
-          <span className="text-emerald-400">•</span>
+          <span className={light ? 'text-loc-green' : 'text-emerald-400'}>•</span>
           <span>{h}</span>
         </li>
       ))}
@@ -31,15 +31,15 @@ function Highlights({ items }) {
   )
 }
 
-function KeyMoments({ items }) {
+function KeyMoments({ items, light }) {
   if (!items || items.length === 0) return null
   return (
     <div className="mt-4">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-emerald-300">Key Moments</h4>
-      <ul className="mt-2 flex flex-col gap-2 text-sm text-slate-300">
+      <h4 className={`text-xs font-bold uppercase tracking-wide ${light ? 'text-loc-green' : 'text-emerald-300'}`}>Key Moments</h4>
+      <ul className={`mt-2 flex flex-col gap-2 text-sm ${light ? 'text-loc-muted' : 'text-slate-300'}`}>
         {items.map((km, i) => (
-          <li key={i} className="rounded-lg border border-white/5 bg-white/5 px-3 py-2">
-            {km.ballLabel && <span className="mr-2 font-mono text-xs text-slate-400">{km.ballLabel}</span>}
+          <li key={i} className={`rounded-lg border px-3 py-2 ${light ? 'border-loc-border bg-loc-mint' : 'border-white/5 bg-white/5'}`}>
+            {km.ballLabel && <span className={`mr-2 font-mono text-xs ${light ? 'text-loc-faint' : 'text-slate-400'}`}>{km.ballLabel}</span>}
             {km.explanation}
           </li>
         ))}
@@ -48,16 +48,19 @@ function KeyMoments({ items }) {
   )
 }
 
-function StandoutPerformers({ items }) {
+function StandoutPerformers({ items, light }) {
   if (!items || items.length === 0) return null
   return (
     <div className="mt-4">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-emerald-300">Standout Performers</h4>
-      <ul className="mt-2 flex flex-col gap-2 text-sm text-slate-300">
+      <h4 className={`text-xs font-bold uppercase tracking-wide ${light ? 'text-loc-green' : 'text-emerald-300'}`}>Standout Performers</h4>
+      <ul className={`mt-2 flex flex-col gap-2 text-sm ${light ? 'text-loc-muted' : 'text-slate-300'}`}>
         {items.map((p, i) => (
           <li key={i}>
             {p.publicPlayerId ? (
-              <Link to={`/players/${p.publicPlayerId}`} className="font-semibold text-white hover:text-emerald-300">
+              <Link
+                to={`/players/${p.publicPlayerId}`}
+                className={`font-semibold ${light ? 'text-loc-navy hover:text-loc-green' : 'text-white hover:text-emerald-300'}`}
+              >
                 {p.publicPlayerId}
               </Link>
             ) : null}
@@ -71,21 +74,19 @@ function StandoutPerformers({ items }) {
 }
 
 /** @param kind - 'match' (headline/summary/keyMoments/standoutPerformers) or 'person' (headline/summary/highlights) */
-export default function AIInsightSection({ title, fetchFn, id, kind = 'person' }) {
+export default function AIInsightSection({ title, fetchFn, id, kind = 'person', light = false }) {
   const { result, loading, error } = useAIInsight(fetchFn, id)
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <SectionLabel title={title} />
-        <div className="mt-3 h-4 w-2/3 animate-pulse rounded bg-white/10" />
-        <div className="mt-2 h-4 w-full animate-pulse rounded bg-white/5" />
+      <div className={`rounded-2xl border p-5 ${light ? 'border-loc-border bg-loc-surface' : 'border-white/10 bg-white/5'}`}>
+        <SectionLabel title={title} light={light} />
+        <div className={`mt-3 h-4 w-2/3 animate-pulse rounded ${light ? 'bg-loc-border-soft' : 'bg-white/10'}`} />
+        <div className={`mt-2 h-4 w-full animate-pulse rounded ${light ? 'bg-loc-mint' : 'bg-white/5'}`} />
       </div>
     )
   }
 
-  // A network/HTTP-level error (not the normal `available:false` shape) —
-  // still fails soft, never a page-breaking error state.
   if (error || !result) {
     return null
   }
@@ -93,34 +94,34 @@ export default function AIInsightSection({ title, fetchFn, id, kind = 'person' }
   if (!result.available) {
     const copy = UNAVAILABLE_COPY[result.reason] || 'AI insight is unavailable.'
     return (
-      <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5">
-        <SectionLabel title={title} />
-        <p className="mt-2 text-sm text-slate-400">{copy}</p>
+      <div className={`rounded-2xl border border-dashed p-5 ${light ? 'border-loc-border bg-loc-mint' : 'border-white/10 bg-white/5'}`}>
+        <SectionLabel title={title} light={light} />
+        <p className={`mt-2 text-sm ${light ? 'text-loc-muted' : 'text-slate-400'}`}>{copy}</p>
       </div>
     )
   }
 
   const insight = result.insight
   return (
-    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
-      <SectionLabel title={title} />
-      <h3 className="mt-2 text-lg font-bold text-white">{insight.headline}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-slate-300">{insight.summary}</p>
+    <div className={`rounded-2xl border p-5 ${light ? 'border-loc-green/30 bg-loc-mint' : 'border-emerald-400/20 bg-emerald-400/5'}`}>
+      <SectionLabel title={title} light={light} />
+      <h3 className={`mt-2 text-lg font-bold ${light ? 'text-loc-navy' : 'text-white'}`}>{insight.headline}</h3>
+      <p className={`mt-2 text-sm leading-relaxed ${light ? 'text-loc-muted' : 'text-slate-300'}`}>{insight.summary}</p>
       {kind === 'match' ? (
         <>
-          <KeyMoments items={insight.keyMoments} />
-          <StandoutPerformers items={insight.standoutPerformers} />
+          <KeyMoments items={insight.keyMoments} light={light} />
+          <StandoutPerformers items={insight.standoutPerformers} light={light} />
         </>
       ) : (
-        <Highlights items={insight.highlights} />
+        <Highlights items={insight.highlights} light={light} />
       )}
     </div>
   )
 }
 
-function SectionLabel({ title }) {
+function SectionLabel({ title, light }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-emerald-300">
+    <span className={`inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide ${light ? 'text-loc-green' : 'text-emerald-300'}`}>
       <Sparkles className="h-3.5 w-3.5" />
       {title}
     </span>

@@ -7,17 +7,15 @@ import { User, AuthResponse } from '../types'
 const DEV_OTP_CODE = '123456'
 const isDevelopment = process.env.EXPO_PUBLIC_APP_ENV === 'development'
 
-// Entering the dev OTP code logs into this REAL, already-seeded account
-// (server/src/scripts/seedTestingEnvironment.js's ACCOUNTS.player) via the
-// existing password-login endpoint — a real signed session, a real
-// users.id, and a real players row (players.user_id -> users.id). This
-// replaces a previous version that fabricated an in-memory user + a fake
-// client-only cookie the backend's requireAuth never recognized (its name
-// didn't match the real session cookie), which made every authenticated
-// endpoint 401 despite the app appearing "logged in". No new auth
-// mechanism — same /auth/login-password real users hit from the password
-// login screen.
-const DEV_TEST_IDENTIFIER = 'loc-test-player@loctest.local'
+// Entering the dev OTP code logs into a REAL, already-seeded account via
+// the existing /auth/login-password endpoint — a real signed session, a
+// real users.id, a real players row. All five seeded accounts
+// (server/src/scripts/seedTestingEnvironment.js) share this one password,
+// so the identifier the user typed on the login screen selects WHICH
+// account (player, umpire, staff, …). Falling back to the seeded player
+// only when the field is left blank keeps the "just tap through" flow.
+// No new auth mechanism — same endpoint the password login screen uses.
+const DEV_FALLBACK_IDENTIFIER = 'player@gmail.com'
 const DEV_TEST_PASSWORD = 'LocTester#2026'
 
 export async function sendOtp(identifier: string) {
@@ -33,10 +31,13 @@ export async function sendOtp(identifier: string) {
 }
 
 export async function verifyOtp(identifier: string, code: string): Promise<User> {
-  // DEVELOPMENT-ONLY: Accept dev OTP in development — logs into the real
-  // seeded dev/test player account instead of any identifier the user typed.
+  // DEVELOPMENT-ONLY: accept the dev OTP and log into the seeded account
+  // matching the identifier the user actually entered (blank → the seeded
+  // player). Previously this ignored `identifier` and always logged into
+  // the player account, so switching accounts after logout re-opened the
+  // previous one.
   if (isDevelopment && code === DEV_OTP_CODE) {
-    return loginWithPassword(DEV_TEST_IDENTIFIER, DEV_TEST_PASSWORD)
+    return loginWithPassword(identifier?.trim() || DEV_FALLBACK_IDENTIFIER, DEV_TEST_PASSWORD)
   }
 
   // PRODUCTION: Verify real OTP only

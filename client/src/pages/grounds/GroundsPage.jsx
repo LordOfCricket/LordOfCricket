@@ -2,10 +2,7 @@ import { useMemo, useState } from 'react'
 import { useSeoMeta } from '../../hooks/useSeoMeta.js'
 import { MapPin, ChevronDown } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
-import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
-import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
 import SiteFooter from '../../components/home/SiteFooter.jsx'
-import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
 import GroundCard from '../../components/ground/GroundCard.jsx'
 import GroundCardSkeleton from '../../components/ground/GroundCardSkeleton.jsx'
@@ -20,7 +17,7 @@ import { fadeUpSoft } from '../../lib/revealVariants.js'
 function EmptyState({ message }) {
   return (
     <div className="flex flex-col items-center gap-2 py-12 text-center">
-      <p className="text-loc-text2-dark">{message}</p>
+      <p className="text-loc-muted">{message}</p>
     </div>
   )
 }
@@ -28,11 +25,11 @@ function EmptyState({ message }) {
 function ErrorState({ message, onRetry }) {
   return (
     <div className="flex flex-col items-center gap-4 py-12 text-center">
-      <p className="text-red-300/80">{message || 'Something went wrong loading grounds.'}</p>
+      <p className="text-red-600">{message || 'Something went wrong loading grounds.'}</p>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-full bg-loc-stadium px-6 py-2 text-sm font-semibold text-loc-warmwhite transition hover:bg-loc-stadium-hover"
+        className="rounded-full bg-loc-green px-6 py-2 text-sm font-semibold text-white transition hover:bg-loc-green-strong"
       >
         Retry
       </button>
@@ -42,26 +39,26 @@ function ErrorState({ message, onRetry }) {
 
 function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, onFacilitiesChange, grounds, isSearchMode, searchCoords, onBackToAll, radiusKm, onRadiusCommit }) {
   return (
-    <aside className="w-full lg:w-80 lg:fixed lg:left-0 lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-loc-gold/20 flex-shrink-0">
+    <aside className="w-full lg:w-80 lg:fixed lg:left-0 lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-loc-border flex-shrink-0">
       <div className="sticky top-32 space-y-8 px-6 lg:px-10 pt-32 lg:pb-20">
         {/* Search & Nearby */}
         {!isSearchMode && (
           <div className="space-y-3">
-            <h3 className="text-sm font-bold uppercase text-loc-gold">Search Nearby</h3>
+            <h3 className="text-sm font-bold uppercase text-loc-green">Search Nearby</h3>
             <LandmarkSearch compact onResolved={({ latitude, longitude, label }) => {}} />
           </div>
         )}
 
         {isSearchMode && (
-          <div className="space-y-3 rounded-lg border border-loc-gold/20 bg-loc-stadium/10 p-3">
-            <div className="flex items-start gap-2 text-xs text-loc-text2-dark">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-gold mt-0.5" aria-hidden="true" />
+          <div className="space-y-3 rounded-lg border border-loc-border bg-loc-surface p-3">
+            <div className="flex items-start gap-2 text-xs text-loc-muted">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-loc-green mt-0.5" aria-hidden="true" />
               <span>
-                Within {radiusKm} km of <span className="font-semibold text-loc-warmwhite">{searchCoords.label}</span>
+                Within {radiusKm} km of <span className="font-semibold text-loc-navy">{searchCoords.label}</span>
               </span>
             </div>
             <KmRangeSlider value={radiusKm} onCommit={onRadiusCommit} compact />
-            <button type="button" onClick={onBackToAll} className="text-xs font-semibold text-loc-gold hover:underline">
+            <button type="button" onClick={onBackToAll} className="text-xs font-semibold text-loc-green hover:underline">
               Clear Search
             </button>
           </div>
@@ -69,14 +66,14 @@ function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, o
 
         {/* City Filter */}
         <div className="space-y-3">
-          <h3 className="text-sm font-bold uppercase text-loc-gold">Filter by City</h3>
+          <h3 className="text-sm font-bold uppercase text-loc-green">Filter by City</h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             <button
               onClick={() => onCitySelect(null)}
               className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
                 selectedCity === null
-                  ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
-                  : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                  ? 'bg-loc-mint text-loc-navy font-semibold'
+                  : 'text-loc-muted hover:bg-loc-mint'
               }`}
             >
               All Cities
@@ -87,8 +84,8 @@ function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, o
                 onClick={() => onCitySelect(city)}
                 className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${
                   selectedCity === city
-                    ? 'bg-loc-gold/20 text-loc-warmwhite font-semibold'
-                    : 'text-loc-text2-dark hover:bg-loc-stadium/30'
+                    ? 'bg-loc-mint text-loc-navy font-semibold'
+                    : 'text-loc-muted hover:bg-loc-mint'
                 }`}
               >
                 {city}
@@ -100,7 +97,7 @@ function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, o
         {/* Facilities Filter */}
         {grounds.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-bold uppercase text-loc-gold">Facilities</h3>
+            <h3 className="text-sm font-bold uppercase text-loc-green">Facilities</h3>
             <GroundFiltersBar grounds={grounds} selectedFacilities={selectedFacilities} onChange={onFacilitiesChange} />
           </div>
         )}
@@ -176,18 +173,14 @@ export default function GroundsPage() {
   }
 
   return (
-    <div className="relative isolate flex flex-col min-h-screen overflow-x-hidden bg-loc-dark">
-      <MouseParallaxProvider>
-        <BackgroundSystem />
-        <CursorGlow />
-        <Navbar />
-      </MouseParallaxProvider>
+    <div className="loc-page flex flex-col overflow-x-hidden">
+      <Navbar theme="light" />
 
       <main className="relative w-full pt-32 pb-20 flex-1">
         {/* Page Title */}
         <div className="mx-auto w-full max-w-7xl px-6 lg:px-10 mb-10">
           <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
-            <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+            <h1 className="loc-heading text-3xl sm:text-4xl">
               Every Ground Registered on LOC
             </h1>
           </ScrollReveal>
@@ -216,7 +209,7 @@ export default function GroundsPage() {
               {/* Results Header */}
               {active.grounds.length > 0 && (
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold uppercase tracking-widest text-loc-muted-dark">
+                  <p className="text-sm font-semibold uppercase tracking-widest text-loc-faint">
                     {visibleGrounds.length} {visibleGrounds.length === 1 ? 'Ground' : 'Grounds'}
                   </p>
                 </div>
@@ -238,14 +231,14 @@ export default function GroundsPage() {
 
               {!active.loading && !active.error && active.grounds.length > 0 && visibleGrounds.length === 0 && (
                 <div className="text-center py-12">
-                  <p className="text-loc-text2-dark">No grounds match the selected filters.</p>
+                  <p className="text-loc-muted">No grounds match the selected filters.</p>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCity(null)
                       setSelectedFacilities([])
                     }}
-                    className="mt-4 inline-flex rounded-full bg-loc-stadium px-6 py-2 text-sm font-semibold text-loc-warmwhite transition hover:bg-loc-stadium-hover"
+                    className="mt-4 inline-flex rounded-full bg-loc-green px-6 py-2 text-sm font-semibold text-white transition hover:bg-loc-green-strong"
                   >
                     Clear Filters
                   </button>
@@ -258,7 +251,7 @@ export default function GroundsPage() {
                   type="button"
                   onClick={active.loadMore}
                   disabled={active.loadingMore}
-                  className="self-center rounded-full border border-loc-gold/20 px-6 py-2.5 text-sm font-semibold text-loc-warmwhite transition-colors hover:border-loc-gold/50 hover:text-loc-gold disabled:opacity-50"
+                  className="self-center rounded-full border border-loc-border px-6 py-2.5 text-sm font-semibold text-loc-navy transition-colors hover:border-loc-green hover:text-loc-green disabled:opacity-50"
                 >
                   {active.loadingMore ? 'Loading…' : 'Load More'}
                 </button>
@@ -268,7 +261,7 @@ export default function GroundsPage() {
         </div>
       </main>
 
-      <SiteFooter />
+      <SiteFooter theme="light" />
     </div>
   )
 }

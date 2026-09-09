@@ -11,33 +11,33 @@ function ResultCard({ match }) {
   const dateStr = matchDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
-    <ScrollReveal variant={fadeUpSoft} amount={0.3} className="rounded-xl border border-[#D4AF37]/20 bg-gradient-to-br from-[#064B38]/30 to-transparent p-6 hover:border-[#D4AF37]/40 transition-all">
+    <ScrollReveal variant={fadeUpSoft} amount={0.3} className="loc-card loc-card-hover p-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
         {/* Teams & Score */}
         <div className="flex flex-col items-center justify-center gap-3 lg:col-span-1">
-          <div className={`flex items-center justify-center w-full gap-4 ${isWin ? 'bg-[#064B38]/40 rounded-lg p-3' : 'p-3'}`}>
-            <p className="text-sm font-semibold text-[#F5F7F5] flex-1 text-right">{match.homeTeam?.name || 'Team A'}</p>
-            <p className={`text-lg font-bold ${isWin ? 'text-[#D4AF37]' : 'text-[#F5F7F5]'} min-w-12 text-center`}>{homeScore}</p>
+          <div className={`flex items-center justify-center w-full gap-4 ${isWin ? 'bg-loc-mint rounded-lg p-3' : 'p-3'}`}>
+            <p className="text-sm font-semibold text-loc-navy flex-1 text-right">{match.homeTeam?.name || 'Team A'}</p>
+            <p className={`text-lg font-bold ${isWin ? 'text-loc-green' : 'text-loc-navy'} min-w-12 text-center`}>{homeScore}</p>
           </div>
-          <p className="text-xs text-[#B5C2BC]">vs</p>
+          <p className="text-xs text-loc-muted">vs</p>
           <div className="flex items-center justify-center w-full gap-4 p-3">
-            <p className="text-sm font-semibold text-[#F5F7F5] flex-1">{match.awayTeam?.name || 'Team B'}</p>
-            <p className="text-lg font-bold text-[#F5F7F5] min-w-12 text-center">{awayScore}</p>
+            <p className="text-sm font-semibold text-loc-navy flex-1">{match.awayTeam?.name || 'Team B'}</p>
+            <p className="text-lg font-bold text-loc-navy min-w-12 text-center">{awayScore}</p>
           </div>
         </div>
 
         {/* Match Details */}
         <div className="flex flex-col justify-center gap-2 text-center lg:col-span-1">
-          <p className="text-xs uppercase tracking-widest text-[#D4AF37]">{match.format || 'T20'}</p>
-          <p className="text-sm text-[#B5C2BC]">{dateStr}</p>
-          <p className="text-xs text-[#7E8C86]">{match.status || 'Completed'}</p>
+          <p className="text-xs uppercase tracking-widest text-loc-green">{match.format || 'T20'}</p>
+          <p className="text-sm text-loc-muted">{dateStr}</p>
+          <p className="text-xs text-loc-faint">{match.status || 'Completed'}</p>
         </div>
 
         {/* Winner/Venue */}
         <div className="flex flex-col justify-center gap-2 text-center lg:text-right lg:col-span-1">
-          <p className="text-xs uppercase tracking-widest text-[#D4AF37]">Winner</p>
-          <p className="text-sm text-[#B5C2BC]">{isWin ? match.homeTeam?.name || 'Team A' : match.awayTeam?.name || 'Team B'}</p>
-          <p className="text-xs text-[#7E8C86]">{match.ground?.name || 'TBD'}</p>
+          <p className="text-xs uppercase tracking-widest text-loc-green">Winner</p>
+          <p className="text-sm text-loc-muted">{isWin ? match.homeTeam?.name || 'Team A' : match.awayTeam?.name || 'Team B'}</p>
+          <p className="text-xs text-loc-faint">{match.ground?.name || 'TBD'}</p>
         </div>
       </div>
     </ScrollReveal>
@@ -62,23 +62,23 @@ export default function RecentResults({ groundId }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-loc-border border-t-loc-green" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-dashed border-red-400/30 bg-red-400/5 p-6 text-center">
-        <p className="text-sm text-red-300/70">Unable to load results</p>
+      <div className="rounded-2xl border border-dashed border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm text-red-600">Unable to load results</p>
       </div>
     )
   }
 
   if (recentMatches.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-[#D4AF37]/20 bg-[#064B38]/10 p-12 text-center">
-        <p className="text-[#B5C2BC]">No recent results available</p>
+      <div className="rounded-2xl border border-dashed border-loc-border bg-loc-mint p-12 text-center">
+        <p className="text-loc-muted">No recent results available</p>
       </div>
     )
   }

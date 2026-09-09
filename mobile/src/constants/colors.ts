@@ -48,6 +48,31 @@ export const Colors = {
   statusCancelled: '#F44336',
 }
 
+/**
+ * LOC brand tokens — mirror the website V2 light theme
+ * (client/src/THEME.md). Scoped to the Home Screen and its supporting
+ * components only; the rest of the mobile app keeps the blue `Colors`
+ * palette until a full re-theme is undertaken.
+ */
+export const LocColors = {
+  mint: '#F0FDF4', // page background
+  surface: '#FFFFFF', // cards
+  navy: '#0F172A', // headings / primary text
+  ink: '#1E293B', // body text
+  muted: '#475569', // secondary text
+  faint: '#94A3B8', // labels
+  green: '#15803D', // accent
+  greenStrong: '#166534', // hover / pressed
+  greenBright: '#16A34A', // strong CTA fill
+  greenPale: '#DCFCE7', // step badges, subtle fills
+  border: '#D1FAE5', // mint border
+  borderSoft: '#E2E8F0', // neutral control border
+  darkBand: '#166534', // green-800 contrast band
+  darkBandDeep: '#052E16', // green-950 footer
+  onDark: '#DCFCE7', // text on dark bands
+  onDarkMuted: '#86EFAC', // muted text on dark bands
+} as const
+
 export const Typography = {
   fontSize: {
     xs: 12,

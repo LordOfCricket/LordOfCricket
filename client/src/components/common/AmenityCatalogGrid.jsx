@@ -8,7 +8,7 @@ import AmenityIcon from './AmenityIcon.jsx'
 // :publicGroundId), never an owner-uploaded image. Sibling to, not a
 // replacement for, AmenitiesGrid.jsx (the legacy owner-uploaded-photo
 // list) — a ground can have either, both, or neither.
-export default function AmenityCatalogGrid({ amenities = [] }) {
+export default function AmenityCatalogGrid({ amenities = [], light = false }) {
   if (amenities.length === 0) return null
 
   return (
@@ -16,10 +16,10 @@ export default function AmenityCatalogGrid({ amenities = [] }) {
       {amenities.map((amenity) => (
         <StaggerItem key={amenity.key || amenity.name}>
           <div className="flex flex-col items-center gap-2 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+            <div className={`flex h-14 w-14 items-center justify-center rounded-2xl border ${light ? "border-loc-border bg-loc-mint text-loc-green" : "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"}`}>
               <AmenityIcon name={amenity.icon} className="h-6 w-6" />
             </div>
-            <span className="text-sm font-medium text-emerald-50">{amenity.name}</span>
+            <span className={`text-sm font-medium ${light ? "text-loc-navy" : "text-emerald-50"}`}>{amenity.name}</span>
           </div>
         </StaggerItem>
       ))}

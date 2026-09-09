@@ -104,14 +104,14 @@ export default function GalleryModal({ open, onClose, photos = [], groundName })
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-loc-dark">
-      <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 sm:px-10">
-        <h2 className="text-lg font-bold text-white sm:text-xl">{groundName} — Gallery</h2>
+    <div className="fixed inset-0 z-50 flex flex-col bg-loc-surface">
+      <div className="flex items-center justify-between border-b border-loc-border px-6 py-4 sm:px-10">
+        <h2 className="text-lg font-bold text-loc-navy sm:text-xl">{groundName} — Gallery</h2>
         <button
           type="button"
           onClick={handleClose}
           aria-label="Close"
-          className="rounded-full p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+          className="rounded-full p-2 text-loc-faint transition-colors hover:bg-loc-mint hover:text-loc-navy"
         >
           <X className="h-6 w-6" />
         </button>
@@ -119,7 +119,7 @@ export default function GalleryModal({ open, onClose, photos = [], groundName })
 
       <div className="flex-1 overflow-y-auto p-6 sm:p-10">
         {photos.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-slate-400">
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-loc-faint">
             <ImageIcon className="h-10 w-10" aria-hidden="true" />
             <p>No photos yet.</p>
           </div>
@@ -134,7 +134,7 @@ export default function GalleryModal({ open, onClose, photos = [], groundName })
                 key={photo.imageUrl}
                 type="button"
                 onClick={() => setLightboxIndex(i)}
-                className="mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-white/10 bg-white/5 sm:mb-4"
+                className="mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-loc-border bg-loc-mint sm:mb-4"
               >
                 <img
                   src={photo.imageUrl}

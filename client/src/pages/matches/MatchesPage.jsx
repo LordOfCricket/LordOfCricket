@@ -5,9 +5,6 @@ import { CATEGORIES } from '../../models/matchDiscovery.model.js'
 import MatchCard from '../../components/matches/MatchCard.jsx'
 import { StatsErrorState } from '../../components/stats/StatsStates.jsx'
 import Navbar from '../../components/home/Navbar.jsx'
-import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
-import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
-import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
 import { fadeUpSoft } from '../../lib/revealVariants.js'
 
@@ -21,11 +18,11 @@ const EMPTY_STATE = {
 
 function CardSkeleton() {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-loc-card-dark p-5" role="status" aria-label="Loading match">
-      <div className="h-5 w-24 animate-pulse rounded-full bg-white/10" />
-      <div className="h-4 w-full animate-pulse rounded bg-white/5" />
-      <div className="h-4 w-full animate-pulse rounded bg-white/5" />
-      <div className="h-8 w-full animate-pulse rounded-full bg-white/5" />
+    <div className="flex flex-col gap-3 rounded-2xl border border-loc-border bg-loc-mint p-5" role="status" aria-label="Loading match">
+      <div className="h-5 w-24 animate-pulse rounded-full bg-loc-border-soft" />
+      <div className="h-4 w-full animate-pulse rounded bg-loc-mint" />
+      <div className="h-4 w-full animate-pulse rounded bg-loc-mint" />
+      <div className="h-8 w-full animate-pulse rounded-full bg-loc-mint" />
     </div>
   )
 }
@@ -57,24 +54,20 @@ export default function MatchesPage() {
   const empty = EMPTY_STATE[tab]
 
   return (
-    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
-      <MouseParallaxProvider>
-        <BackgroundSystem />
-        <CursorGlow />
-        <Navbar />
-      </MouseParallaxProvider>
+    <div className="loc-page overflow-x-hidden">
+      <Navbar theme="light" />
 
       <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 pt-32 pb-20 lg:px-10">
         {/* Page Title */}
         <ScrollReveal variant={fadeUpSoft} amount={0.4} className="flex w-full flex-col items-center gap-3 text-center">
-          <h1 className="bg-linear-to-r from-loc-warmwhite to-loc-grass bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+          <h1 className="loc-heading text-3xl sm:text-4xl">
             Cricket Matches
           </h1>
-          <p className="max-w-2xl text-loc-text2-dark">Follow live, upcoming, and completed matches on Lord Of Cricket.</p>
+          <p className="max-w-2xl text-loc-muted">Follow live, upcoming, and completed matches on Lord Of Cricket.</p>
         </ScrollReveal>
 
         {/* Tab Navigation */}
-        <div className="flex gap-1 rounded-full border border-loc-gold/20 bg-loc-stadium/20 p-1" role="tablist" aria-label="Match category">
+        <div className="flex gap-1 rounded-full border border-loc-border bg-loc-surface p-1" role="tablist" aria-label="Match category">
           {CATEGORIES.map((c) => (
             <button
               key={c.key}
@@ -84,8 +77,8 @@ export default function MatchesPage() {
               onClick={() => selectTab(c.key)}
               className={`flex-1 rounded-full px-4 py-2.5 text-sm font-bold uppercase tracking-wide transition-colors ${
                 tab === c.key
-                  ? 'bg-loc-stadium text-loc-warmwhite shadow-lg shadow-loc-gold/25'
-                  : 'text-loc-text2-dark hover:bg-loc-stadium/40'
+                  ? 'bg-loc-green text-loc-navy '
+                  : 'text-loc-muted hover:bg-loc-mint'
               }`}
             >
               {c.label}
@@ -103,15 +96,15 @@ export default function MatchesPage() {
             </div>
           )}
 
-          {!loading && error && <StatsErrorState message={error} onRetry={retry} />}
+          {!loading && error && <StatsErrorState message={error} onRetry={retry} light />}
 
           {!loading && !error && result && result.items.length === 0 && (
-            <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-loc-gold/20 bg-loc-stadium/10 px-6 py-16 text-center">
-              <p className="text-sm text-loc-text2-dark">{empty.message}</p>
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-loc-border bg-loc-surface px-6 py-16 text-center">
+              <p className="text-sm text-loc-muted">{empty.message}</p>
               <button
                 type="button"
                 onClick={() => selectTab(empty.actionTab)}
-                className="rounded-full bg-loc-stadium px-5 py-2 text-xs font-bold uppercase tracking-wide text-loc-warmwhite transition-colors hover:bg-loc-stadium-hover"
+                className="rounded-full bg-loc-green px-5 py-2 text-xs font-bold uppercase tracking-wide text-loc-navy transition-colors hover:bg-loc-green-strong"
               >
                 {empty.actionLabel}
               </button>
@@ -122,28 +115,28 @@ export default function MatchesPage() {
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {result.items.map((match) => (
-                  <MatchCard key={match.id} match={match} />
+                  <MatchCard key={match.id} match={match} light />
                 ))}
               </div>
 
               {result.pagination.total > PAGE_SIZE && (
-                <div className="mt-8 flex items-center justify-between gap-4 rounded-full border border-loc-gold/20 bg-loc-stadium/10 px-6 py-4">
+                <div className="mt-8 flex items-center justify-between gap-4 rounded-full border border-loc-border bg-loc-surface px-6 py-4">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-border px-4 py-2 text-sm font-semibold text-loc-navy transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Previous
                   </button>
-                  <span className="text-sm text-loc-text2-dark">
+                  <span className="text-sm text-loc-muted">
                     {offset + 1}–{Math.min(offset + PAGE_SIZE, result.pagination.total)} of {result.pagination.total}
                   </span>
                   <button
                     type="button"
                     disabled={offset + PAGE_SIZE >= result.pagination.total}
                     onClick={() => setOffset(offset + PAGE_SIZE)}
-                    className="rounded-full border border-loc-gold/20 px-4 py-2 text-sm font-semibold text-loc-warmwhite transition-colors hover:bg-loc-stadium/40 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-loc-border px-4 py-2 text-sm font-semibold text-loc-navy transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
                   </button>

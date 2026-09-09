@@ -12,16 +12,16 @@ function num(v, digits = 0) {
   return v == null ? '—' : v.toFixed(digits)
 }
 
-function MetricToggle({ options, value, onChange }) {
+function MetricToggle({ options, value, onChange, light }) {
   return (
-    <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-0.5">
+    <div className={`flex gap-1 rounded-full border p-0.5 ${light ? "border-loc-border bg-loc-mint" : "border-white/10 bg-white/5"}`}>
       {options.map((o) => (
         <button
           key={o.key}
           type="button"
           onClick={() => onChange(o.key)}
           className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
-            value === o.key ? 'bg-emerald-500 text-emerald-950' : 'text-slate-300 hover:text-white'
+            value === o.key ? (light ? 'bg-loc-green text-white' : 'bg-emerald-500 text-emerald-950') : (light ? 'text-loc-muted hover:text-loc-navy' : 'text-slate-300 hover:text-white')
           }`}
         >
           {o.label}
@@ -34,24 +34,28 @@ function MetricToggle({ options, value, onChange }) {
 // Career vs Recent — two comparable figure sets from the backend
 // (careerVsRecent.career / .recent, both the SAME aggregateBatting/
 // aggregateBowling the career stats endpoint uses). No trend verdict.
-function CvrRow({ label, career, recent, fmt = (v) => (v == null ? '—' : v) }) {
+function CvrRow({ label, career, recent, fmt = (v) => (v == null ? '—' : v), light }) {
   return (
-    <div className="grid grid-cols-3 items-center gap-2 border-b border-white/5 py-1.5 text-sm last:border-0">
-      <span className="text-xs uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="text-right font-semibold text-white">{fmt(career)}</span>
-      <span className="text-right font-semibold text-emerald-200">{fmt(recent)}</span>
+    <div className={`grid grid-cols-3 items-center gap-2 border-b py-1.5 text-sm last:border-0 ${light ? "border-loc-border/60" : "border-white/5"}`}>
+      <span className={`text-xs uppercase tracking-wide ${light ? "text-loc-faint" : "text-slate-400"}`}>{label}</span>
+      <span className={`text-right font-semibold ${light ? "text-loc-navy" : "text-white"}`}>{fmt(career)}</span>
+      <span className={`text-right font-semibold ${light ? "text-loc-green" : "text-emerald-200"}`}>{fmt(recent)}</span>
     </div>
   )
 }
 
-export default function PlayerAnalyticsSection({ publicPlayerId }) {
+export default function PlayerAnalyticsSection({ publicPlayerId, light = false }) {
+  const card = light ? 'border-loc-border bg-loc-surface' : 'border-white/10 bg-white/5'
+  const heading = light ? 'text-loc-navy' : 'text-white'
+  const label = light ? 'text-loc-faint' : 'text-slate-400'
+  const muted = light ? 'text-loc-muted' : 'text-slate-400'
   const { data, loading, error } = useAnalytics(fetchPlayerAnalytics, publicPlayerId)
   const [batMetric, setBatMetric] = useState('runs') // 'runs' | 'strikeRate'
   const [bowlMetric, setBowlMetric] = useState('wickets') // 'wickets' | 'economy'
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className={`rounded-2xl border p-5 ${card}`}>
         <div className="h-4 w-1/3 animate-pulse rounded bg-white/10" />
         <div className="mt-4 h-24 w-full animate-pulse rounded bg-white/5" />
       </div>
@@ -62,9 +66,9 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
   const hasAnyData = data.recentForm.length > 0
   if (!hasAnyData) {
     return (
-      <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5">
-        <h3 className="text-sm font-bold text-white">Analytics</h3>
-        <p className="mt-2 text-sm text-slate-400">Not enough official match history yet for analytics.</p>
+      <div className={`rounded-2xl border border-dashed p-5 ${card}`}>
+        <h3 className={`text-sm font-bold ${heading}`}>Analytics</h3>
+        <p className={`mt-2 text-sm ${muted}`}>Not enough official match history yet for analytics.</p>
       </div>
     )
   }
@@ -72,10 +76,11 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
   return (
     <div className="space-y-4">
       {data.battingTrend.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className={`rounded-2xl border p-5 ${card}`}>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-white">Batting Trend — Last {data.battingTrend.length} Innings</h3>
+            <h3 className={`text-sm font-bold ${heading}`}>Batting Trend — Last {data.battingTrend.length} Innings</h3>
             <MetricToggle
+              light={light}
               options={[
                 { key: 'runs', label: 'Runs' },
                 { key: 'strikeRate', label: 'SR' },
@@ -101,10 +106,11 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
       )}
 
       {data.bowlingTrend.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className={`rounded-2xl border p-5 ${card}`}>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-white">Bowling Trend — Last {data.bowlingTrend.length} Innings</h3>
+            <h3 className={`text-sm font-bold ${heading}`}>Bowling Trend — Last {data.bowlingTrend.length} Innings</h3>
             <MetricToggle
+              light={light}
               options={[
                 { key: 'wickets', label: 'Wkts' },
                 { key: 'economy', label: 'Econ' },
@@ -130,14 +136,14 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
       )}
 
       {data.careerVsRecent && data.careerVsRecent.recent.matches > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <h3 className="text-sm font-bold text-white">Career vs Recent</h3>
-          <div className="mt-3 grid grid-cols-3 gap-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        <div className={`rounded-2xl border p-5 ${card}`}>
+          <h3 className={`text-sm font-bold ${heading}`}>Career vs Recent</h3>
+          <div className={`mt-3 grid grid-cols-3 gap-2 pb-1 text-[11px] font-bold uppercase tracking-wide ${label}`}>
             <span />
             <span className="text-right">Career ({data.careerVsRecent.career.matches})</span>
             <span className="text-right">Last {data.careerVsRecent.recent.matches}</span>
           </div>
-          <CvrRow label="Runs" career={data.careerVsRecent.career.batting.runs} recent={data.careerVsRecent.recent.batting.runs} />
+          <CvrRow light={light} label="Runs" career={data.careerVsRecent.career.batting.runs} recent={data.careerVsRecent.recent.batting.runs} />
           <CvrRow
             label="Bat Avg"
             career={data.careerVsRecent.career.batting.average}
@@ -150,8 +156,8 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
             recent={data.careerVsRecent.recent.batting.strikeRate}
             fmt={(v) => num(v, 2)}
           />
-          <CvrRow label="50s / 100s" career={`${data.careerVsRecent.career.batting.fifties} / ${data.careerVsRecent.career.batting.hundreds}`} recent={`${data.careerVsRecent.recent.batting.fifties} / ${data.careerVsRecent.recent.batting.hundreds}`} />
-          <CvrRow label="Wickets" career={data.careerVsRecent.career.bowling.wickets} recent={data.careerVsRecent.recent.bowling.wickets} />
+          <CvrRow light={light} label="50s / 100s" career={`${data.careerVsRecent.career.batting.fifties} / ${data.careerVsRecent.career.batting.hundreds}`} recent={`${data.careerVsRecent.recent.batting.fifties} / ${data.careerVsRecent.recent.batting.hundreds}`} />
+          <CvrRow light={light} label="Wickets" career={data.careerVsRecent.career.bowling.wickets} recent={data.careerVsRecent.recent.bowling.wickets} />
           <CvrRow
             label="Economy"
             career={data.careerVsRecent.career.bowling.economy}
@@ -167,41 +173,41 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h3 className="text-sm font-bold text-white">Boundary Analysis</h3>
+      <div className={`rounded-2xl border p-5 ${card}`}>
+        <h3 className={`text-sm font-bold ${heading}`}>Boundary Analysis</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Fours" value={data.boundaryAnalysis.fours} />
-          <StatTile label="Sixes" value={data.boundaryAnalysis.sixes} />
-          <StatTile label="Boundary Runs" value={data.boundaryAnalysis.boundaryRuns} />
-          <StatTile label="Runs From Boundaries" value={pct(data.boundaryAnalysis.boundaryRunsPercentage)} />
+          <StatTile light={light} label="Fours" value={data.boundaryAnalysis.fours} />
+          <StatTile light={light} label="Sixes" value={data.boundaryAnalysis.sixes} />
+          <StatTile light={light} label="Boundary Runs" value={data.boundaryAnalysis.boundaryRuns} />
+          <StatTile light={light} label="Runs From Boundaries" value={pct(data.boundaryAnalysis.boundaryRunsPercentage)} />
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h3 className="text-sm font-bold text-white">Dot-Ball Analysis</h3>
+      <div className={`rounded-2xl border p-5 ${card}`}>
+        <h3 className={`text-sm font-bold ${heading}`}>Dot-Ball Analysis</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Batting Dots" value={data.dotBallAnalysis.batting.dots} />
-          <StatTile label="Batting Dot %" value={pct(data.dotBallAnalysis.batting.dotBallPercentage)} />
-          <StatTile label="Bowling Dots" value={data.dotBallAnalysis.bowling.dots} />
-          <StatTile label="Bowling Dot %" value={pct(data.dotBallAnalysis.bowling.dotBallPercentage)} />
+          <StatTile light={light} label="Batting Dots" value={data.dotBallAnalysis.batting.dots} />
+          <StatTile light={light} label="Batting Dot %" value={pct(data.dotBallAnalysis.batting.dotBallPercentage)} />
+          <StatTile light={light} label="Bowling Dots" value={data.dotBallAnalysis.bowling.dots} />
+          <StatTile light={light} label="Bowling Dot %" value={pct(data.dotBallAnalysis.bowling.dotBallPercentage)} />
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-        <h3 className="text-sm font-bold text-white">Batting Consistency (recent innings)</h3>
+      <div className={`rounded-2xl border p-5 ${card}`}>
+        <h3 className={`text-sm font-bold ${heading}`}>Batting Consistency (recent innings)</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <StatTile label="Mean Runs" value={num(data.consistency.meanRuns, 1)} />
-          <StatTile label="Median Runs" value={num(data.consistency.medianRuns, 1)} />
-          <StatTile label="30+ Scores" value={data.consistency.thirtyPlusCount} />
-          <StatTile label="50+ Scores" value={data.consistency.fiftyPlusCount} />
-          <StatTile label="Not Outs" value={data.consistency.notOuts} />
-          <StatTile label="Dismissals" value={data.consistency.dismissals} />
+          <StatTile light={light} label="Mean Runs" value={num(data.consistency.meanRuns, 1)} />
+          <StatTile light={light} label="Median Runs" value={num(data.consistency.medianRuns, 1)} />
+          <StatTile light={light} label="30+ Scores" value={data.consistency.thirtyPlusCount} />
+          <StatTile light={light} label="50+ Scores" value={data.consistency.fiftyPlusCount} />
+          <StatTile light={light} label="Not Outs" value={data.consistency.notOuts} />
+          <StatTile light={light} label="Dismissals" value={data.consistency.dismissals} />
         </div>
       </div>
 
       {data.dismissalBreakdown.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <h3 className="text-sm font-bold text-white">Dismissal Breakdown</h3>
+        <div className={`rounded-2xl border p-5 ${card}`}>
+          <h3 className={`text-sm font-bold ${heading}`}>Dismissal Breakdown</h3>
           <div className="mt-4">
             <BarChart data={data.dismissalBreakdown.map((d) => ({ label: d.type, value: d.count }))} formatValue={(v) => v} />
           </div>
@@ -209,13 +215,13 @@ export default function PlayerAnalyticsSection({ publicPlayerId }) {
       )}
 
       {data.tournamentBreakdown && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <h3 className="text-sm font-bold text-white">{data.tournamentBreakdown.name} — Tournament Record</h3>
+        <div className={`rounded-2xl border p-5 ${card}`}>
+          <h3 className={`text-sm font-bold ${heading}`}>{data.tournamentBreakdown.name} — Tournament Record</h3>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatTile label="Matches" value={data.tournamentBreakdown.matches} />
-            <StatTile label="Runs" value={data.tournamentBreakdown.batting.runs} />
-            <StatTile label="Average" value={num(data.tournamentBreakdown.batting.average, 2)} />
-            <StatTile label="Wickets" value={data.tournamentBreakdown.bowling.wickets} />
+            <StatTile light={light} label="Matches" value={data.tournamentBreakdown.matches} />
+            <StatTile light={light} label="Runs" value={data.tournamentBreakdown.batting.runs} />
+            <StatTile light={light} label="Average" value={num(data.tournamentBreakdown.batting.average, 2)} />
+            <StatTile light={light} label="Wickets" value={data.tournamentBreakdown.bowling.wickets} />
           </div>
         </div>
       )}

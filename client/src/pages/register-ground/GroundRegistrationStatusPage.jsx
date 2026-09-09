@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { CheckCircle2, Circle } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
-import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
-import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 import { useAuth } from '../../hooks/useAuth.js'
 import { statusLabel, canResubmit, timelineForStatus } from '../../models/groundRegistration.model.js'
@@ -23,17 +21,17 @@ function Timeline({ status, submittedAt }) {
       {steps.map(({ step, state }) => (
         <li key={step} className="flex items-start gap-3">
           {state === 'done' ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-loc-green" />
           ) : state === 'current' ? (
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
-              <span className="h-3 w-3 rounded-full bg-emerald-400" />
+              <span className="h-3 w-3 rounded-full bg-loc-green" />
             </span>
           ) : (
-            <Circle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-100/20" />
+            <Circle className="mt-0.5 h-5 w-5 shrink-0 text-loc-faint" />
           )}
           <div>
-            <p className={`text-sm font-semibold ${state === 'upcoming' ? 'text-emerald-100/30' : 'text-white'}`}>{TIMELINE_LABELS[step]}</p>
-            {step === 'SUBMITTED' && submittedAt && <p className="text-xs text-emerald-100/40">{new Date(submittedAt).toLocaleDateString()}</p>}
+            <p className={`text-sm font-semibold ${state === 'upcoming' ? 'text-loc-faint' : 'text-loc-navy'}`}>{TIMELINE_LABELS[step]}</p>
+            {step === 'SUBMITTED' && submittedAt && <p className="text-xs text-loc-faint">{new Date(submittedAt).toLocaleDateString()}</p>}
           </div>
         </li>
       ))}
@@ -93,29 +91,26 @@ export default function GroundRegistrationStatusPage() {
   }, [publicRequestId, authStatus])
 
   return (
-    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
-      <MouseParallaxProvider>
-        <BackgroundSystem />
-        <Navbar />
-      </MouseParallaxProvider>
+    <div className="loc-page overflow-x-hidden">
+      <Navbar theme="light" />
 
       <main className="relative mx-auto flex max-w-xl flex-col gap-6 px-6 pt-32 pb-20 lg:px-10">
         <BackButton label="Back to LOC" fallback="/" className="w-fit" />
 
-        <div className="flex flex-col gap-5 rounded-2xl border border-emerald-400/20 bg-white/5 p-8">
+        <div className="flex flex-col gap-5 rounded-2xl loc-card p-8">
           <div>
-            <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">Ground Registration Status</span>
-            <p className="font-mono text-sm text-emerald-100/50">{publicRequestId}</p>
+            <span className="loc-eyebrow">Ground Registration Status</span>
+            <p className="font-mono text-sm text-loc-faint">{publicRequestId}</p>
           </div>
 
-          {loading && <p className="text-emerald-100/70">Checking status…</p>}
+          {loading && <p className="text-loc-muted">Checking status…</p>}
           {error && <p className="rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p>}
 
           {request && (
             <>
               <div>
-                <h1 className="text-2xl font-bold text-white">{request.groundName}</h1>
-                <p className="mt-1 text-sm font-semibold text-emerald-300">{statusLabel(request.status)}</p>
+                <h1 className="text-2xl font-bold text-loc-navy">{request.groundName}</h1>
+                <p className="mt-1 text-sm font-semibold text-loc-green">{statusLabel(request.status)}</p>
               </div>
 
               {request.status === 'REJECTED' && request.rejectionReason && (
@@ -136,7 +131,7 @@ export default function GroundRegistrationStatusPage() {
               {isOwner && canResubmit(request.status) && (
                 <Link
                   to={`/register-ground/edit/${publicRequestId}`}
-                  className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400"
+                  className="inline-flex items-center justify-center rounded-full bg-loc-green px-6 py-2.5 text-sm font-bold text-loc-navy transition hover:bg-loc-green-strong"
                 >
                   Edit & Resubmit
                 </Link>

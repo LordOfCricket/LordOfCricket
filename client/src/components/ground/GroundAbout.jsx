@@ -11,9 +11,9 @@ export default function GroundAbout({ ground }) {
       <ScrollReveal
         variant={fadeUpSoft}
         amount={0.4}
-        className="flex flex-col justify-center rounded-2xl border border-emerald-400/15 bg-linear-to-b from-white/6 to-transparent p-5 shadow-lg shadow-black/20"
+        className="loc-card flex flex-col justify-center p-5"
       >
-        <p className="text-emerald-100/70">
+        <p className="text-loc-muted">
           {hasValue(ground.description) ? ground.description : `${ground.name} hasn't added a description yet.`}
         </p>
       </ScrollReveal>

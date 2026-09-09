@@ -1,7 +1,5 @@
 import api from './api.js'
 
-// Public — only homepage-visible products (ACTIVE / OUT_OF_STOCK).
-// Used by MerchandiseSection.jsx (homepage) and MerchandiseDetailPage.jsx.
 export async function getMerchandise() {
   const { data } = await api.get('/merchandise')
   return data.items
@@ -12,10 +10,10 @@ export async function getMerchandiseItem(id) {
   return data
 }
 
-// Admin — every product, any status (Merchandise management page).
-export async function getAllMerchandiseAdmin() {
-  const { data } = await api.get('/merchandise/admin')
-  return data.items
+// Admin — every product, any status. Optional { category, status, q, sort, page, pageSize }.
+export async function getAllMerchandiseAdmin(params = {}) {
+  const { data } = await api.get('/merchandise/admin', { params })
+  return data
 }
 
 export async function getMerchandiseAdminItem(id) {
@@ -23,32 +21,47 @@ export async function getMerchandiseAdminItem(id) {
   return data
 }
 
-// multipart — `image` file is required on create.
-export async function createMerchandise({ file, name, description, category, originalPrice, sellingPrice, status, sortOrder }) {
-  const formData = new FormData()
-  formData.append('image', file)
-  formData.append('name', name)
-  formData.append('sellingPrice', sellingPrice)
-  if (description !== undefined) formData.append('description', description)
-  if (category !== undefined) formData.append('category', category)
-  if (originalPrice !== undefined && originalPrice !== '') formData.append('originalPrice', originalPrice)
-  if (status !== undefined) formData.append('status', status)
-  if (sortOrder !== undefined && sortOrder !== '') formData.append('sortOrder', sortOrder)
-  const { data } = await api.post('/merchandise', formData)
-  return data
-}
-
-// multipart — every field optional; pass `file` only to replace the image.
-export async function updateMerchandise(id, { file, name, description, category, originalPrice, sellingPrice, status, sortOrder } = {}) {
-  const formData = new FormData()
-  if (file) formData.append('image', file)
+function appendProductFields(formData, fields) {
+  const {
+    name,
+    description,
+    category,
+    originalPrice,
+    sellingPrice,
+    discountPrice,
+    stockQuantity,
+    sku,
+    isFeatured,
+    status,
+    sortOrder,
+    attributes,
+  } = fields
   if (name !== undefined) formData.append('name', name)
   if (description !== undefined) formData.append('description', description)
   if (category !== undefined) formData.append('category', category)
   if (originalPrice !== undefined) formData.append('originalPrice', originalPrice)
   if (sellingPrice !== undefined) formData.append('sellingPrice', sellingPrice)
+  if (discountPrice !== undefined) formData.append('discountPrice', discountPrice)
+  if (stockQuantity !== undefined) formData.append('stockQuantity', stockQuantity)
+  if (sku !== undefined) formData.append('sku', sku)
+  if (isFeatured !== undefined) formData.append('isFeatured', isFeatured ? 'true' : 'false')
   if (status !== undefined) formData.append('status', status)
   if (sortOrder !== undefined) formData.append('sortOrder', sortOrder)
+  if (attributes !== undefined) formData.append('attributes', JSON.stringify(attributes || {}))
+}
+
+export async function createMerchandise({ file, ...fields }) {
+  const formData = new FormData()
+  formData.append('image', file)
+  appendProductFields(formData, fields)
+  const { data } = await api.post('/merchandise', formData)
+  return data
+}
+
+export async function updateMerchandise(id, { file, ...fields } = {}) {
+  const formData = new FormData()
+  if (file) formData.append('image', file)
+  appendProductFields(formData, fields)
   const { data } = await api.patch(`/merchandise/${id}`, formData)
   return data
 }

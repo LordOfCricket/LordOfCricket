@@ -34,6 +34,7 @@ const GroundRegistrationStatusPage = lazy(() => import('../pages/register-ground
 const GroundHomePage = lazy(() => import('../pages/ground-homepage/GroundHomePage.jsx'))
 const AdminSponsorsPage = lazy(() => import('../pages/admin-sponsors/AdminSponsorsPage.jsx'))
 const AdminMerchandisePage = lazy(() => import('../pages/admin-merchandise/AdminMerchandisePage.jsx'))
+const AdminMerchandiseCategoryPage = lazy(() => import('../pages/admin-merchandise/AdminMerchandiseCategoryPage.jsx'))
 const AdminAmenityCatalogPage = lazy(() => import('../pages/admin-amenities/AdminAmenityCatalogPage.jsx'))
 const MerchandiseCatalogPage = lazy(() => import('../pages/merchandise/MerchandiseCatalogPage.jsx'))
 const MerchandiseDetailPage = lazy(() => import('../pages/merchandise/MerchandiseDetailPage.jsx'))
@@ -184,6 +185,7 @@ const router = createBrowserRouter([
       { path: '/merchandise/:id', element: withSuspense(<MerchandiseDetailPage />) },
       { path: '/admin/sponsors', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminSponsorsPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/merchandise', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminMerchandisePage />)}</RequireMfaVerified></RequireStaffRole> },
+      { path: '/admin/merchandise/:categorySlug', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminMerchandiseCategoryPage />)}</RequireMfaVerified></RequireStaffRole> },
       { path: '/admin/amenities', element: <RequireStaffRole allow={['super_admin']}><RequireMfaVerified>{withSuspense(<AdminAmenityCatalogPage />)}</RequireMfaVerified></RequireStaffRole> },
 
       // Super Admin Staff Dashboard — RequireMfaVerified is a no-op for a

@@ -34,7 +34,7 @@ export default function TournamentAnalyticsPanel({ publicTournamentId }) {
   const { data, loading, error } = useAnalytics(fetchTournamentAnalytics, publicTournamentId)
 
   if (loading) {
-    return <div className="h-16 w-full animate-pulse rounded-2xl bg-white/5" />
+    return <div className="h-16 w-full animate-pulse rounded-2xl bg-loc-mint" />
   }
   if (error || !data) return null
 
@@ -44,37 +44,37 @@ export default function TournamentAnalyticsPanel({ publicTournamentId }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <h3 className="text-sm font-bold text-white">Tournament Analytics</h3>
+      <div className="rounded-2xl loc-card p-4">
+        <h3 className="text-sm font-bold text-loc-navy">Tournament Analytics</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Finalized Matches" value={`${data.finalizedMatches}/${data.totalFixtures}`} />
-          <StatTile label="Total Runs" value={data.totalRuns} />
-          <StatTile label="Total Wickets" value={data.totalWickets} />
-          <StatTile label="Avg 1st Innings Score" value={num(data.averageFirstInningsScore)} />
-          <StatTile label="Highest Team Total" value={data.highestTeamTotal} />
-          <StatTile label="Lowest Team Total" value={data.lowestTeamTotal} />
+          <StatTile light label="Finalized Matches" value={`${data.finalizedMatches}/${data.totalFixtures}`} />
+          <StatTile light label="Total Runs" value={data.totalRuns} />
+          <StatTile light label="Total Wickets" value={data.totalWickets} />
+          <StatTile light label="Avg 1st Innings Score" value={num(data.averageFirstInningsScore)} />
+          <StatTile light label="Highest Team Total" value={data.highestTeamTotal} />
+          <StatTile light label="Lowest Team Total" value={data.lowestTeamTotal} />
         </div>
       </div>
 
       {hasRecords && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <h3 className="text-sm font-bold text-white">Tournament Records</h3>
-          <p className="mt-0.5 text-xs text-slate-400">From this tournament&apos;s finalized matches and leading players.</p>
+        <div className="rounded-2xl loc-card p-4">
+          <h3 className="text-sm font-bold text-loc-navy">Tournament Records</h3>
+          <p className="mt-0.5 text-xs text-loc-faint">From this tournament&apos;s finalized matches and leading players.</p>
           <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-white/5 px-3 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Highest Team Total</dt>
-              <dd className="mt-0.5 text-sm font-bold text-white">{data.highestTeamTotal == null ? '—' : data.highestTeamTotal}</dd>
+            <div className="rounded-xl bg-loc-mint px-3 py-2">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-loc-faint">Highest Team Total</dt>
+              <dd className="mt-0.5 text-sm font-bold text-loc-navy">{data.highestTeamTotal == null ? '—' : data.highestTeamTotal}</dd>
             </div>
-            <div className="rounded-xl bg-white/5 px-3 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Highest Score</dt>
-              <dd className="mt-0.5 text-sm font-bold text-white">
+            <div className="rounded-xl bg-loc-mint px-3 py-2">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-loc-faint">Highest Score</dt>
+              <dd className="mt-0.5 text-sm font-bold text-loc-navy">
                 {bestInnings ? (
                   <>
                     {bestInnings.highestScore.runs}
                     {bestInnings.highestScore.notOut ? '*' : ''}{' '}
                     <Link
                       to={`/players/${bestInnings.player.publicPlayerId}`}
-                      className="font-medium text-emerald-300 hover:text-emerald-200"
+                      className="font-medium text-loc-green hover:text-loc-green-strong"
                     >
                       {bestInnings.player.name}
                     </Link>
@@ -84,15 +84,15 @@ export default function TournamentAnalyticsPanel({ publicTournamentId }) {
                 )}
               </dd>
             </div>
-            <div className="rounded-xl bg-white/5 px-3 py-2">
-              <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Best Bowling</dt>
-              <dd className="mt-0.5 text-sm font-bold text-white">
+            <div className="rounded-xl bg-loc-mint px-3 py-2">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-loc-faint">Best Bowling</dt>
+              <dd className="mt-0.5 text-sm font-bold text-loc-navy">
                 {bestFigures ? (
                   <>
                     {bestFigures.bestBowling.wickets}/{bestFigures.bestBowling.runs}{' '}
                     <Link
                       to={`/players/${bestFigures.player.publicPlayerId}`}
-                      className="font-medium text-emerald-300 hover:text-emerald-200"
+                      className="font-medium text-loc-green hover:text-loc-green-strong"
                     >
                       {bestFigures.player.name}
                     </Link>

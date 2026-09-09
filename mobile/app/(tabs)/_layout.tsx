@@ -1,37 +1,47 @@
 import React from 'react'
-import { Tabs } from 'expo-router'
+import { Tabs, Redirect } from 'expo-router'
 import { ColorValue } from 'react-native'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
-import { Colors } from '../../src/constants/colors'
+import { FloatingTabBar } from '../../src/components/navigation/FloatingTabBar'
+import { TabBarScrollProvider } from '../../src/components/navigation/TabBarScrollContext'
+import { useAuthStore } from '../../src/store/authStore'
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name']
 
 function tabIcon(activeName: IconName, inactiveName: IconName = activeName) {
-  return ({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) => (
+  const TabIcon = ({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) => (
     <MaterialCommunityIcons name={focused ? activeName : inactiveName} color={color as string} size={size} />
   )
+  TabIcon.displayName = `TabIcon(${activeName})`
+  return TabIcon
 }
 
 export default function TabsLayout() {
+  // An Umpire account must never mount the Player tab layout, even via a
+  // deep link straight to /(tabs)/...
+  const isUmpire = useAuthStore((s) => s.isUmpire)
+  if (isUmpire) return <Redirect href="/(umpire)/home" />
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textTertiary,
-        tabBarStyle: {
-          backgroundColor: Colors.background,
-          borderTopColor: Colors.border,
-          borderTopWidth: 1,
-        },
-      }}
-    >
+    <TabBarScrollProvider>
+      <Tabs
+        screenOptions={{ headerShown: false }}
+        tabBar={(props) => <FloatingTabBar {...props} />}
+      >
       <Tabs.Screen
         name="home"
         options={{
           title: 'Home',
           tabBarLabel: 'Home',
           tabBarIcon: tabIcon('home', 'home-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: 'Search',
+          tabBarLabel: 'Search',
+          tabBarIcon: tabIcon('magnify'),
         }}
       />
       <Tabs.Screen
@@ -108,6 +118,7 @@ export default function TabsLayout() {
           href: null,
         }}
       />
-    </Tabs>
+      </Tabs>
+    </TabBarScrollProvider>
   )
 }

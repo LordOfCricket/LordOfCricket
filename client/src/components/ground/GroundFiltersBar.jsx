@@ -40,31 +40,31 @@ export default function GroundFiltersBar({ grounds, selectedFacilities, onChange
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-colors ${
-          selectedFacilities.length > 0 ? 'border-emerald-400/50 bg-emerald-500/10 text-white' : 'border-emerald-400/20 text-emerald-100/70 hover:text-white'
+          selectedFacilities.length > 0 ? 'border-loc-green bg-loc-mint text-loc-navy' : 'border-loc-border text-loc-muted hover:text-loc-navy'
         }`}
       >
         <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
         Facilities
-        {selectedFacilities.length > 0 && <span className="rounded-full bg-emerald-500 px-1.5 text-xs text-emerald-950">{selectedFacilities.length}</span>}
+        {selectedFacilities.length > 0 && <span className="rounded-full bg-loc-green px-1.5 text-xs text-loc-navy">{selectedFacilities.length}</span>}
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-2 w-64 rounded-2xl border border-emerald-400/20 bg-loc-dark p-3 shadow-xl shadow-black/40">
+        <div className="absolute right-0 z-20 mt-2 w-64 rounded-2xl border border-loc-border bg-loc-surface p-3 shadow-loc">
           <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
             {allFacilities.map((facility) => (
-              <label key={facility} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-emerald-100/80 hover:bg-white/5">
+              <label key={facility} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-loc-muted hover:bg-loc-mint">
                 <input
                   type="checkbox"
                   checked={selectedFacilities.includes(facility)}
                   onChange={() => toggle(facility)}
-                  className="h-4 w-4 rounded border-emerald-400/40 bg-transparent text-emerald-500 focus:ring-emerald-400/60"
+                  className="h-4 w-4 rounded border-loc-green bg-transparent text-loc-green focus:ring-loc-green/40"
                 />
                 {facility}
               </label>
             ))}
           </div>
           {selectedFacilities.length > 0 && (
-            <button type="button" onClick={() => onChange([])} className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-emerald-400 hover:underline">
+            <button type="button" onClick={() => onChange([])} className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-loc-green hover:underline">
               Clear filters
             </button>
           )}

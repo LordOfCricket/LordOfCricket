@@ -2,7 +2,7 @@ import React from 'react'
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useFeaturedGrounds } from '../../hooks/useGrounds'
-import { Colors, Spacing, Typography } from '../../constants/colors'
+import { LocColors, Spacing, Typography, BorderRadius } from '../../constants/colors'
 
 export function FeaturedGroundsSection() {
   const router = useRouter()
@@ -19,10 +19,10 @@ export function FeaturedGroundsSection() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color={Colors.primary} style={styles.inlineLoader} />
+        <ActivityIndicator color={LocColors.green} style={styles.inlineLoader} />
       ) : isError ? (
         <TouchableOpacity style={styles.emptyStateSmall} onPress={() => refetch()}>
-          <Text style={styles.emptySubtext}>Couldn't load grounds. Tap to retry.</Text>
+          <Text style={styles.emptySubtext}>Unable to load grounds. Tap to retry.</Text>
         </TouchableOpacity>
       ) : grounds.length === 0 ? (
         <View style={styles.emptyStateSmall}>
@@ -46,14 +46,16 @@ export function FeaturedGroundsSection() {
               ) : (
                 <View style={[styles.groundImage, styles.groundImagePlaceholder]} />
               )}
-              <Text style={styles.groundName} numberOfLines={1}>
-                {ground.name}
-              </Text>
-              {(ground.city || ground.state) && (
-                <Text style={styles.groundLocation} numberOfLines={1}>
-                  {[ground.city, ground.state].filter(Boolean).join(', ')}
+              <View style={styles.groundBody}>
+                <Text style={styles.groundName} numberOfLines={1}>
+                  {ground.name}
                 </Text>
-              )}
+                {(ground.city || ground.state) && (
+                  <Text style={styles.groundLocation} numberOfLines={1}>
+                    {[ground.city, ground.state].filter(Boolean).join(', ')}
+                  </Text>
+                )}
+              </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -64,7 +66,8 @@ export function FeaturedGroundsSection() {
 
 const styles = StyleSheet.create({
   section: {
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.xl,
+    backgroundColor: LocColors.surface,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -74,29 +77,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   sectionTitle: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: LocColors.navy,
   },
   viewAllText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.primary,
-    fontWeight: Typography.fontWeight.semibold,
+    color: LocColors.green,
+    fontWeight: Typography.fontWeight.bold,
   },
   inlineLoader: {
     marginVertical: Spacing.lg,
   },
   emptyStateSmall: {
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: 8,
+    backgroundColor: LocColors.mint,
+    borderWidth: 1,
+    borderColor: LocColors.border,
+    borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginHorizontal: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptySubtext: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    color: LocColors.muted,
   },
   hScrollContainer: {
     flexGrow: 0,
@@ -106,29 +113,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   groundCard: {
-    width: 160,
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: 12,
+    width: 172,
+    backgroundColor: LocColors.surface,
+    borderWidth: 1,
+    borderColor: LocColors.border,
+    borderRadius: BorderRadius.lg,
     overflow: 'hidden',
+    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)',
   },
   groundImage: {
     width: '100%',
-    height: 100,
+    height: 104,
   },
   groundImagePlaceholder: {
-    backgroundColor: Colors.gray[200],
+    backgroundColor: LocColors.greenPale,
+  },
+  groundBody: {
+    minHeight: 58,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    gap: 2,
   },
   groundName: {
     fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
-    marginTop: Spacing.sm,
-    marginHorizontal: Spacing.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.navy,
   },
   groundLocation: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    marginHorizontal: Spacing.sm,
+    color: LocColors.muted,
   },
 })

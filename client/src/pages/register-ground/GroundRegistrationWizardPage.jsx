@@ -2,9 +2,6 @@ import { useParams, Link } from 'react-router-dom'
 import { useState } from 'react'
 import { CheckCircle2, Copy, ArrowRight, ArrowLeft } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
-import BackgroundSystem from '../../components/home/background/BackgroundSystem.jsx'
-import CursorGlow from '../../components/home/interactions/CursorGlow.jsx'
-import { MouseParallaxProvider } from '../../context/MouseParallaxContext.jsx'
 import BackButton from '../../components/common/BackButton.jsx'
 import RegistrationStepper from '../../components/ground-registration/RegistrationStepper.jsx'
 import ContactVerificationBlock from '../../components/ground-registration/ContactVerificationBlock.jsx'
@@ -15,14 +12,14 @@ import LocationMapPicker from '../../components/ground-registration/LocationMapP
 import { useGroundRegistrationWizard } from '../../hooks/useGroundRegistrationWizard.js'
 
 const inputClass =
-  'w-full rounded-xl border border-emerald-400/20 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-emerald-100/30 focus:border-emerald-400/60 focus:outline-none'
+  'w-full rounded-xl border border-loc-border bg-loc-mint px-3 py-2.5 text-sm text-loc-navy placeholder:text-loc-faint focus:border-loc-green focus:outline-none'
 
 function Field({ label, optional, children }) {
   return (
     <label className="flex flex-col gap-1.5 text-sm">
-      <span className="font-semibold text-emerald-100/80">
+      <span className="font-semibold text-loc-muted/80">
         {label}
-        {optional && <span className="ml-1 font-normal text-emerald-100/40">(optional)</span>}
+        {optional && <span className="ml-1 font-normal text-loc-faint">(optional)</span>}
       </span>
       {children}
     </label>
@@ -38,32 +35,32 @@ function SuccessScreen({ request }) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-4 rounded-2xl border border-emerald-400/20 bg-white/5 p-8 text-center">
-      <CheckCircle2 className="h-14 w-14 text-emerald-400" />
-      <h1 className="text-2xl font-bold text-white">Ground Registration Submitted Successfully 🎉</h1>
-      <p className="text-emerald-100/70">Your ground has been successfully submitted for LOC review.</p>
+    <div className="flex flex-col items-center gap-4 rounded-2xl border border-loc-border bg-loc-mint p-8 text-center">
+      <CheckCircle2 className="h-14 w-14 text-loc-green" />
+      <h1 className="text-2xl font-bold text-loc-navy">Ground Registration Submitted Successfully 🎉</h1>
+      <p className="text-loc-muted">Your ground has been successfully submitted for LOC review.</p>
 
-      <div className="mt-2 w-full rounded-xl border border-emerald-400/20 bg-white/5 p-5">
-        <span className="text-xs font-semibold tracking-wide text-emerald-100/50 uppercase">Ground Registration ID</span>
+      <div className="mt-2 w-full rounded-xl border border-loc-border bg-loc-mint p-5">
+        <span className="text-xs font-semibold tracking-wide text-loc-faint uppercase">Ground Registration ID</span>
         <div className="mt-1 flex items-center justify-center gap-3">
-          <span className="font-mono text-lg font-bold text-white">{request.publicRequestId}</span>
-          <button type="button" onClick={copyId} className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:border-emerald-400/60">
+          <span className="font-mono text-lg font-bold text-loc-navy">{request.publicRequestId}</span>
+          <button type="button" onClick={copyId} className="inline-flex items-center gap-1 rounded-full border border-loc-border px-2.5 py-1 text-xs font-semibold text-loc-green hover:border-loc-green">
             <Copy className="h-3.5 w-3.5" /> {copied ? 'Copied' : 'Copy Registration ID'}
           </button>
         </div>
-        <p className="mt-3 text-sm font-semibold text-amber-300">Status: Pending Approval</p>
+        <p className="mt-3 text-sm font-semibold text-amber-700">Status: Pending Approval</p>
       </div>
 
-      <p className="text-xs text-emerald-100/50">Please keep your Registration ID for future reference.</p>
+      <p className="text-xs text-loc-faint">Please keep your Registration ID for future reference.</p>
 
       <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
         <Link
           to={`/register-ground/status/${request.publicRequestId}`}
-          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400"
+          className="inline-flex items-center gap-1.5 rounded-full bg-loc-green px-6 py-2.5 text-sm font-bold text-loc-navy transition hover:bg-loc-green-strong"
         >
           View Registration Status <ArrowRight className="h-4 w-4" />
         </Link>
-        <Link to="/grounds" className="text-sm font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-200">
+        <Link to="/grounds" className="text-sm font-semibold text-loc-green underline underline-offset-2 hover:text-loc-green">
           Browse All Grounds
         </Link>
       </div>
@@ -84,19 +81,15 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
 
   if (!wizard.loaded) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-loc-dark text-emerald-100/60">
+      <div className="flex min-h-screen items-center justify-center loc-page text-loc-muted">
         <p>Loading your registration…</p>
       </div>
     )
   }
 
   return (
-    <div className="relative isolate min-h-screen overflow-x-hidden bg-loc-dark">
-      <MouseParallaxProvider>
-        <BackgroundSystem />
-        <CursorGlow />
-        <Navbar />
-      </MouseParallaxProvider>
+    <div className="loc-page overflow-x-hidden">
+      <Navbar theme="light" />
 
       <main className="relative mx-auto flex max-w-2xl flex-col gap-6 px-6 pt-28 pb-20 lg:px-10">
         <BackButton label="Back to LOC" fallback="/register-ground" className="w-fit" />
@@ -106,16 +99,16 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
         ) : (
           <>
             <div>
-              <span className="text-sm font-semibold uppercase tracking-widest text-emerald-400">{mode === 'edit' ? 'Edit & Resubmit' : 'New Registration'}</span>
-              <h1 className="mt-2 text-3xl font-bold text-white">List Your Ground on LOC</h1>
+              <span className="loc-eyebrow">{mode === 'edit' ? 'Edit & Resubmit' : 'New Registration'}</span>
+              <h1 className="mt-2 text-3xl font-bold text-loc-navy">List Your Ground on LOC</h1>
             </div>
 
             <RegistrationStepper steps={wizard.steps} currentIndex={wizard.stepIndex} />
 
-            <div className="rounded-2xl border border-emerald-400/15 bg-white/5 p-6 sm:p-8">
+            <div className="rounded-2xl border border-loc-border bg-loc-mint p-6 sm:p-8">
               {wizard.stepIndex === 0 && (
                 <div className="space-y-6">
-                  <h2 className="text-lg font-bold text-white">Contact Information</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Contact Information</h2>
                   <ContactVerificationBlock
                     label="Email"
                     value={wizard.user?.email}
@@ -145,7 +138,7 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
 
               {wizard.stepIndex === 1 && (
                 <div className="space-y-5">
-                  <h2 className="text-lg font-bold text-white">Ground Information</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Ground Information</h2>
                   <Field label="Ground Name">
                     <input required maxLength={150} value={wizard.form.groundName} onChange={(e) => wizard.set('groundName')(e.target.value)} className={inputClass} placeholder="Greenfield Cricket Ground" />
                   </Field>
@@ -176,28 +169,28 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
 
               {wizard.stepIndex === 2 && (
                 <div className="space-y-5">
-                  <h2 className="text-lg font-bold text-white">Featured Photos</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Featured Photos</h2>
                   <FeaturedPhotoGrid photos={wizard.form.featuredPhotos} onUploadSlot={wizard.uploadFeaturedSlot} onRemoveSlot={wizard.removeFeaturedSlot} error={wizard.featuredError} />
                 </div>
               )}
 
               {wizard.stepIndex === 3 && (
                 <div className="space-y-5">
-                  <h2 className="text-lg font-bold text-white">Gallery</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Gallery</h2>
                   <GalleryPhotoUploader photos={wizard.form.galleryPhotos} onAdd={wizard.addGalleryPhoto} onRemove={wizard.removeGalleryPhoto} />
                 </div>
               )}
 
               {wizard.stepIndex === 4 && (
                 <div className="space-y-5">
-                  <h2 className="text-lg font-bold text-white">Amenities</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Amenities</h2>
                   <AmenityPicker catalog={wizard.catalog} selectedKeys={wizard.form.amenityKeys} onChange={wizard.set('amenityKeys')} />
                 </div>
               )}
 
               {wizard.stepIndex === 5 && (
                 <div className="space-y-5">
-                  <h2 className="text-lg font-bold text-white">Location & Address</h2>
+                  <h2 className="text-lg font-bold text-loc-navy">Location & Address</h2>
                   <LocationMapPicker latitude={wizard.form.latitude} longitude={wizard.form.longitude} onChange={wizard.setLocation} />
                   <Field label="Address Line">
                     <input required maxLength={255} value={wizard.form.addressLine} onChange={(e) => wizard.set('addressLine')(e.target.value)} className={inputClass} placeholder="Street / locality" />
@@ -221,14 +214,14 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
               )}
             </div>
 
-            {wizard.stepError && wizard.stepIndex !== 6 && <p className="text-xs text-amber-300/80">{wizard.stepError}</p>}
+            {wizard.stepError && wizard.stepIndex !== 6 && <p className="text-xs text-amber-700">{wizard.stepError}</p>}
 
             <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={wizard.goBack}
                 disabled={wizard.stepIndex === 0}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-emerald-100/70 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-full border border-loc-border px-5 py-2.5 text-sm font-semibold text-loc-muted transition-colors hover:bg-loc-mint disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
@@ -237,7 +230,7 @@ export default function GroundRegistrationWizardPage({ mode = 'create' }) {
                   type="button"
                   onClick={wizard.goNext}
                   disabled={!wizard.canGoNext}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-loc-green px-6 py-2.5 text-sm font-bold text-loc-navy transition hover:bg-loc-green-strong disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Next <ArrowRight className="h-4 w-4" />
                 </button>
@@ -260,19 +253,19 @@ function ReviewStep({ wizard }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-bold text-white">Review Your Ground Registration</h2>
+      <h2 className="text-lg font-bold text-loc-navy">Review Your Ground Registration</h2>
 
       <ReviewSection title="Ground Information" onEdit={() => wizard.goToStep(1)}>
-        <p className="font-semibold text-white">{form.groundName}</p>
-        <p className="mt-1 text-sm text-emerald-100/70">{form.about}</p>
+        <p className="font-semibold text-loc-navy">{form.groundName}</p>
+        <p className="mt-1 text-sm text-loc-muted">{form.about}</p>
       </ReviewSection>
 
       <ReviewSection title="Contact" onEdit={() => wizard.goToStep(0)}>
-        <p className="text-sm text-emerald-100/70">
-          Email: <span className="text-white">{wizard.user?.email}</span> <span className="font-semibold text-emerald-400">✓ Verified</span>
+        <p className="text-sm text-loc-muted">
+          Email: <span className="text-loc-navy">{wizard.user?.email}</span> <span className="font-semibold text-loc-green">✓ Verified</span>
         </p>
-        <p className="text-sm text-emerald-100/70">
-          Phone: <span className="text-white">{wizard.user?.phone}</span> <span className="font-semibold text-emerald-400">✓ Verified</span>
+        <p className="text-sm text-loc-muted">
+          Phone: <span className="text-loc-navy">{wizard.user?.phone}</span> <span className="font-semibold text-loc-green">✓ Verified</span>
         </p>
       </ReviewSection>
 
@@ -285,7 +278,7 @@ function ReviewStep({ wizard }) {
       </ReviewSection>
 
       <ReviewSection title="Gallery" onEdit={() => wizard.goToStep(3)}>
-        <p className="text-sm text-emerald-100/70">{form.galleryPhotos.length} additional photo{form.galleryPhotos.length === 1 ? '' : 's'}</p>
+        <p className="text-sm text-loc-muted">{form.galleryPhotos.length} additional photo{form.galleryPhotos.length === 1 ? '' : 's'}</p>
         {form.galleryPhotos.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {form.galleryPhotos.map((p, i) => (
@@ -297,11 +290,11 @@ function ReviewStep({ wizard }) {
 
       <ReviewSection title="Amenities" onEdit={() => wizard.goToStep(4)}>
         {selectedAmenities.length === 0 ? (
-          <p className="text-sm text-emerald-100/50">No amenities selected.</p>
+          <p className="text-sm text-loc-faint">No amenities selected.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {selectedAmenities.map((a) => (
-              <span key={a.key} className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
+              <span key={a.key} className="rounded-full border border-loc-border bg-loc-green/10 px-3 py-1 text-xs font-semibold text-loc-muted">
                 {a.name}
               </span>
             ))}
@@ -310,13 +303,13 @@ function ReviewStep({ wizard }) {
       </ReviewSection>
 
       <ReviewSection title="Location" onEdit={() => wizard.goToStep(5)}>
-        <p className="text-sm text-white">{[form.addressLine, form.city, form.state, form.postalCode].filter(Boolean).join(', ')}</p>
-        {form.latitude && form.longitude && <p className="mt-1 text-xs text-emerald-100/50">{form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}</p>}
+        <p className="text-sm text-loc-navy">{[form.addressLine, form.city, form.state, form.postalCode].filter(Boolean).join(', ')}</p>
+        {form.latitude && form.longitude && <p className="mt-1 text-xs text-loc-faint">{form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}</p>}
       </ReviewSection>
 
-      <label className="flex items-start gap-3 rounded-xl border border-emerald-400/20 bg-white/5 p-4">
+      <label className="flex items-start gap-3 rounded-xl border border-loc-border bg-loc-mint p-4">
         <input type="checkbox" checked={form.agreedToTerms} onChange={(e) => wizard.set('agreedToTerms')(e.target.checked)} className="mt-0.5 h-4 w-4 accent-emerald-400" />
-        <span className="text-sm text-emerald-100/70">
+        <span className="text-sm text-loc-muted">
           I confirm that the information provided above is accurate and belongs to this ground. I agree to the LordOfCricket Terms &amp; Conditions and Privacy Policy.
         </span>
       </label>
@@ -327,7 +320,7 @@ function ReviewStep({ wizard }) {
         <button
           type="button"
           onClick={() => wizard.goToStep(1)}
-          className="rounded-full border border-white/15 px-6 py-2.5 text-sm font-semibold text-emerald-100/70 transition-colors hover:bg-white/5"
+          className="rounded-full border border-loc-border px-6 py-2.5 text-sm font-semibold text-loc-muted transition-colors hover:bg-loc-mint"
         >
           Edit Details
         </button>
@@ -335,7 +328,7 @@ function ReviewStep({ wizard }) {
           type="button"
           onClick={wizard.submit}
           disabled={!form.agreedToTerms || wizard.submitting}
-          className="rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-loc-green px-6 py-2.5 text-sm font-bold text-loc-navy transition hover:bg-loc-green-strong disabled:cursor-not-allowed disabled:opacity-50"
         >
           {wizard.submitting ? 'Submitting…' : 'Agree & Submit for Approval'}
         </button>
@@ -346,10 +339,10 @@ function ReviewStep({ wizard }) {
 
 function ReviewSection({ title, onEdit, children }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+    <div className="rounded-xl loc-card p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-bold tracking-wide text-emerald-300 uppercase">{title}</span>
-        <button type="button" onClick={onEdit} className="text-xs font-semibold text-emerald-100/50 underline underline-offset-2 hover:text-emerald-200">
+        <span className="text-xs font-bold tracking-wide text-loc-green uppercase">{title}</span>
+        <button type="button" onClick={onEdit} className="text-xs font-semibold text-loc-faint underline underline-offset-2 hover:text-loc-green">
           Edit
         </button>
       </div>

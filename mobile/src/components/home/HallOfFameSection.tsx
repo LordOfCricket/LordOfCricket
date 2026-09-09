@@ -2,7 +2,7 @@ import React from 'react'
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useHallOfFame } from '../../hooks/useHallOfFame'
-import { Colors, Spacing, Typography } from '../../constants/colors'
+import { LocColors, Spacing, Typography, BorderRadius } from '../../constants/colors'
 import { formatRole } from '../../utils/playerFormatting'
 
 export function HallOfFameSection({ title = 'Hall of Fame' }: { title?: string }) {
@@ -17,7 +17,7 @@ export function HallOfFameSection({ title = 'Hall of Fame' }: { title?: string }
       <Text style={styles.sectionTitle}>{title}</Text>
 
       {isLoading ? (
-        <ActivityIndicator color={Colors.primary} style={styles.inlineLoader} />
+        <ActivityIndicator color={LocColors.onDark} style={styles.inlineLoader} />
       ) : awarded.length === 0 ? (
         <View style={styles.emptyStateSmall}>
           <Text style={styles.emptySubtext}>Not yet awarded — check back once more matches are played</Text>
@@ -50,59 +50,71 @@ export function HallOfFameSection({ title = 'Hall of Fame' }: { title?: string }
 
 const styles = StyleSheet.create({
   section: {
-    padding: Spacing.lg,
+    paddingVertical: Spacing.xl,
+    backgroundColor: LocColors.darkBand,
   },
   sectionTitle: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: LocColors.surface,
     marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   inlineLoader: {
     marginVertical: Spacing.lg,
   },
   emptyStateSmall: {
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
+    marginHorizontal: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptySubtext: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    color: LocColors.onDark,
     textAlign: 'center',
   },
   hScroll: {
     gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   card: {
-    width: 150,
-    backgroundColor: Colors.backgroundAlt,
-    borderRadius: 12,
-    padding: Spacing.md,
+    width: 172,
+    minHeight: 150,
+    backgroundColor: LocColors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    boxShadow: '0 2px 8px rgba(2, 46, 22, 0.24)',
   },
   categoryLabel: {
     fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.primary,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.green,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   playerName: {
     fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.text,
-    marginTop: Spacing.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.navy,
+    marginTop: Spacing.md,
   },
   playerRole: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
+    color: LocColors.muted,
     marginTop: 2,
   },
   headline: {
     fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.secondary,
-    marginTop: Spacing.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: LocColors.greenStrong,
+    marginTop: 'auto',
+    paddingTop: Spacing.md,
   },
 })

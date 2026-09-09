@@ -190,7 +190,22 @@ const FIXTURE_COLUMNS = `
   m.status AS match_status, m.match_date, m.venue,
   m.winner_team_id AS match_winner_team_id, m.result_type AS match_result_type,
   m.result_margin AS match_result_margin, m.result AS match_result_text,
-  m.team_a_runs, m.team_a_wickets, m.team_b_runs, m.team_b_wickets
+  m.team_a_runs, m.team_a_wickets, m.team_b_runs, m.team_b_wickets,
+  m.overs_per_innings, m.balls_per_over,
+  i1.id AS i1_id, i1.batting_team_id AS i1_batting_team_id, i1.runs AS i1_runs,
+  i1.wickets AS i1_wickets, i1.legal_balls AS i1_legal_balls, i1.status AS i1_status,
+  i2.id AS i2_id, i2.batting_team_id AS i2_batting_team_id, i2.runs AS i2_runs,
+  i2.wickets AS i2_wickets, i2.legal_balls AS i2_legal_balls, i2.status AS i2_status
+`
+
+// Live innings-cache join, shared by every FIXTURE_COLUMNS query. Only the
+// two cache columns per innings (runs_cache/wickets_cache/legal_balls) that
+// replay.js already keeps current on every delivery — never a per-fixture
+// replay. Used only to surface a live score on the fixture card; finalized
+// fixtures fall back to m.result* exactly as before.
+const FIXTURE_INNINGS_JOIN = `
+  LEFT JOIN innings i1 ON i1.match_id = f.match_id AND i1.innings_number = 1
+  LEFT JOIN innings i2 ON i2.match_id = f.match_id AND i2.innings_number = 2
 `
 
 export async function listFixturesByTournament(tournamentId, client = pool) {
@@ -200,6 +215,7 @@ export async function listFixturesByTournament(tournamentId, client = pool) {
      JOIN teams ta ON ta.id = f.team_a_id
      JOIN teams tb ON tb.id = f.team_b_id
      LEFT JOIN matches m ON m.id = f.match_id
+     ${FIXTURE_INNINGS_JOIN}
      WHERE f.tournament_id = $1
      ORDER BY f.fixture_number ASC`,
     [tournamentId]
@@ -214,6 +230,7 @@ export async function findFixtureById(id, client = pool) {
      JOIN teams ta ON ta.id = f.team_a_id
      JOIN teams tb ON tb.id = f.team_b_id
      LEFT JOIN matches m ON m.id = f.match_id
+     ${FIXTURE_INNINGS_JOIN}
      WHERE f.id = $1`,
     [id]
   )
@@ -232,6 +249,7 @@ export async function listFixturesByStage(tournamentId, stage, client = pool) {
      JOIN teams ta ON ta.id = f.team_a_id
      JOIN teams tb ON tb.id = f.team_b_id
      LEFT JOIN matches m ON m.id = f.match_id
+     ${FIXTURE_INNINGS_JOIN}
      WHERE f.tournament_id = $1 AND f.stage = $2
      ORDER BY f.bracket_slot ASC NULLS FIRST, f.fixture_number ASC`,
     [tournamentId, stage]

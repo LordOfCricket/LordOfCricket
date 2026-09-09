@@ -143,6 +143,131 @@ body,
 
   --font-loc-display: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;
   --font-loc-body: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+
+  /* LOC light theme (homepage V2 reference) — the shared public/admin
+     palette. Values match the hardcoded utilities the V2 homepage already
+     uses (green-50 / white / slate-900 / green-700 / emerald-100), now
+     centralised so pages stop repeating them. */
+  --color-loc-mint: #f0fdf4;
+  --color-loc-mint-deep: #ecfdf5;
+  --color-loc-surface: #ffffff;
+  --color-loc-navy: #0f172a;
+  --color-loc-ink: #1e293b;
+  --color-loc-muted: #475569;
+  --color-loc-faint: #94a3b8;
+  --color-loc-green: #15803d;
+  --color-loc-green-strong: #166534;
+  --color-loc-green-bright: #16a34a;
+  --color-loc-border: #d1fae5;
+  --color-loc-border-soft: #e2e8f0;
+
+  --radius-loc: 1rem;
+  --shadow-loc: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-loc-md: 0 6px 20px -6px rgb(16 185 129 / 0.18);
+}
+
+/* Reusable LOC light UI primitives. Additive: nothing here changes a page
+   until that page opts in by using the class. */
+@layer components {
+  .loc-page {
+    background-color: var(--color-loc-mint);
+    color: var(--color-loc-navy);
+    min-height: 100vh;
+  }
+  .loc-card {
+    border-radius: var(--radius-loc);
+    border: 1px solid var(--color-loc-border);
+    background-color: var(--color-loc-surface);
+    box-shadow: var(--shadow-loc);
+  }
+  .loc-card-hover {
+    transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+  }
+  .loc-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-loc-md);
+    border-color: color-mix(in srgb, var(--color-loc-green-bright) 40%, transparent);
+  }
+  .loc-heading {
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    color: var(--color-loc-navy);
+  }
+  .loc-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-loc-green);
+  }
+  .loc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    background-color: var(--color-loc-green);
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #fff;
+    transition: background-color 0.2s;
+  }
+  .loc-btn:hover { background-color: var(--color-loc-green-strong); }
+  .loc-btn:disabled { opacity: 0.5; }
+  .loc-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid var(--color-loc-green);
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--color-loc-green-strong);
+    transition: background-color 0.2s;
+  }
+  .loc-btn-outline:hover { background-color: var(--color-loc-mint); }
+  .loc-input {
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-loc-border-soft);
+    background-color: var(--color-loc-surface);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-loc-navy);
+  }
+  .loc-input::placeholder { color: var(--color-loc-faint); }
+  .loc-input:focus {
+    outline: none;
+    border-color: var(--color-loc-green-bright);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-loc-green-bright) 20%, transparent);
+  }
+  .loc-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    padding: 0.25rem 0.625rem;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .loc-badge-active { background-color: #d1fae5; color: #047857; }
+  .loc-badge-inactive { background-color: #f1f5f9; color: #64748b; }
+  .loc-badge-warn { background-color: #fef3c7; color: #b45309; }
+  .loc-badge-danger { background-color: #fee2e2; color: #b91c1c; }
+
+  .loc-alert {
+    border-radius: 0.75rem;
+    border: 1px solid;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .loc-alert-error { border-color: #fecaca; background-color: #fef2f2; color: #b91c1c; }
+  .loc-alert-success { border-color: #bbf7d0; background-color: var(--color-loc-mint); color: var(--color-loc-green); }
 }
 
 /* ============================================================

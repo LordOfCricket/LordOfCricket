@@ -74,8 +74,12 @@ export interface TeamProfileResponse {
 }
 
 export async function discoverTeams(query?: string, limit = 20, offset = 0) {
+  // Backend GET /teams/discover (team.controller.js#getPublicTeams) reads
+  // the `search` query param — same name the website uses
+  // (client/src/services/publicTeamApi.js). Sending `q` meant the
+  // server-side name filter was silently ignored.
   const response = await api.get('/teams/discover', {
-    params: { q: query, limit, offset },
+    params: { search: query || undefined, limit, offset },
   })
   return response.data
 }

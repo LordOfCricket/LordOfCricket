@@ -9,7 +9,7 @@ function Slot({ index, photo, busy, onPick, onRemove }) {
   const inputRef = useRef(null)
 
   return (
-    <div className="group relative aspect-video overflow-hidden rounded-2xl border border-emerald-400/20 bg-white/5">
+    <div className="group relative aspect-video overflow-hidden rounded-2xl border border-loc-border bg-loc-mint">
       <input
         ref={inputRef}
         type="file"
@@ -29,7 +29,7 @@ function Slot({ index, photo, busy, onPick, onRemove }) {
               type="button"
               onClick={() => inputRef.current?.click()}
               disabled={busy}
-              className="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm hover:bg-white/25 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full bg-loc-mint px-3 py-1.5 text-xs font-semibold text-loc-navy hover:bg-loc-border-soft disabled:opacity-50"
             >
               <Camera className="h-3.5 w-3.5" /> Replace
             </button>
@@ -37,7 +37,7 @@ function Slot({ index, photo, busy, onPick, onRemove }) {
               type="button"
               onClick={onRemove}
               disabled={busy}
-              className="inline-flex items-center gap-1 rounded-full bg-red-500/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm hover:bg-red-500/90 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full bg-red-500/70 px-3 py-1.5 text-xs font-semibold text-loc-navy backdrop-blur-sm hover:bg-red-500/90 disabled:opacity-50"
             >
               <X className="h-3.5 w-3.5" /> Remove
             </button>
@@ -48,7 +48,7 @@ function Slot({ index, photo, busy, onPick, onRemove }) {
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          className="flex h-full w-full flex-col items-center justify-center gap-2 text-emerald-100/50 transition-colors hover:text-emerald-100/80 disabled:opacity-50"
+          className="flex h-full w-full flex-col items-center justify-center gap-2 text-loc-faint transition-colors hover:text-loc-muted/80 disabled:opacity-50"
         >
           <ImagePlus className="h-6 w-6" />
           <span className="text-xs font-semibold">Photo {index + 1}</span>
@@ -97,10 +97,10 @@ export default function FeaturedPhotoGrid({ photos, onUploadSlot, onRemoveSlot, 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-emerald-100/80">Featured Photos</span>
-        <span className={`text-xs font-bold ${filledCount === REQUIRED_COUNT ? 'text-emerald-400' : 'text-amber-300'}`}>{filledCount} / {REQUIRED_COUNT}</span>
+        <span className="text-sm font-semibold text-loc-muted/80">Featured Photos</span>
+        <span className={`text-xs font-bold ${filledCount === REQUIRED_COUNT ? 'text-loc-green' : 'text-amber-700'}`}>{filledCount} / {REQUIRED_COUNT}</span>
       </div>
-      <p className="text-xs text-emerald-100/50">These 6 photos power the main slideshow on your ground's public page. All 6 are required.</p>
+      <p className="text-xs text-loc-faint">These 6 photos power the main slideshow on your ground's public page. All 6 are required.</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {photos.map((photo, i) => (
           <Slot key={i} index={i} photo={photo} busy={busyIndex === i} onPick={(file) => handlePick(i, file)} onRemove={() => onRemoveSlot(i)} />

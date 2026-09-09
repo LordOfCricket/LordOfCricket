@@ -18,7 +18,7 @@ function chaseLine(chase) {
 
 export default function LiveMatchPanel({ liveState, loading, connectionStatus, lastUpdatedAt, refresh }) {
   if (loading && !liveState) {
-    return <div className="h-40 animate-pulse rounded-[1.5rem] border border-white/10 bg-slate-900/40" role="status" aria-label="Loading live match" />
+    return <div className="h-40 animate-pulse rounded-[1.5rem] border border-loc-border bg-loc-mint" role="status" aria-label="Loading live match" />
   }
   if (!liveState || !liveState.currentInnings) return null
 
@@ -26,7 +26,7 @@ export default function LiveMatchPanel({ liveState, loading, connectionStatus, l
   const isActivelyLive = currentInnings.status === 'live'
 
   return (
-    <div className="space-y-3 rounded-[1.5rem] border border-white/10 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm sm:p-6">
+    <div className="space-y-3 rounded-[1.5rem] border border-loc-border bg-loc-surface p-5 shadow-sm backdrop-blur-sm sm:p-6">
       {match.isInningsBreak && (
         <div className="rounded-2xl bg-sky-500/10 px-4 py-3 text-center">
           <p className="text-sm font-bold uppercase tracking-wide text-sky-300">Innings Break</p>
@@ -35,7 +35,7 @@ export default function LiveMatchPanel({ liveState, loading, connectionStatus, l
       )}
 
       {currentInnings.chase && (
-        <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold text-amber-200">
+        <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold text-amber-700">
           Target {target} · {chaseLine(currentInnings.chase)}
         </p>
       )}

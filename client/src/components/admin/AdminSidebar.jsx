@@ -14,6 +14,7 @@ import {
   LogOut,
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
+import { MERCHANDISE_CATEGORIES } from '../../lib/merchandiseCategories.js'
 
 // Super Admin sidebar navigation cleanup + centralized Sponsors/Amenities
 // Master — Edit Photos (unrouted dead link already), Admin Settings, and
@@ -32,7 +33,13 @@ const LINKS = [
   { to: '/admin/umpires', label: 'Umpires', icon: Trophy, allow: ['super_admin'] },
   { to: '/admin/umpire-requests', label: 'Umpire Requests', icon: ClipboardCheck, allow: ['super_admin'] },
   { to: '/admin/sponsors', label: 'Sponsors', icon: Handshake, allow: ['super_admin'] },
-  { to: '/admin/merchandise', label: 'Merchandise', icon: ShoppingBag, allow: ['super_admin'] },
+  {
+    to: '/admin/merchandise',
+    label: 'Merchandise',
+    icon: ShoppingBag,
+    allow: ['super_admin'],
+    children: MERCHANDISE_CATEGORIES.map((c) => ({ to: `/admin/merchandise/${c.slug}`, label: c.name })),
+  },
   { to: '/admin/amenities', label: 'Amenities', icon: Sparkles, allow: ['super_admin'] },
   { to: '/security', label: 'Account Security', icon: ShieldCheck, allow: ['super_admin', 'admin'] },
   { to: '/admin/audit-log', label: 'Audit Logs', icon: ClipboardList, allow: ['super_admin'] },
@@ -58,19 +65,38 @@ export default function AdminSidebar() {
       </div>
 
       <nav className="flex flex-col gap-2">
-        {links.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                isActive ? 'bg-green-600 text-white' : 'text-slate-200 hover:bg-white/10'
-              }`
-            }
-          >
-            <Icon size={18} />
-            {label}
-          </NavLink>
+        {links.map(({ to, label, icon: Icon, children }) => (
+          <div key={to} className="flex flex-col gap-1">
+            <NavLink
+              to={to}
+              end={Boolean(children)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                  isActive ? 'bg-green-600 text-white' : 'text-slate-200 hover:bg-white/10'
+                }`
+              }
+            >
+              <Icon size={18} />
+              {label}
+            </NavLink>
+            {children && (
+              <div className="ml-6 flex flex-col gap-1 border-l border-white/10 pl-3">
+                {children.map((child) => (
+                  <NavLink
+                    key={child.to}
+                    to={child.to}
+                    className={({ isActive }) =>
+                      `rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                        isActive ? 'bg-green-600/80 text-white' : 'text-slate-300 hover:bg-white/10'
+                      }`
+                    }
+                  >
+                    {child.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </nav>
 

@@ -81,12 +81,30 @@ export async function getFeaturedGrounds(limit = 8): Promise<FeaturedGroundsResp
 }
 
 export async function getNearbyGrounds(latitude: number, longitude: number, radiusKm = 10) {
+  // Backend GET /grounds/nearby (ground.controller.js#listNearbyGrounds)
+  // reads `lat` / `lng` query params — same contract the website uses
+  // (client/src/services/groundsApi.js). Sending `latitude` / `longitude`
+  // made the server reject the request with 400 ("lat must be a number").
   const response = await api.get('/grounds/nearby', {
     params: {
-      latitude,
-      longitude,
+      lat: latitude,
+      lng: longitude,
       radiusKm,
     },
+  })
+  return response.data
+}
+
+/**
+ * GET /grounds/search?city= — active grounds in a city
+ * (ground.controller.js#listGroundsByCity). The only text-based ground
+ * lookup the backend supports (there is no ground-name search); the
+ * website's ground discovery uses the same endpoint. Returns 400 when
+ * `city` is blank, so callers must pass a non-empty term.
+ */
+export async function searchGroundsByCity(city: string, limit = 10, offset = 0): Promise<FeaturedGroundsResponse> {
+  const response = await api.get<FeaturedGroundsResponse>('/grounds/search', {
+    params: { city, limit, offset },
   })
   return response.data
 }

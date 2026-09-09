@@ -31,9 +31,9 @@ export default function KmRangeSlider({ value, onCommit, compact = false }) {
 
   return (
     <div className={`flex shrink-0 flex-col gap-1 ${compact ? 'w-32' : 'w-full max-w-xs gap-2'}`}>
-      <div className={`flex items-center justify-between font-semibold whitespace-nowrap text-emerald-100/60 uppercase ${compact ? 'text-[10px]' : 'text-xs tracking-widest'}`}>
+      <div className={`flex items-center justify-between font-semibold whitespace-nowrap text-loc-muted uppercase ${compact ? 'text-[10px]' : 'text-xs tracking-widest'}`}>
         <span>Radius</span>
-        <span className="text-emerald-400">{localValue} km</span>
+        <span className="text-loc-green">{localValue} km</span>
       </div>
       <input
         type="range"
@@ -47,7 +47,7 @@ export default function KmRangeSlider({ value, onCommit, compact = false }) {
         onMouseUp={(e) => commit(e.target.value)}
         onTouchEnd={(e) => commit(e.target.value)}
         onKeyUp={(e) => commit(e.target.value)}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-emerald-500
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-loc-border-soft accent-emerald-500
           [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none
           [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400
           [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:shadow-emerald-500/40
@@ -55,7 +55,7 @@ export default function KmRangeSlider({ value, onCommit, compact = false }) {
           [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-emerald-400"
       />
       {!compact && (
-        <div className="flex justify-between text-[11px] text-emerald-100/40">
+        <div className="flex justify-between text-[11px] text-loc-faint">
           <span>{MIN_RADIUS_KM} km</span>
           <span>{MAX_RADIUS_KM} km</span>
         </div>

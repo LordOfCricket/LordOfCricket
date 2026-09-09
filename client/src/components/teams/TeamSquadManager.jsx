@@ -10,7 +10,10 @@ import { addPlayerToTeam, removePlayerFromTeam } from '../../services/publicTeam
 // robust UI for it: search the existing public player directory, add/remove
 // by publicPlayerId, and let the caller (TeamProfilePage) refetch the public
 // profile afterward so squad/record stay the single source of truth.
-export default function TeamSquadManager({ team, squad, onChange }) {
+export default function TeamSquadManager({ team, squad, onChange, light = false }) {
+  const row = light ? 'border-loc-border bg-loc-mint' : 'border-white/10 bg-white/5'
+  const strong = light ? 'text-loc-navy' : 'text-white'
+  const dim = light ? 'text-loc-faint' : 'text-slate-400'
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -60,8 +63,8 @@ export default function TeamSquadManager({ team, squad, onChange }) {
   }
 
   return (
-    <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">Staff — Manage Squad</p>
+    <div className={`rounded-2xl border p-5 ${light ? "border-amber-200 bg-amber-50" : "border-amber-400/20 bg-amber-500/5"}`}>
+      <p className={`text-xs font-semibold uppercase tracking-wide ${light ? "text-amber-800" : "text-amber-200"}`}>Staff — Manage Squad</p>
 
       <form onSubmit={runSearch} className="mt-3 flex gap-2">
         <input
@@ -69,31 +72,31 @@ export default function TeamSquadManager({ team, squad, onChange }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search players by name…"
-          className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+          className={`min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm ${light ? "border-loc-border bg-loc-surface text-loc-navy placeholder:text-loc-faint" : "border-white/15 bg-white/5 text-white placeholder:text-slate-500"}`}
         />
         <button
           type="submit"
           disabled={searching}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/30 disabled:opacity-50"
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${light ? "bg-amber-100 text-amber-800 hover:bg-amber-200" : "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"}`}
         >
           <Search className="h-4 w-4" />
           Search
         </button>
       </form>
 
-      {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+      {error && <p className={`mt-3 text-sm ${light ? "text-rose-600" : "text-rose-300"}`}>{error}</p>}
 
       {results.length > 0 && (
         <div className="mt-4 space-y-2">
           {results.map(({ player }) => {
             const alreadyHere = player.team?.id === team.id
             return (
-              <div key={player.publicPlayerId} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <div key={player.publicPlayerId} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${row}`}>
                 <div className="flex min-w-0 items-center gap-2.5">
                   <Avatar name={player.name} photoUrl={player.photoUrl} size="sm" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">{player.name}</p>
-                    <p className="truncate text-xs text-slate-400">
+                    <p className={`truncate text-sm font-semibold ${strong}`}>{player.name}</p>
+                    <p className={`truncate text-xs ${dim}`}>
                       {roleLabel(player.role) || 'Role not set'}
                       {player.team ? ` · Currently: ${player.team.name}` : ''}
                     </p>
@@ -103,7 +106,7 @@ export default function TeamSquadManager({ team, squad, onChange }) {
                   type="button"
                   disabled={alreadyHere || busyId === player.publicPlayerId}
                   onClick={() => handleAdd(player.publicPlayerId)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/20 disabled:opacity-40"
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40 ${light ? "border-loc-green/30 bg-loc-mint text-loc-green hover:bg-loc-surface" : "border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"}`}
                 >
                   <UserPlus className="h-3.5 w-3.5" />
                   {alreadyHere ? 'On this team' : 'Add'}
@@ -115,20 +118,20 @@ export default function TeamSquadManager({ team, squad, onChange }) {
       )}
 
       {squad.length > 0 && (
-        <div className="mt-6 border-t border-white/10 pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Squad</p>
+        <div className={`mt-6 border-t pt-4 ${light ? "border-loc-border" : "border-white/10"}`}>
+          <p className={`text-xs font-semibold uppercase tracking-wide ${dim}`}>Current Squad</p>
           <div className="mt-3 space-y-2">
             {squad.map((player) => (
-              <div key={player.publicPlayerId} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <div key={player.publicPlayerId} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${row}`}>
                 <div className="flex min-w-0 items-center gap-2.5">
                   <Avatar name={player.name} photoUrl={player.photoUrl} size="sm" />
-                  <p className="truncate text-sm font-semibold text-white">{player.name}</p>
+                  <p className={`truncate text-sm font-semibold ${strong}`}>{player.name}</p>
                 </div>
                 <button
                   type="button"
                   disabled={busyId === player.publicPlayerId}
                   onClick={() => handleRemove(player.publicPlayerId)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200 transition-colors hover:bg-rose-500/20 disabled:opacity-40"
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40 ${light ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"}`}
                 >
                   <UserMinus className="h-3.5 w-3.5" />
                   Remove

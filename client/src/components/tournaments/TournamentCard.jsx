@@ -14,31 +14,31 @@ export default function TournamentCard({ tournament }) {
   return (
     <Link
       to={`/tournaments/${tournament.publicTournamentId}`}
-      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/50 p-5 transition-colors hover:border-emerald-400/40 hover:bg-slate-900/70"
+      className="flex flex-col gap-3 loc-card rounded-2xl p-5 transition-colors hover:border-loc-green hover:shadow-loc-md"
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-lg font-bold text-white">{tournament.name}</h3>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200">
+        <h3 className="text-lg font-bold text-loc-navy">{tournament.name}</h3>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full loc-card px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-loc-muted">
           <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[tournament.status] || 'bg-slate-400'}`} aria-hidden="true" />
           {statusLabel(tournament.status)}
         </span>
       </div>
 
-      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">{formatLabel(tournament.format)}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-loc-green">{formatLabel(tournament.format)}</p>
 
-      <div className="flex items-center gap-4 text-xs text-slate-300">
+      <div className="flex items-center gap-4 text-xs text-loc-muted">
         <span className="inline-flex items-center gap-1.5">
-          <CalendarRange className="h-3.5 w-3.5 text-slate-400" />
+          <CalendarRange className="h-3.5 w-3.5 text-loc-faint" />
           {formatDateRange(tournament.startDate, tournament.endDate)}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-slate-400" />
+          <Users className="h-3.5 w-3.5 text-loc-faint" />
           {tournament.teamCount ?? 0}/{tournament.maxTeams} teams
         </span>
       </div>
 
       {tournament.status === 'COMPLETED' && tournament.championTeamName && (
-        <div className="mt-1 inline-flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-200">
+        <div className="mt-1 inline-flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-700">
           <Trophy className="h-4 w-4" />
           {tournament.championTeamName}
         </div>

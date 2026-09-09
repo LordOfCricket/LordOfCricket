@@ -14,7 +14,7 @@ export default function MatchActivitySection() {
   if (loading) {
     return (
       <div className="flex w-full flex-col gap-10 px-6 py-6 lg:px-10">
-        <div className="h-40 animate-pulse rounded-3xl border border-white/10 bg-white/5" />
+        <div className="h-40 animate-pulse rounded-3xl border border-loc-border bg-loc-mint" />
       </div>
     )
   }
@@ -22,7 +22,7 @@ export default function MatchActivitySection() {
   if (error || !data) {
     return (
       <div className="w-full px-6 py-6 lg:px-10">
-        <StatsErrorState message={error || "Couldn't load match activity."} onRetry={retry} />
+        <StatsErrorState message={error || "Couldn't load match activity."} onRetry={retry} light />
       </div>
     )
   }
