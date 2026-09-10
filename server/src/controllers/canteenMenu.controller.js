@@ -40,7 +40,7 @@ function indexTodayMenuItems(today) {
   return Object.fromEntries(today.items.map((row) => [String(row.menu_item_id), row]))
 }
 
-export async function listMenu(req, res) {
+export async function listMenu(req, res, next) {
   try {
     const items = await findActiveMenuItemsByCanteenId(req.canteen.id)
     const today = await getTodayMenu(req.canteen.id)
@@ -63,12 +63,12 @@ export async function listMenu(req, res) {
       }
     })
     return res.json({ items: mapped })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }
 
-export async function listMasterMenu(req, res) {
+export async function listMasterMenu(req, res, next) {
   try {
     const items = await findActiveMenuItemsByCanteenId(req.canteen.id)
     return res.json({
@@ -87,12 +87,12 @@ export async function listMasterMenu(req, res) {
         isActive: item.is_active,
       })),
     })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }
 
-export async function getTodaysMenuConfig(req, res) {
+export async function getTodaysMenuConfig(req, res, next) {
   try {
     const dbItems = await findActiveMenuItemsByCanteenId(req.canteen.id)
     const today = await getTodayMenu(req.canteen.id)
@@ -123,12 +123,12 @@ export async function getTodaysMenuConfig(req, res) {
       publishedAt: today ? today.published_at : new Date().toISOString(),
       items: mapped,
     })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }
 
-export function updateTodaysMenu(req, res) {
+export function updateTodaysMenu(req, res, next) {
   const { items } = req.body
   if (!Array.isArray(items)) {
     return res.status(400).json({ error: 'Invalid menu payload.' })
@@ -145,13 +145,7 @@ export function updateTodaysMenu(req, res) {
     // today_menu_items). The request always succeeds regardless — this
     // was never a "reject the whole publish" validation, only a "which
     // ids actually count" one, preserved exactly.
-    try {
-      await replaceTodayMenu({ canteenId: req.canteen.id, publishedAt, items })
-    } catch (err) {
-      logger.error('TodayMenu save error', { error: err.message })
-      res.status(500).json({ error: err.message })
-      return
-    }
+    await replaceTodayMenu({ canteenId: req.canteen.id, publishedAt, items })
 
     // Response echoes the RAW client payload, not the resolved/persisted
     // subset — matches the retired code's own `res.json({publishedAt,
@@ -168,13 +162,10 @@ export function updateTodaysMenu(req, res) {
     res.json({ publishedAt, items })
   }
 
-  applyUpdate().catch((err) => {
-    logger.error('updateTodaysMenu error', { error: err.message })
-    res.status(500).json({ error: err.message })
-  })
+  applyUpdate().catch(next)
 }
 
-export async function createMenuItem(req, res) {
+export async function createMenuItem(req, res, next) {
   try {
     // Phase 11 audit fix — the Ground Owner frontend (groundOwnerApi.js/
     // GroundCanteenMenuPage.jsx) sends this field as `stock`, not
@@ -218,12 +209,12 @@ export async function createMenuItem(req, res) {
         stock: item.default_stock,
       },
     })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }
 
-export async function updateMenuItem(req, res) {
+export async function updateMenuItem(req, res, next) {
   try {
     const { id } = req.params
     // Phase 11 audit fix — same `stock`/`defaultStock` split as
@@ -279,12 +270,12 @@ export async function updateMenuItem(req, res) {
       isActive: item.is_active,
     }
     return res.json({ item: responseItem })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }
 
-export async function deleteMenuItem(req, res) {
+export async function deleteMenuItem(req, res, next) {
   try {
     const { id } = req.params
     const numericId = parseMenuItemId(id)
@@ -311,7 +302,7 @@ export async function deleteMenuItem(req, res) {
     req.io.emit('menu.updated', payload)
     req.io.emit('menu-updated', payload)
     return res.json({ ok: true })
-  } catch (error) {
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    next(err)
   }
 }

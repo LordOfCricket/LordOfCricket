@@ -276,6 +276,474 @@ export interface Team {
   created_at: string
 }
 
+// Ground Owner — one ground the authenticated user actively owns
+// (GET /ground-owner/grounds, normalized to camelCase in groundOwnerApi).
+// GROUND_OWNER is a `ground_users` membership, never a `users.role` value,
+// so ownership is derived from this list being non-empty, not from `User`.
+export interface OwnedGround {
+  id: number
+  publicGroundId: string
+  name: string
+  city: string | null
+  state: string | null
+  status: 'DRAFT' | 'ACTIVE' | 'SUSPENDED'
+  upcomingMatchesCount: number
+  umpireSlotsTotal: number
+  umpireSlotsFilled: number
+}
+
+// GET /ground-owner/grounds/:publicGroundId/dashboard — Phase 0 reads only
+// the high-level shape; later phases consume the full payload.
+export interface GroundOwnerDashboard {
+  date: string
+  groundStatus: 'MATCH_DAY' | 'PARTIALLY_BLOCKED' | 'BOOKED' | 'OPEN'
+  today: {
+    bookingsCount: number
+    blocksCount: number
+    matchesCount: number
+    availableSlotsCount: number
+    blockedSlotsCount: number
+  }
+  upcoming7Days: {
+    matches: unknown[]
+    blocks: unknown[]
+  }
+  canteen: {
+    ordersByStatus: Record<string, number>
+    lowStockItems: { name: string; stock: number }[]
+  }
+}
+
+// PATCH /ground-owner/grounds/:publicGroundId — only server-whitelisted
+// fields. Omitted keys are left untouched; null clears an operating-hour
+// override. Ownership/status/approval fields are never editable here.
+export interface EditableGroundProfile {
+  name?: string
+  description?: string | null
+  phone?: string | null
+  email?: string | null
+  website?: string | null
+}
+
+export interface EditableGroundLocation {
+  addressLine?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  openingHour?: number | null
+  closingHour?: number | null
+}
+
+// GET /ground-owner/grounds/:publicGroundId/media — owner-scoped rows
+// (normalized to camelCase in groundOwnerApi).
+export interface GroundMediaPhoto {
+  id: number
+  title: string | null
+  imageUrl: string
+  sortOrder: number
+  isFeatured: boolean
+}
+
+// GET/POST/PATCH /ground-owner/grounds/:publicGroundId/pricing-slots.
+// start/end are 'HH:MM' 24-hour ground-local time; overlap of active slots
+// is rejected server-side.
+export interface GroundPricingSlotDetail {
+  id: number
+  startTime: string
+  endTime: string
+  price: number
+  isActive: boolean
+}
+
+// GET /ground-owner/grounds/:publicGroundId/bookings — serializeBooking()
+// (camelCased server-side). Covers both CUSTOMER bookings and STAFF_BLOCK
+// rows; `status` is CONFIRMED or CANCELLED (bookings auto-confirm — there is
+// no pending/approval state).
+export interface OwnerBooking {
+  publicBookingId: string
+  bookingType: 'CUSTOMER' | 'STAFF_BLOCK'
+  blockType: string | null
+  startTime: string
+  endTime: string
+  status: 'CONFIRMED' | 'CANCELLED'
+  purpose: string | null
+  expectedPlayers: number | null
+  notes: string | null
+  customerName: string | null
+  contactPhone: string | null
+  contactEmail: string | null
+  createdAt: string
+  cancelledAt: string | null
+  checkedInAt: string | null
+  noShowAt: string | null
+}
+
+export type OwnerBookingStatusFilter = 'ALL' | 'CONFIRMED' | 'CANCELLED'
+
+export interface OwnerBookingFilters {
+  fromDate: string | null
+  toDate: string | null
+  status: OwnerBookingStatusFilter
+}
+
+// GET /ground-owner/grounds/:publicGroundId/bookings/availability?date=
+// Staff view — 2-hour grid slots from opening to closing, with the reason a
+// slot is unavailable and the applicable hourly price (null = no price band).
+export type OwnerSlotReason = 'PAST' | 'BOOKED' | 'BLOCKED' | 'MATCH' | null
+
+export interface OwnerAvailabilitySlot {
+  startTime: string
+  endTime: string
+  status: 'AVAILABLE' | 'UNAVAILABLE'
+  reason: OwnerSlotReason
+  price: number | null
+}
+
+export interface OwnerDayAvailability {
+  date: string
+  slots: OwnerAvailabilitySlot[]
+}
+
+export interface StaffBlockInput {
+  date: string
+  hour: number
+  minute?: number
+  purpose?: string
+  blockType?: string | null
+}
+
+// --- Matches & umpire staffing (GET/POST /ground-owner/grounds/:id/matches*)
+
+export type OwnerMatchStatus = 'upcoming' | 'live' | 'completed' | 'finalized' | 'cancelled'
+export type OwnerUmpireSlotStatus = 'AVAILABLE' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW'
+export type UmpirePaymentStatus = 'PENDING' | 'APPROVED' | 'PAID' | 'FAILED' | 'CANCELLED'
+
+// GET /ground-owner/grounds/:id/matches — findMatchesByGroundId row (snake
+// case, normalized in groundOwnerApi). No name/title/type columns exist —
+// a match is its two teams + date.
+export interface OwnerMatchListItem {
+  id: number
+  matchDate: string
+  venue: string | null
+  status: OwnerMatchStatus
+  requiredUmpires: number
+  teamAName: string
+  teamAShort: string | null
+  teamBName: string
+  teamBShort: string | null
+  totalSlots: number
+  filledSlots: number
+  staffingForecast: string | null
+}
+
+export interface CreateMatchInput {
+  teamAId: number
+  teamBId: number
+  matchDate: string
+  requiredUmpires?: number
+  oversPerInnings?: number | null
+  ballsPerOver?: number
+}
+
+export interface UmpireReputationSummary {
+  userId: number
+  name: string
+  verified: boolean
+  ratingAvg: number | null
+  ratingCount: number
+  reliability: number | null
+  matchesOfficiated: number
+  noShows: number
+  cancellations: number
+  experienceYears: number | null
+  badges: string[]
+}
+
+export interface OwnerUmpireEarning {
+  id: number
+  amount: string | number
+  currency: string
+  status: UmpirePaymentStatus
+}
+
+export interface OwnerUmpireSlot {
+  id: number
+  slotNumber: number
+  status: OwnerUmpireSlotStatus
+  umpireUserId: number | null
+  umpireName: string | null
+  assignedAt: string | null
+  cancelledAt: string | null
+  cancellationReason: string | null
+  completedAt: string | null
+  reputation: UmpireReputationSummary | null
+  earning: OwnerUmpireEarning | null
+}
+
+export interface OwnerUmpireFee {
+  amount: string | number
+  currency: string
+}
+
+export interface OwnerMatchProposal {
+  id: number
+  matchUmpireSlotId: number
+  umpireUserId: number
+  umpireName: string
+  incentiveAmount: string | number
+  currency: string
+  message: string | null
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED'
+  createdAt: string
+  respondedAt: string | null
+}
+
+export interface OwnerRecommendedUmpire {
+  id: number
+  name: string
+  reputation: UmpireReputationSummary | null
+  hasEnoughData: boolean
+  reasons: string[]
+}
+
+export interface OwnerReplacementCandidate {
+  id: number
+  name: string
+  reputation: UmpireReputationSummary | null
+}
+
+export interface OwnerAssignmentEvent {
+  id: number
+  matchUmpireSlotId: number
+  eventType: 'ASSIGNED' | 'CANCELLED' | 'NO_SHOW' | 'REPLACEMENT_ASSIGNED' | 'COMPLETED'
+  recordedAt: string
+  umpireUserId: number | null
+  umpireName: string | null
+}
+
+export interface OwnerMatchIncident {
+  id: number
+  incidentType: string
+  description: string | null
+  occurredAt: string
+}
+
+export interface OwnerUmpireOpsSummary {
+  matchesThisMonth: number
+  fullyStaffed: number
+  currentlyUnderstaffedUpcoming: number
+  avgUmpireRating: number | null
+  ratingSampleSize: number
+  noShowCount: number
+}
+
+export interface TopUmpire {
+  rank: number
+  id: number
+  name: string
+  reputation: UmpireReputationSummary | null
+  hasEnoughData: boolean
+  reasons: string[]
+}
+
+// --- Ground Owner analytics / reviews / notifications
+// (/ground-owner/grounds/:publicGroundId/analytics|reviews|notifications)
+
+export type OwnerAnalyticsRange = 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'
+
+export interface OwnerAnalyticsUtilization {
+  totalHours: number
+  bookedHours: number
+  blockedHours: number
+  matchHours: number
+  freeHours: number
+  bookedPercentage: number | null
+  blockedPercentage: number | null
+  matchPercentage: number | null
+  utilizedPercentage: number | null
+}
+
+export interface OwnerAnalytics {
+  dateRange: string
+  metrics: {
+    totalBookings: number
+    confirmedBookings: number
+    cancelledBookings: number
+    noShowBookings: number
+    totalBookedHours: number
+    averageBookingHours: number
+  }
+  breakdown: { confirmed: string; cancelled: string; noShow: string }
+  utilization: OwnerAnalyticsUtilization
+  canteenRevenue: { revenue: number; orderCount: number; averageOrderValue: number }
+}
+
+export interface OwnerTrendDay {
+  date: string
+  bookingCount: number
+  canteenRevenue: number
+  utilizedPercentage: number | null
+}
+
+export interface OwnerAnalyticsTrends {
+  dateRange: string
+  days: OwnerTrendDay[]
+}
+
+// Reviews are anonymous — no reviewer identity, no owner reply.
+export interface OwnerReview {
+  rating: number
+  commentLiked: string | null
+  commentImprove: string | null
+  submittedAt: string
+}
+
+export interface OwnerReviewsResponse {
+  reviews: OwnerReview[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+}
+
+// Ground-scoped notifications (distinct from the generic /ground/notifications
+// user inbox). related_* ids are INTERNAL integers, not public ids.
+export interface OwnerGroundNotification {
+  id: number
+  type: string
+  title: string
+  body: string | null
+  isRead: boolean
+  createdAt: string
+  relatedBookingId: number | null
+  relatedMatchId: number | null
+  relatedOrderId: number | null
+}
+
+export interface OwnerNotificationsResponse {
+  notifications: OwnerGroundNotification[]
+  total: number
+  unreadCount: number
+}
+
+// --- Ground Owner staff (/ground-owner/grounds/:publicGroundId/staff*)
+// Only GROUND_ADMIN / CANTEEN_STAFF are creatable. The list returns active
+// memberships only — disabling a member removes them from it, and there is
+// no re-enable endpoint. There is no staff-detail endpoint; detail is
+// derived from the list by membershipId.
+
+export type OwnerStaffRole = 'GROUND_ADMIN' | 'CANTEEN_STAFF'
+
+export interface OwnerStaffMember {
+  userId: number
+  name: string
+  email: string | null
+  phone: string | null
+  role: OwnerStaffRole
+  membershipId: number
+  createdAt: string
+  permissions: string[]
+}
+
+// GET /ground-owner/permissions/catalog — flat list, no categories.
+export interface OwnerPermission {
+  key: string
+  description: string
+}
+
+export interface CreateStaffInput {
+  name: string
+  identifier: string
+  role: OwnerStaffRole
+}
+
+// --- Canteen management (/grounds/:publicGroundId/canteens/:publicCanteenId/*)
+// Canteen identity comes from GET /grounds/:publicGroundId → `canteens`
+// (see groundApi.GroundCanteen: { publicCanteenId, name, isActive }); there
+// is no dedicated canteen list/detail endpoint.
+
+// GET .../menu/master — ids are strings server-side; `stock` mirrors
+// `defaultStock` (there is one stock value per master item).
+export interface CanteenMenuItem {
+  id: string
+  name: string
+  category: string
+  description: string
+  price: number
+  image: string
+  defaultStock: number
+  stock: number
+  isActive: boolean
+}
+
+export interface CanteenMenuItemInput {
+  name: string
+  category: string
+  description?: string
+  price: number
+  stock?: number
+  isActive?: boolean
+  imageUri?: string | null
+}
+
+// GET .../menu/today/config — only the items configured for today.
+export interface CanteenTodayMenuItem {
+  id: string
+  name: string
+  category: string
+  description: string
+  price: number
+  image: string
+  defaultStock: number
+  available: boolean
+  stock: number
+  dailyPrice: number
+}
+
+export interface CanteenTodayMenuConfig {
+  publishedAt: string
+  items: CanteenTodayMenuItem[]
+}
+
+// PATCH .../menu/today body — replaces the whole today set; ids that don't
+// resolve to a master item are silently dropped server-side.
+export interface CanteenTodayMenuEntryInput {
+  id: string
+  available: boolean
+  stock: number
+  dailyPrice: number
+}
+
+export type CanteenOrderStatus = 'Pending' | 'Accepted' | 'Preparing' | 'Ready' | 'Completed' | 'Cancelled'
+
+export interface CanteenOrderItem {
+  id: string | number
+  foodId: string | number
+  name: string
+  price: number
+  qty: number
+}
+
+export interface CanteenOrder {
+  id: string
+  userId: number
+  customerName: string
+  seatId: string | null
+  items: CanteenOrderItem[]
+  total: number
+  status: CanteenOrderStatus
+  orderedAt: string | null
+  createdAt: string
+  updatedAt: string | null
+  completedAt: string | null
+}
+
+export interface CanteenOrdersPage {
+  page: number
+  limit: number
+  total: number
+  orders: CanteenOrder[]
+}
+
 export interface Ground {
   id: number
   name: string

@@ -47,7 +47,7 @@ export function useOrderStatus() {
 
     fetchOrder(publicGroundId, publicCanteenId, orderId)
       .then(setOrder)
-      .catch((err) => setError(err.response?.data?.error || 'Unable to load order.'))
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load order.'))
   }, [navigate, orderId, storedOrder, user?.id, publicGroundId, publicCanteenId])
 
   useEffect(() => {

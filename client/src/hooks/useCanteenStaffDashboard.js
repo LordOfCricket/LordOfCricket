@@ -56,7 +56,7 @@ export function useStaffDashboard() {
         return data.orders.find((order) => order.id === current.id) || null
       })
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load orders.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load orders.')
     }
   }, [limit])
 
@@ -66,7 +66,7 @@ export function useStaffDashboard() {
       setHistoryOrders(data.orders)
       setHistoryTotal(data.total)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load order history.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load order history.')
     }
   }, [limit])
 
@@ -75,7 +75,7 @@ export function useStaffDashboard() {
       const config = await fetchTodaysMenuConfig()
       setTodayItems(config.items)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load menu config.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load menu config.')
     }
   }, [])
 
@@ -84,7 +84,7 @@ export function useStaffDashboard() {
       const items = await fetchMasterMenu()
       setMasterItems(items)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load master menu.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load master menu.')
     }
   }, [])
 
@@ -149,7 +149,7 @@ export function useStaffDashboard() {
       setSelectedOrder(['Completed', 'Cancelled'].includes(updated.status) ? null : updated)
       await loadOrders(page)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to update order.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to update order.')
     }
   }
 
@@ -181,7 +181,7 @@ export function useStaffDashboard() {
       await loadMaster()
       setTab('all')
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to create food item.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to create food item.')
     }
   }
 
@@ -215,7 +215,7 @@ export function useStaffDashboard() {
       closeEditModal()
       setTab('all')
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to update food item.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to update food item.')
     }
   }
 
@@ -234,7 +234,7 @@ export function useStaffDashboard() {
       await loadMaster()
       await loadMenuConfig()
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to delete food item.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to delete food item.')
     }
   }
 
@@ -245,7 +245,7 @@ export function useStaffDashboard() {
       await publishTodaysMenu({ items: todayItems })
       setPublishStatus('Today’s menu saved successfully.')
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to publish today’s menu.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to publish today’s menu.')
       setPublishStatus('')
     }
   }

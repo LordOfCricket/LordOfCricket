@@ -125,7 +125,7 @@ export async function updateGroundProfile(req, res, next) {
 
     const updated = await updateGroundProfileModel(req.ground.id, updates)
     if (!updated) {
-      return res.status(500).json({ error: 'Failed to update ground profile.' })
+      throw new Error('Failed to update ground profile.')
     }
 
     const formatted = {

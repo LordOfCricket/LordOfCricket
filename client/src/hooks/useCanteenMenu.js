@@ -66,7 +66,7 @@ export function useMenu() {
         // both real, already-server-verified conditions, never the old
         // legacy "multiple canteens exist" ambiguity this page used to be
         // vulnerable to.
-        setError(err.response?.data?.error || 'Unable to load menu.')
+        setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load menu.')
       }
 
       loadPlayerOrders()
@@ -228,7 +228,7 @@ export function useMenu() {
         setConfirmOpen(false)
         return
       }
-      setError(err.response?.data?.error || 'Unable to place order.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to place order.')
     } finally {
       setPlacing(false)
     }
@@ -250,7 +250,7 @@ export function useMenu() {
       const order = await fetchOrder(publicGroundId, publicCanteenId, orderId)
       setDetailsOrder(order)
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to load order details.')
+      setError(err.response?.data?.message || err.response?.data?.error || 'Unable to load order details.')
     } finally {
       setLoadingDetails(false)
     }

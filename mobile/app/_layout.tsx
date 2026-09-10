@@ -10,7 +10,7 @@ const queryClient = new QueryClient()
 initializeAuthStore(queryClient)
 
 export default function RootLayout() {
-  const { initialize, status, isUmpire } = useAuthStore()
+  const { initialize, status, isUmpire, isGroundOwner, isStaff } = useAuthStore()
 
   useEffect(() => {
     async function setup() {
@@ -39,6 +39,10 @@ export default function RootLayout() {
           <Stack.Screen name="(auth)" />
         ) : isUmpire ? (
           <Stack.Screen name="(umpire)" />
+        ) : isGroundOwner ? (
+          <Stack.Screen name="(owner)" />
+        ) : isStaff ? (
+          <Stack.Screen name="(staff)" />
         ) : (
           <Stack.Screen name="(tabs)" />
         )}

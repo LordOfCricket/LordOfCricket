@@ -88,7 +88,7 @@ function emitToOrderRooms(io, eventName, order) {
   }
 }
 
-export async function createOrder(req, res) {
+export async function createOrder(req, res, next) {
   const { seatId, items } = req.body
   const userId = req.user.id
   const customerName = req.user.name
@@ -207,11 +207,11 @@ export async function createOrder(req, res) {
 
     return res.json({ order: responseOrder })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
-export async function listOrders(req, res) {
+export async function listOrders(req, res, next) {
   try {
     const activeOnly = req.query.status === 'active'
     const page = Math.max(1, Number(req.query.page) || 1)
@@ -220,7 +220,7 @@ export async function listOrders(req, res) {
     const { total, orders: orderRows } = await listOrdersPaginated({ canteenId: req.canteen.id, activeOnly, page, limit })
     return res.json({ page, limit, total, orders: orderRows.map(toPublicOrder) })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
@@ -228,7 +228,7 @@ export async function listOrders(req, res) {
 // belongs to a different canteen returns null here, same as a genuinely
 // unknown id, so staff scoped to one canteen can never fetch another
 // canteen's order by guessing/knowing its public id.
-export async function getOrder(req, res) {
+export async function getOrder(req, res, next) {
   try {
     const order = await findOrderById(req.params.id, req.canteen.id)
     if (!order) {
@@ -250,11 +250,11 @@ export async function getOrder(req, res) {
     }
     return res.json({ order: toPublicOrder(order) })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
-export async function lookupOrderByUser(req, res) {
+export async function lookupOrderByUser(req, res, next) {
   try {
     const userId = Number(req.query.userId)
     if (!userId) {
@@ -263,11 +263,11 @@ export async function lookupOrderByUser(req, res) {
     const order = await findLatestOrderByUserId(userId, req.canteen.id)
     return res.json({ order: toPublicOrder(order) })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
-export async function getActiveOrder(req, res) {
+export async function getActiveOrder(req, res, next) {
   try {
     const userId = Number(req.params.userId)
     if (!userId) {
@@ -279,11 +279,11 @@ export async function getActiveOrder(req, res) {
     const order = await findActiveOrderByUserId(userId, req.canteen.id)
     return res.json({ order: toPublicOrder(order) })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
-export async function getOrderHistory(req, res) {
+export async function getOrderHistory(req, res, next) {
   try {
     const userId = Number(req.params.userId)
     if (!userId) {
@@ -295,7 +295,7 @@ export async function getOrderHistory(req, res) {
     const history = await findOrderHistoryByUserId(userId, req.canteen.id)
     return res.json({ orders: history.map(toPublicOrder) })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }
 
@@ -305,7 +305,7 @@ export async function getOrderHistory(req, res) {
 // check itself is not yet per-canteen-authorized for the legacy-staff path
 // (see groundAccess.js's comment) — this query-level scoping is the actual
 // tenant boundary enforcement Invariant 6 requires.
-export async function updateOrderStatus(req, res) {
+export async function updateOrderStatus(req, res, next) {
   try {
     const { status } = req.body
     if (!status || !PRESET_STATUS.includes(status)) {
@@ -353,6 +353,6 @@ export async function updateOrderStatus(req, res) {
 
     return res.json({ order: responseOrder })
   } catch (error) {
-    return res.status(500).json({ error: error.message })
+    next(error)
   }
 }

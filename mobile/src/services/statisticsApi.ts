@@ -1,4 +1,5 @@
 import api from './api'
+import { TopUmpire } from '../types'
 
 // Official statistics client — leaderboards, player search, public profile.
 // Every number is derived server-side from finalized PostgreSQL match history
@@ -153,5 +154,20 @@ export interface CricketRecords {
 
 export async function fetchCricketRecords(): Promise<CricketRecords> {
   const response = await api.get<CricketRecords>('/stats/records')
+  return response.data
+}
+
+// --- Top umpires (GET /stats/top-umpires) ---------------------------------
+// Public umpire leaderboard (umpireLeaderboard.service.js#getTopUmpires),
+// the same endpoint the website's Ground Owner "Browse Umpires" page uses.
+export interface TopUmpiresResponse {
+  items: TopUmpire[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export async function fetchTopUmpires(limit = 20, offset = 0): Promise<TopUmpiresResponse> {
+  const response = await api.get<TopUmpiresResponse>('/stats/top-umpires', { params: { limit, offset } })
   return response.data
 }

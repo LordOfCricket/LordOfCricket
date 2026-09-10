@@ -133,7 +133,7 @@ export async function setHeroPhoto(req, res, next) {
 
     const photo = await setFeaturedPhoto(req.ground.id, photoId)
     if (!photo) {
-      return res.status(500).json({ error: 'Failed to set hero photo.' })
+      throw new Error('Failed to set hero photo.')
     }
 
     res.json({ photo })

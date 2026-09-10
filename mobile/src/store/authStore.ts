@@ -3,7 +3,12 @@ import type { QueryClient } from '@tanstack/react-query'
 import * as authApi from '../services/authApi'
 import * as playerApi from '../services/playerApi'
 import * as umpireApi from '../services/umpireApi'
+import * as groundOwnerApi from '../services/groundOwnerApi'
+import { fetchMyStaffMemberships } from '../services/staffApi'
 import api from '../services/api'
+import { useSelectedGroundStore } from './selectedGroundStore'
+import { useStaffGroundStore } from './staffGroundStore'
+import { useStaffCanteenStore } from './staffCanteenStore'
 import { User, Player, MfaStatus, UmpireApproval } from '../types'
 
 const DEFAULT_MFA: MfaStatus = { enrolled: false, required: false, verified: false }
@@ -24,6 +29,35 @@ async function resolveUmpireApproval(user: User | null): Promise<UmpireApproval>
   }
 }
 
+// GROUND_OWNER is a `ground_users` membership, not a `users.role` — the only
+// reliable client check is "does this account own at least one ground."
+// Resolved before `status` flips to 'authenticated' so the root router picks
+// the right experience on the first render. Skipped for Umpire accounts
+// (Umpire routing wins) to avoid an extra request they never need.
+async function resolveGroundOwnership(user: User | null): Promise<boolean> {
+  if (!user || isUmpireAccount(user)) return false
+  try {
+    const grounds = await groundOwnerApi.fetchMyGrounds()
+    return grounds.length > 0
+  } catch {
+    return false
+  }
+}
+
+// GROUND_ADMIN / CANTEEN_STAFF is a `ground_users` membership, not a
+// `users.role` — resolved the same way as ground ownership. A disabled
+// membership is already filtered server-side, so an empty list means "no
+// active staff access." Skipped for Umpires (they outrank Staff in routing).
+async function resolveStaffRole(user: User | null): Promise<boolean> {
+  if (!user || isUmpireAccount(user)) return false
+  try {
+    const memberships = await fetchMyStaffMemberships()
+    return memberships.length > 0
+  } catch {
+    return false
+  }
+}
+
 // Shared by verifyOtp / loginWithPassword: resolve everything the root
 // router needs, THEN flip status to 'authenticated' in one set() so the
 // first authenticated render is already the right experience.
@@ -32,7 +66,11 @@ async function applyAuthenticatedUser(
   user: User,
 ): Promise<void> {
   const umpire = isUmpireAccount(user)
-  const umpireApproval = await resolveUmpireApproval(user)
+  const [umpireApproval, isGroundOwner, isStaff] = await Promise.all([
+    resolveUmpireApproval(user),
+    resolveGroundOwnership(user),
+    resolveStaffRole(user),
+  ])
   let player: Player | null = null
   if (user?.role === 'player' && !umpire) {
     try {
@@ -41,7 +79,7 @@ async function applyAuthenticatedUser(
       // Player profile not found yet - not an error
     }
   }
-  set({ user, player, isUmpire: umpire, umpireApproval, status: 'authenticated' })
+  set({ user, player, isUmpire: umpire, umpireApproval, isGroundOwner, isStaff, status: 'authenticated' })
 }
 
 let queryClientInstance: QueryClient | null = null
@@ -63,6 +101,15 @@ interface AuthStore {
   isUmpire: boolean
   umpireApproval: UmpireApproval
   refreshUmpireApproval: () => Promise<UmpireApproval>
+
+  // Ground Owner routing. True when the account owns at least one ground
+  // (resolved during auth). UI/navigation only — backend authorization is
+  // still the security boundary on every /ground-owner route.
+  isGroundOwner: boolean
+
+  // Staff routing. True when the account holds at least one active
+  // GROUND_ADMIN / CANTEEN_STAFF membership. Outranked by Umpire and Owner.
+  isStaff: boolean
 
   // Auth actions
   initialize: () => Promise<void>
@@ -96,6 +143,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   error: null,
   isUmpire: false,
   umpireApproval: null,
+  isGroundOwner: false,
+  isStaff: false,
 
   refreshUmpireApproval: async () => {
     const approval = await resolveUmpireApproval(get().user)
@@ -108,9 +157,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const { user: fetchedUser, mfa: fetchedMfa } = await authApi.fetchMe()
       const umpire = isUmpireAccount(fetchedUser)
 
-      // Resolve umpire approval BEFORE authenticating so the first
-      // rendered screen is the correct one for this account type.
-      const umpireApproval = await resolveUmpireApproval(fetchedUser)
+      // Resolve umpire approval / ground ownership BEFORE authenticating so
+      // the first rendered screen is the correct one for this account type.
+      const [umpireApproval, isGroundOwner, isStaff] = await Promise.all([
+        resolveUmpireApproval(fetchedUser),
+        resolveGroundOwnership(fetchedUser),
+        resolveStaffRole(fetchedUser),
+      ])
       let fetchedPlayer: Player | null = null
       if (fetchedUser?.role === 'player' && !umpire) {
         try {
@@ -126,10 +179,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         mfa: fetchedMfa || DEFAULT_MFA,
         isUmpire: umpire,
         umpireApproval,
+        isGroundOwner,
+        isStaff,
         status: 'authenticated',
       })
     } catch (error) {
-      set({ status: 'unauthenticated', user: null, player: null, isUmpire: false, umpireApproval: null })
+      set({ status: 'unauthenticated', user: null, player: null, isUmpire: false, umpireApproval: null, isGroundOwner: false, isStaff: false })
     }
   },
 
@@ -182,12 +237,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       queryClientInstance.clear()
     }
 
+    // Drop the persisted ground selection so the next account never starts on
+    // a previous owner's ground (useActiveGround also reconciles this, but
+    // clearing removes the stale AsyncStorage key too).
+    useSelectedGroundStore.getState().setSelectedGround(null)
+    useStaffGroundStore.getState().setSelectedStaffGround(null)
+    useStaffCanteenStore.getState().setSelectedStaffCanteen(null)
+
     set({
       user: null,
       player: null,
       mfa: DEFAULT_MFA,
       isUmpire: false,
       umpireApproval: null,
+      isGroundOwner: false,
+      isStaff: false,
       status: 'unauthenticated',
       error: null,
     })

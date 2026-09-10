@@ -15,3 +15,20 @@ export function toGroundDateStr(date: Date): string {
 export function groundTodayDateStr(): string {
   return toGroundDateStr(new Date())
 }
+
+/**
+ * Ground-local (Asia/Kolkata) hour-of-day 0–23 for an instant. Used to send
+ * a staff block's `hour` aligned to the backend's ground-local slot grid,
+ * regardless of the device timezone.
+ */
+export function toGroundHour(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: GROUND_TIMEZONE, hour: '2-digit', hourCycle: 'h23' }).format(date),
+  )
+}
+
+export function addGroundDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const next = new Date(Date.UTC(y, m - 1, d + days))
+  return next.toISOString().slice(0, 10)
+}
