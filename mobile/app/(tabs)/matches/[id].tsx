@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   View,
   Text,
@@ -6,8 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  AppState,
-  AppStateStatus,
 } from 'react-native'
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { shareEntity } from '../../../src/lib/shareEntity'
@@ -31,9 +29,8 @@ export default function MatchDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const matchId = parseInt(id || '0', 10)
   const [refreshing, setRefreshing] = useState(false)
-  const [appState, setAppState] = useState<AppStateStatus>('active')
 
-  const { data: match, isLoading, isError, error, refetch } = useMatchDetail(matchId)
+  const { data: match, isLoading, isError, refetch } = useMatchDetail(matchId)
 
   // AI match insight is generated only for FINALIZED matches (server returns
   // INSUFFICIENT_DATA otherwise) — don't even request it before then.
@@ -48,12 +45,6 @@ export default function MatchDetailsScreen() {
   const commentary = useSocketCommentary(matchId && match ? matchId : null, {
     enabled: !!(matchId && match),
   })
-
-  // Handle app background/foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', setAppState)
-    return () => subscription.remove()
-  }, [])
 
   // Focus effect ensures proper cleanup when navigating away
   useFocusEffect(

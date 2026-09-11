@@ -1,8 +1,31 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
-import * as SecureStore from 'expo-secure-store'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { getSessionCookie, setSessionCookie, deleteSessionCookie } from './sessionStorage'
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'
+// Environment-aware API base URL.
+// - Development build (EXPO_PUBLIC_APP_ENV === 'development'): fall back to a
+//   local dev server when EXPO_PUBLIC_API_URL is not set.
+// - Any other build: EXPO_PUBLIC_API_URL is REQUIRED and must be https://.
+//   A missing or non-https value throws at startup instead of silently
+//   pointing a production app at localhost.
+const APP_ENV = process.env.EXPO_PUBLIC_APP_ENV
+const CONFIGURED_API_URL = process.env.EXPO_PUBLIC_API_URL
+const DEV_FALLBACK_API_URL = 'http://localhost:3000/api'
+const isDevelopmentBuild = APP_ENV === 'development'
+
+function resolveApiUrl(): string {
+  if (CONFIGURED_API_URL) {
+    if (!isDevelopmentBuild && !CONFIGURED_API_URL.startsWith('https://')) {
+      throw new Error(
+        '[LOC] EXPO_PUBLIC_API_URL must be an https:// URL in non-development builds'
+      )
+    }
+    return CONFIGURED_API_URL
+  }
+  if (isDevelopmentBuild) return DEV_FALLBACK_API_URL
+  throw new Error('[LOC] EXPO_PUBLIC_API_URL is required for non-development builds')
+}
+
+export const API_URL = resolveApiUrl()
 const COOKIE_STORAGE_KEY = 'loc_session_cookie'
 
 class ApiClient {
@@ -24,27 +47,12 @@ class ApiClient {
     // Request interceptor: add session cookie if available
     this.instance.interceptors.request.use(async (config) => {
       try {
-        const cookieHeader = await AsyncStorage.getItem(COOKIE_STORAGE_KEY)
+        const cookieHeader = await getSessionCookie(COOKIE_STORAGE_KEY)
         if (cookieHeader) {
           config.headers.Cookie = cookieHeader
-          // TEMPORARY DEBUG
-          if (config.url?.includes('/matches/home')) {
-            console.log('[LOC HOME AUTH]')
-            console.log('AUTH TOKEN PRESENT: true')
-          }
-        } else {
-          // TEMPORARY DEBUG
-          if (config.url?.includes('/matches/home')) {
-            console.log('[LOC HOME AUTH]')
-            console.log('AUTH TOKEN PRESENT: false')
-          }
         }
-      } catch (error) {
+      } catch {
         // Silent fail - cookie not available yet
-        if (config.url?.includes('/matches/home')) {
-          console.log('[LOC HOME AUTH]')
-          console.log('AUTH TOKEN PRESENT: false (error retrieving)')
-        }
       }
       return config
     })
@@ -61,15 +69,15 @@ class ApiClient {
           const [, cookieVal = ''] = sessionCookie.split('=')
           if (cookieVal) {
             try {
-              await AsyncStorage.setItem(COOKIE_STORAGE_KEY, sessionCookie)
-            } catch (error) {
+              await setSessionCookie(COOKIE_STORAGE_KEY, sessionCookie)
+            } catch {
               // Silent fail - continue without persisting cookie
             }
           } else {
             // A cleared cookie (`loc_session=; Expires=1970` from /auth/logout)
             // must not be persisted as a live session.
             try {
-              await AsyncStorage.removeItem(COOKIE_STORAGE_KEY)
+              await deleteSessionCookie(COOKIE_STORAGE_KEY)
             } catch {
               // Silent fail
             }
@@ -81,7 +89,7 @@ class ApiClient {
         // Handle specific error cases
         if (error.response?.status === 401) {
           // Unauthorized - clear stored session
-          AsyncStorage.removeItem(COOKIE_STORAGE_KEY).catch(() => {
+          deleteSessionCookie(COOKIE_STORAGE_KEY).catch(() => {
             // Silent fail - session cleanup
           })
         }
@@ -92,8 +100,8 @@ class ApiClient {
 
   async clearSession() {
     try {
-      await AsyncStorage.removeItem(COOKIE_STORAGE_KEY)
-    } catch (error) {
+      await deleteSessionCookie(COOKIE_STORAGE_KEY)
+    } catch {
       // Silent fail - logout proceeding anyway
     }
   }

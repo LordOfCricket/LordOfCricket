@@ -10,7 +10,7 @@ const queryClient = new QueryClient()
 initializeAuthStore(queryClient)
 
 export default function RootLayout() {
-  const { initialize, status, isUmpire, isGroundOwner, isStaff } = useAuthStore()
+  const { initialize, status, isSuperAdmin, isUmpire, isGroundOwner, isStaff } = useAuthStore()
 
   useEffect(() => {
     async function setup() {
@@ -21,7 +21,7 @@ export default function RootLayout() {
       }
     }
     setup()
-  }, [])
+  }, [initialize])
 
   if (status === 'loading') {
     return null
@@ -32,11 +32,12 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          animationEnabled: false,
         }}
       >
         {status === 'unauthenticated' ? (
           <Stack.Screen name="(auth)" />
+        ) : isSuperAdmin ? (
+          <Stack.Screen name="(admin)" />
         ) : isUmpire ? (
           <Stack.Screen name="(umpire)" />
         ) : isGroundOwner ? (

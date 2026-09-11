@@ -57,7 +57,7 @@ export default function OtpVerifyScreen() {
         </TouchableOpacity>
 
         <Text style={styles.title}>Verify OTP</Text>
-        <Text style={styles.subtitle}>We've sent an OTP to {identifier}</Text>
+        <Text style={styles.subtitle}>We{"'"}ve sent an OTP to {identifier}</Text>
 
         {/* DEVELOPMENT-ONLY: Show OTP code for testing */}
         {getDevOtpCode() && (
@@ -102,7 +102,7 @@ export default function OtpVerifyScreen() {
         </View>
 
         <View style={styles.helpSection}>
-          <Text style={styles.helpText}>Didn't receive the OTP?</Text>
+          <Text style={styles.helpText}>Didn{"'"}t receive the OTP?</Text>
           <TouchableOpacity onPress={handleBackToLogin} disabled={loading}>
             <Text style={styles.resendLink}>Request new OTP</Text>
           </TouchableOpacity>

@@ -22,7 +22,7 @@ export default function TeamsScreen() {
   const [searchQuery, setSearchQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
 
-  const { data, isLoading, isError, error, refetch } = useDiscoverTeams(searchQuery || undefined, 50, 0)
+  const { data, isLoading, isError, refetch } = useDiscoverTeams(searchQuery || undefined, 50, 0)
 
   const handleRefresh = async () => {
     setRefreshing(true)

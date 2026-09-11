@@ -31,13 +31,9 @@ export default function NotificationsScreen() {
   const markAllReadMutation = useMarkAllNotificationsRead()
 
   React.useEffect(() => {
-    if (notificationsQuery.data?.notifications) {
-      if (offset === 0) {
-        setAllNotifications(notificationsQuery.data.notifications)
-      } else {
-        setAllNotifications((prev) => [...prev, ...notificationsQuery.data.notifications])
-      }
-    }
+    const page = notificationsQuery.data?.notifications
+    if (!page) return
+    setAllNotifications((prev) => (offset === 0 ? page : [...prev, ...page]))
   }, [notificationsQuery.data?.notifications, offset])
 
   const handleRefresh = React.useCallback(async () => {

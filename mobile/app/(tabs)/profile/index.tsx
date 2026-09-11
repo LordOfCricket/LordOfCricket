@@ -49,7 +49,9 @@ import {
   findBestBowlingPerformance,
 } from "../../../src/utils/statsRange"
 
-const isDevelopment = process.env.EXPO_PUBLIC_APP_ENV === "development"
+// Fail closed: a release binary always has __DEV__ === false, so a mis-set
+// EXPO_PUBLIC_APP_ENV can never surface dev-only diagnostics in production.
+const isDevelopment = __DEV__ && process.env.EXPO_PUBLIC_APP_ENV === "development"
 
 interface StatItem {
   label: string
@@ -756,7 +758,7 @@ export default function ProfileScreen() {
         ) : myTeams.length === 0 ? (
           <View style={styles.emptyStateSmall}>
             <MaterialCommunityIcons name="account-group-outline" size={20} color={Colors.textTertiary} />
-            <Text style={styles.emptySubtext}>You're not part of any team yet.</Text>
+            <Text style={styles.emptySubtext}>You{"'"}re not part of any team yet.</Text>
           </View>
         ) : (
           <>

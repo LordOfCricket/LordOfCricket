@@ -45,6 +45,7 @@ import { matchAIInsightRoutes, playerAIInsightRoutes, teamAIInsightRoutes } from
 import { playerAnalyticsRoutes, teamAnalyticsRoutes, matchAnalyticsRoutes, tournamentAnalyticsRoutes } from './analytics.routes.js'
 import adminRoutes from './admin.routes.js'
 import adminAmenityCatalogRoutes from './adminAmenityCatalog.routes.js'
+import auctionRoutes, { groundAuctionRouter } from './auction.routes.js'
 
 const router = Router()
 
@@ -202,5 +203,11 @@ router.use('/ground-owner-requests', groundOwnerRequestRoutes)
 // Nominatim, no paid geocoding service). Its own top-level route, not under
 // /grounds, since it geocodes an arbitrary place name, not a ground.
 router.use('/geocode', geocodeRoutes)
+
+// Auction — Phase A. Two mount points: the ground-scoped router creates/lists
+// an auction for a ground the caller owns, the auction-scoped router acts on
+// one existing auction (which resolves its own ground from the auction row).
+router.use('/grounds/:publicGroundId/auctions', groundAuctionRouter)
+router.use('/auctions', auctionRoutes)
 
 export default router

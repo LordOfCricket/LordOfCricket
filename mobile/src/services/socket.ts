@@ -13,7 +13,7 @@ interface SocketCommentaryPayload {
   inningsId: number
   inningsVersion: number
   mode: 'append' | 'resync'
-  entries: Array<{
+  entries: {
     id: number
     type: string
     ballLabel: string
@@ -23,7 +23,7 @@ interface SocketCommentaryPayload {
     deliveryId: number | null
     eventId: number | null
     sequence: number
-  }>
+  }[]
 }
 
 interface SocketMatchError {
@@ -61,7 +61,7 @@ class SocketService {
   private joinedMatches: Set<number> = new Set()
   private connectionAttempts = 0
   private readonly maxReconnectAttempts = 5
-  private bookingUpdateListeners: Array<(data: any) => void> = []
+  private bookingUpdateListeners: ((data: any) => void)[] = []
   private bookingListenerRegistered = false
 
   /**

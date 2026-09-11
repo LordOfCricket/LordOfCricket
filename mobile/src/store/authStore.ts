@@ -44,6 +44,13 @@ async function resolveGroundOwnership(user: User | null): Promise<boolean> {
   }
 }
 
+// SUPER_ADMIN is users.role 'staff' plus a resolved staff_roles.name of
+// 'super_admin' — both already on the /auth/me user object, so no extra
+// request.
+function resolveSuperAdmin(user: User | null): boolean {
+  return user?.role === 'staff' && user?.staff_role === 'super_admin'
+}
+
 // GROUND_ADMIN / CANTEEN_STAFF is a `ground_users` membership, not a
 // `users.role` — resolved the same way as ground ownership. A disabled
 // membership is already filtered server-side, so an empty list means "no
@@ -79,7 +86,7 @@ async function applyAuthenticatedUser(
       // Player profile not found yet - not an error
     }
   }
-  set({ user, player, isUmpire: umpire, umpireApproval, isGroundOwner, isStaff, status: 'authenticated' })
+  set({ user, player, isUmpire: umpire, umpireApproval, isGroundOwner, isStaff, isSuperAdmin: resolveSuperAdmin(user), status: 'authenticated' })
 }
 
 let queryClientInstance: QueryClient | null = null
@@ -110,6 +117,12 @@ interface AuthStore {
   // Staff routing. True when the account holds at least one active
   // GROUND_ADMIN / CANTEEN_STAFF membership. Outranked by Umpire and Owner.
   isStaff: boolean
+
+  // Super Admin routing. users.role 'staff' + staff_role 'super_admin',
+  // read straight from the /auth/me user object. Wins over every other
+  // role at the root. Backend authorization is still the boundary on every
+  // /admin route.
+  isSuperAdmin: boolean
 
   // Auth actions
   initialize: () => Promise<void>
@@ -145,6 +158,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   umpireApproval: null,
   isGroundOwner: false,
   isStaff: false,
+  isSuperAdmin: false,
 
   refreshUmpireApproval: async () => {
     const approval = await resolveUmpireApproval(get().user)
@@ -181,10 +195,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         umpireApproval,
         isGroundOwner,
         isStaff,
+        isSuperAdmin: resolveSuperAdmin(fetchedUser),
         status: 'authenticated',
       })
-    } catch (error) {
-      set({ status: 'unauthenticated', user: null, player: null, isUmpire: false, umpireApproval: null, isGroundOwner: false, isStaff: false })
+    } catch {
+      set({ status: 'unauthenticated', user: null, player: null, isUmpire: false, umpireApproval: null, isGroundOwner: false, isStaff: false, isSuperAdmin: false })
     }
   },
 
@@ -252,6 +267,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       umpireApproval: null,
       isGroundOwner: false,
       isStaff: false,
+      isSuperAdmin: false,
       status: 'unauthenticated',
       error: null,
     })

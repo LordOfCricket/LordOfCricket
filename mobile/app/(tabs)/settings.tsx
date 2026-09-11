@@ -16,7 +16,6 @@ import { useRouter } from 'expo-router'
 import Constants from 'expo-constants'
 import { useAuth } from '../../src/hooks/useAuth'
 import { Colors, Spacing, Typography } from '../../src/constants/colors'
-import { LoadingScreen } from '../../src/components/LoadingScreen'
 import { ErrorScreen } from '../../src/components/ErrorScreen'
 
 const appVersion = Constants.expoConfig?.version || '1.0.0'
@@ -102,7 +101,7 @@ export default function SettingsScreen() {
           try {
             await logout()
             router.replace('/')
-          } catch (err) {
+          } catch {
             Alert.alert('Error', 'Failed to log out. Please try again.')
           }
         },

@@ -4,6 +4,9 @@ export interface User {
   email: string
   phone?: string
   role: 'user' | 'player' | 'staff' | 'ground_owner' | 'super_admin'
+  // Only meaningful when role === 'staff'. Resolved from staff_roles.name on
+  // /auth/me; Super Admin === role 'staff' + staff_role 'super_admin'.
+  staff_role?: 'super_admin' | 'admin' | 'canteen_staff' | null
   // Only meaningful when role === 'player'. An Umpire is role 'player' +
   // player_type 'umpire' + an approved umpire_requests row.
   player_type?: 'team_player' | 'umpire' | null
@@ -1177,7 +1180,7 @@ export interface SocketMatchStatePayload {
       wickets: number
       economy: number | null
     } | null
-    currentOver: Array<{
+    currentOver: {
       id: number
       over: number
       ball: number
@@ -1190,8 +1193,8 @@ export interface SocketMatchStatePayload {
       voided: boolean
       isDeadBall: boolean
       wicket: boolean
-    }>
-    recentDeliveries: Array<{
+    }[]
+    recentDeliveries: {
       id: number
       over: number
       ball: number
@@ -1204,6 +1207,6 @@ export interface SocketMatchStatePayload {
       voided: boolean
       isDeadBall: boolean
       wicket: boolean
-    }>
+    }[]
   } | null
 }

@@ -1,4 +1,4 @@
-﻿// Utility functions for displaying player data
+// Utility functions for displaying player data
 import { PlayingRole, BattingStyle, BowlingStyle } from '../domain/playerEnums'
 
 /**

@@ -39,7 +39,7 @@ export default function MatchesScreen() {
   }
 
   const currentQuery = getCurrentQuery()
-  const { data, isLoading, isError, error, refetch } = currentQuery
+  const { data, isLoading, isError, refetch } = currentQuery
 
   const handleRefresh = async () => {
     setRefreshing(true)

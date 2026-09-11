@@ -6,11 +6,9 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  Alert,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useAuth } from '../../../../src/hooks/useAuth'
 import { useOpenProposalsForGround } from '../../../../src/hooks/useMatchProposals'
 import { Colors, Spacing, Typography } from '../../../../src/constants/colors'
 import { LoadingScreen } from '../../../../src/components/LoadingScreen'
@@ -22,10 +20,9 @@ export default function ProposalsScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { user } = useAuth()
   const [refreshing, setRefreshing] = useState(false)
 
-  const { data, isLoading, isError, error, refetch } = useOpenProposalsForGround(id || '')
+  const { data, isLoading, isError, refetch } = useOpenProposalsForGround(id || '')
 
   const handleRefresh = async () => {
     setRefreshing(true)

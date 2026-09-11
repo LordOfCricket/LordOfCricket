@@ -459,7 +459,7 @@ export default function PublicPlayerProfileScreen() {
         {statsQuery.data && !hasEverPlayed && !statsQuery.error && (
           <View style={styles.section}>
             <View style={styles.emptyStateSmall}>
-              <Text style={styles.emptySubtext}>No statistics yet — this player hasn't played a finalized match.</Text>
+              <Text style={styles.emptySubtext}>No statistics yet — this player hasn{"'"}t played a finalized match.</Text>
             </View>
           </View>
         )}

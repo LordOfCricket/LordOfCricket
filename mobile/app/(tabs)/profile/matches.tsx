@@ -171,7 +171,7 @@ export default function MatchHistoryScreen() {
                 </TouchableOpacity>
               )}
               {showEndOfHistory && (
-                <Text style={styles.endOfHistoryText}>You've reached the end of your match history.</Text>
+                <Text style={styles.endOfHistoryText}>You{"'"}ve reached the end of your match history.</Text>
               )}
             </>
           }

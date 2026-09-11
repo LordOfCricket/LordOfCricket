@@ -5,7 +5,10 @@ import { User, AuthResponse } from '../types'
 // This should NEVER be enabled in production
 // Used for testing without depending on SMS service
 const DEV_OTP_CODE = '123456'
-const isDevelopment = process.env.EXPO_PUBLIC_APP_ENV === 'development'
+// Fail closed: the OTP bypass activates ONLY in a debug build (__DEV__) whose
+// env is explicitly 'development'. A release binary always has __DEV__ === false,
+// so a mis-set EXPO_PUBLIC_APP_ENV can never enable the bypass in production.
+const isDevelopment = __DEV__ && process.env.EXPO_PUBLIC_APP_ENV === 'development'
 
 // Entering the dev OTP code logs into a REAL, already-seeded account via
 // the existing /auth/login-password endpoint — a real signed session, a

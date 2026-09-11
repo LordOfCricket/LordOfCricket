@@ -104,7 +104,6 @@ export function useSocketCommentary(
     // Initial load
     refetchFirstPage()
 
-    let hasConnectedBefore = false
     const onCommentary: CommentaryListener = (payload) => {
       if (cancelled) return
 
@@ -151,7 +150,6 @@ export function useSocketCommentary(
       })
       .then(() => {
         if (!cancelled) {
-          hasConnectedBefore = true
           setState((prev) => ({
             ...prev,
             connected: true,

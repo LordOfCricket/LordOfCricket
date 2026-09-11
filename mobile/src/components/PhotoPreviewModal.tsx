@@ -28,20 +28,17 @@ export function PhotoPreviewModal({
   onChooseAnother,
 }: PhotoPreviewModalProps) {
   const [isUploading, setIsUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const handleUpload = async () => {
     if (!imageUri) return
 
     setIsUploading(true)
-    setUploadError(null)
 
     try {
       await onUpload(imageUri)
     } catch (error: any) {
       const message =
         error.message || 'Failed to upload photo. Please try again.'
-      setUploadError(message)
       Alert.alert('Upload Failed', message)
     } finally {
       setIsUploading(false)

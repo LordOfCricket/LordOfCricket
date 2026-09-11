@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as playerApi from '../services/playerApi'
-import { Player, EditablePlayerFields, PlayerStats } from '../types'
+import { Player, EditablePlayerFields } from '../types'
 import { playerKeys } from './playerKeys'
 
 /**

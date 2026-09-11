@@ -77,7 +77,7 @@ export default function RegisterVerifyScreen() {
 
         <Text style={styles.title}>Verify Your Details</Text>
         <Text style={styles.subtitle}>
-          We've sent a code to {params.email} and {params.phone}
+          We{"'"}ve sent a code to {params.email} and {params.phone}
         </Text>
 
         <View style={styles.form}>

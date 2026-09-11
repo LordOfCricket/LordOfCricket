@@ -40,30 +40,27 @@ export default function PlayersDirectoryScreen() {
 
   const query = usePlayerSearch(debouncedQuery, PAGE_SIZE, offset)
 
-  // A new (debounced) search term always starts a fresh page 0 — mirrors
-  // Match History's exact reset-on-new-query pattern.
-  useEffect(() => {
+  // A new (debounced) search term always starts a fresh page 0 — adjust
+  // state during render (React's documented "reset on prop change" pattern)
+  // rather than in an effect.
+  const [queryForPage, setQueryForPage] = useState(debouncedQuery)
+  if (debouncedQuery !== queryForPage) {
+    setQueryForPage(debouncedQuery)
     setOffset(0)
     setAllPlayers([])
-  }, [debouncedQuery])
+  }
 
   useEffect(() => {
-    if (query.data?.items) {
-      const players = query.data.items.map((i) => i.player)
-      if (offset === 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setAllPlayers(players)
-      } else {
-        // Dedupe by publicPlayerId — same guard as Match History's
-        // pagination, in case a background refetch re-fires this effect at
-        // an unchanged offset.
-        setAllPlayers((prev) => {
-          const existingIds = new Set(prev.map((p) => p.publicPlayerId))
-          const newPlayers = players.filter((p) => !existingIds.has(p.publicPlayerId))
-          return newPlayers.length > 0 ? [...prev, ...newPlayers] : prev
-        })
-      }
-    }
+    if (!query.data?.items) return
+    const players = query.data.items.map((i) => i.player)
+    setAllPlayers((prev) => {
+      if (offset === 0) return players
+      // Dedupe by publicPlayerId — guards against a background refetch
+      // re-firing this effect at an unchanged offset.
+      const existingIds = new Set(prev.map((p) => p.publicPlayerId))
+      const newPlayers = players.filter((p) => !existingIds.has(p.publicPlayerId))
+      return newPlayers.length > 0 ? [...prev, ...newPlayers] : prev
+    })
   }, [query.data, offset])
 
   const handleRefresh = async () => {
@@ -216,7 +213,7 @@ export default function PlayersDirectoryScreen() {
                   <Text style={styles.loadMoreText}>Load More Players</Text>
                 </TouchableOpacity>
               )}
-              {showEndOfList && <Text style={styles.endOfListText}>That's everyone.</Text>}
+              {showEndOfList && <Text style={styles.endOfListText}>That{"'"}s everyone.</Text>}
             </>
           }
         />

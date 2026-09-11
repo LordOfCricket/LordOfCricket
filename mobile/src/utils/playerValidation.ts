@@ -1,4 +1,4 @@
-﻿// Player profile validation utilities
+// Player profile validation utilities
 // Rules extracted from server/src/controllers/player.controller.js
 // All validation mirrors backend rules for consistency
 

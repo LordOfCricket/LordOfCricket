@@ -9,6 +9,13 @@ interface UseLiveMatchResult {
   lastUpdatedAt: number | null
 }
 
+const INACTIVE_RESULT: UseLiveMatchResult = {
+  data: null,
+  connected: false,
+  error: null,
+  lastUpdatedAt: null,
+}
+
 /**
  * Phase 3B — Subscribe to real-time match state updates.
  * Follows web app pattern: one connection per hook mount, state tagged with matchId.
@@ -23,10 +30,9 @@ export function useLiveMatch(matchId: number | null, { enabled = true } = {}): U
   })
 
   useEffect(() => {
-    if (!enabled || !matchId) {
-      setState({ data: null, connected: false, error: null, lastUpdatedAt: null })
-      return
-    }
+    // No subscription while inactive — the hook returns INACTIVE_RESULT
+    // directly below, so nothing needs to be written to state here.
+    if (!enabled || !matchId) return
 
     let cancelled = false
 
@@ -76,5 +82,6 @@ export function useLiveMatch(matchId: number | null, { enabled = true } = {}): U
     }
   }, [matchId, enabled])
 
+  if (!enabled || !matchId) return INACTIVE_RESULT
   return state
 }

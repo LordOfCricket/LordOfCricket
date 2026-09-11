@@ -14,8 +14,6 @@ import { randomUUID } from 'expo-crypto'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useAvailability, useCreateBooking } from '../../../src/hooks/useBooking'
 import { Colors, Spacing, Typography } from '../../../src/constants/colors'
-import { LoadingScreen } from '../../../src/components/LoadingScreen'
-import { ErrorScreen } from '../../../src/components/ErrorScreen'
 import { toGroundDateStr } from '../../../src/utils/groundTime'
 
 type Step = 'date' | 'slot' | 'details' | 'confirm'

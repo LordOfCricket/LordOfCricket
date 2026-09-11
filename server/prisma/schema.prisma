@@ -277,6 +277,7 @@ model grounds {
   ground_photos         ground_photos[]
   ground_users          ground_users[]
   matches               matches[]
+  auctions              auctions[]
 
   @@index([status], map: "idx_grounds_status")
 }
@@ -615,6 +616,7 @@ model players {
   teams                    teams?                     @relation(fields: [team_id], references: [id], onUpdate: NoAction)
   users                    users?                     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   tournament_squad_players tournament_squad_players[]
+  auction_lots             auction_lots[]
 
   @@index([team_id], map: "idx_players_team_id")
 }
@@ -668,6 +670,8 @@ model teams {
   tournament_fixtures_tournament_fixtures_team_b_idToteams                    tournament_fixtures[] @relation("tournament_fixtures_team_b_idToteams")
   tournament_teams                                                            tournament_teams[]
   tournaments                                                                 tournaments[]
+  auction_participants                                                        auction_participants[]
+  auction_lots_won                                                            auction_lots[]        @relation("auction_lots_won")
 }
 
 model today_menu {
@@ -952,6 +956,8 @@ model users {
   umpire_requests_umpire_requests_user_idTousers                          umpire_requests[]               @relation("umpire_requests_user_idTousers")
   umpire_weekly_availability                                              umpire_weekly_availability[]
   staff_roles                                                             staff_roles?                    @relation(fields: [staff_role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  auctions_created                                                        auctions[]
+  auction_audit_logs                                                      auction_audit_logs[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1071,4 +1077,112 @@ model ground_owner_requests {
   users              users?              @relation(fields: [reviewed_by], references: [id], onUpdate: NoAction)
 
   @@index([status, created_at(sort: Desc)], map: "idx_ground_owner_requests_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auctions {
+  id              String                  @id @default(cuid()) @db.VarChar(30)
+  ground_id       Int
+  created_by      Int
+  state           String                  @default("DRAFT") @db.VarChar(20)
+  timer_seconds   Int                     @default(120)
+  started_at      DateTime?               @db.Timestamptz(6)
+  ended_at        DateTime?               @db.Timestamptz(6)
+  created_at      DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime                @default(now()) @db.Timestamptz(6)
+
+  grounds         grounds                 @relation(fields: [ground_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  creator         users                   @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  participants    auction_participants[]
+  lots            auction_lots[]
+  events          auction_events[]
+  audit_logs      auction_audit_logs[]
+
+  @@index([ground_id, state], map: "idx_auctions_ground_state")
+  @@index([state, created_at(sort: Desc)], map: "idx_auctions_state")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auction_participants {
+  id              String        @id @default(cuid()) @db.VarChar(30)
+  auction_id      String        @db.VarChar(30)
+  team_id         Int
+  initial_purse   Decimal       @db.Decimal(12, 2)
+  current_spent   Decimal       @default(0) @db.Decimal(12, 2)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+
+  auction         auctions      @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  team            teams         @relation(fields: [team_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bids            auction_bids[]
+
+  @@unique([auction_id, team_id])
+  @@index([auction_id], map: "idx_auction_participants_auction")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auction_lots {
+  id              String        @id @default(cuid()) @db.VarChar(30)
+  auction_id      String        @db.VarChar(30)
+  player_id       Int
+  base_price      Decimal       @db.Decimal(12, 2)
+  lot_number      Int
+  state           String        @default("AVAILABLE") @db.VarChar(20)
+  winning_team_id Int?
+  final_price     Decimal?      @db.Decimal(12, 2)
+  current_bid     Decimal?      @db.Decimal(12, 2)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+
+  auction         auctions      @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  player          players       @relation(fields: [player_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  winning_team    teams?        @relation("auction_lots_won", fields: [winning_team_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bids            auction_bids[]
+
+  @@unique([auction_id, player_id])
+  @@unique([auction_id, lot_number])
+  @@index([auction_id, state], map: "idx_auction_lots_state")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auction_bids {
+  id              String                @id @default(cuid()) @db.VarChar(30)
+  lot_id          String                @db.VarChar(30)
+  participant_id  String                @db.VarChar(30)
+  amount          Decimal               @db.Decimal(12, 2)
+  is_winning      Boolean               @default(false)
+  created_at      DateTime              @default(now()) @db.Timestamptz(6)
+
+  lot             auction_lots          @relation(fields: [lot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  participant     auction_participants  @relation(fields: [participant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([lot_id, created_at(sort: Desc)], map: "idx_auction_bids_lot")
+  @@index([participant_id], map: "idx_auction_bids_participant")
+}
+
+model auction_events {
+  id              String    @id @default(cuid()) @db.VarChar(30)
+  auction_id      String    @db.VarChar(30)
+  event_type      String    @db.VarChar(100)
+  metadata        Json?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  auction         auctions  @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auction_id, created_at(sort: Desc)], map: "idx_auction_events_auction")
+}
+
+model auction_audit_logs {
+  id              String    @id @default(cuid()) @db.VarChar(30)
+  auction_id      String    @db.VarChar(30)
+  actor_id        Int
+  action          String    @db.VarChar(100)
+  target_type     String?   @db.VarChar(50)
+  target_id       String?   @db.VarChar(100)
+  metadata        Json?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  auction         auctions  @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  actor           users     @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([auction_id, created_at(sort: Desc)], map: "idx_auction_audit_logs_auction")
 }

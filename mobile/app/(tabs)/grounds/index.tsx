@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import * as Location from 'expo-location'
@@ -54,7 +53,7 @@ export default function GroundsScreen() {
       const currentLocation = await Location.getCurrentPositionAsync({})
       setLocation(currentLocation)
       setLocationError(null)
-    } catch (err) {
+    } catch {
       setLocationError('Could not get location')
     } finally {
       setLocationLoading(false)

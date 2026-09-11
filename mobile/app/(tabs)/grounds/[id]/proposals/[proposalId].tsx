@@ -28,6 +28,10 @@ export default function ProposalDetailScreen() {
   const cancelMutation = useCancelMatchProposal()
 
   const proposal = detailData?.proposal
+  // Snapshot "now" once so render stays pure; a proposal won't expire
+  // within a single view of this screen, and the accept action is
+  // re-validated server-side regardless.
+  const [now] = useState(() => Date.now())
 
   const handleAccept = () => {
     const player = playerQuery.data
@@ -125,7 +129,7 @@ export default function ProposalDetailScreen() {
     )
   }
 
-  const isExpired = new Date(proposal.proposalExpiresAt).getTime() < Date.now()
+  const isExpired = new Date(proposal.proposalExpiresAt).getTime() < now
   const canAccept = proposal.status === 'OPEN' && !isExpired
   const canCancel = proposal.status === 'OPEN'
 

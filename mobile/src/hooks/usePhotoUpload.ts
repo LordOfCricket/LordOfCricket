@@ -83,7 +83,7 @@ export function usePhotoUpload() {
           previewError: null,
         }))
       }
-    } catch (error: any) {
+    } catch {
       Alert.alert('Camera Error', 'Failed to open camera. Please try again.')
     }
   }, [requestCameraPermission])
@@ -111,10 +111,21 @@ export function usePhotoUpload() {
           previewError: null,
         }))
       }
-    } catch (error: any) {
+    } catch {
       Alert.alert('Gallery Error', 'Failed to open photo library. Please try again.')
     }
   }, [requestPhotoLibraryPermission])
+
+  const resetState = useCallback(() => {
+    setState({
+      selectedImageUri: null,
+      selectedImageMimeType: null,
+      selectedImageSize: null,
+      isPermissionPending: false,
+      showPreview: false,
+      previewError: null,
+    })
+  }, [])
 
   const handleUpload = useCallback(
     async (imageUri: string) => {
@@ -144,19 +155,8 @@ export function usePhotoUpload() {
         throw new Error(message)
       }
     },
-    [state.selectedImageMimeType, state.selectedImageSize, uploadMutation]
+    [state.selectedImageMimeType, state.selectedImageSize, uploadMutation, resetState]
   )
-
-  const resetState = useCallback(() => {
-    setState({
-      selectedImageUri: null,
-      selectedImageMimeType: null,
-      selectedImageSize: null,
-      isPermissionPending: false,
-      showPreview: false,
-      previewError: null,
-    })
-  }, [])
 
   const closePreview = useCallback(() => {
     setState((prev) => ({ ...prev, showPreview: false }))
