@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSeoMeta } from '../../hooks/useSeoMeta.js'
-import { MapPin, ChevronDown } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 import Navbar from '../../components/home/Navbar.jsx'
 import SiteFooter from '../../components/home/SiteFooter.jsx'
 import ScrollReveal from '../../components/common/ScrollReveal.jsx'
@@ -37,7 +37,7 @@ function ErrorState({ message, onRetry }) {
   )
 }
 
-function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, onFacilitiesChange, grounds, isSearchMode, searchCoords, onBackToAll, radiusKm, onRadiusCommit }) {
+function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, onFacilitiesChange, grounds, isSearchMode, searchCoords, onBackToAll, radiusKm, onRadiusCommit, onResolved }) {
   return (
     <aside className="w-full lg:w-80 lg:fixed lg:left-0 lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-loc-border flex-shrink-0">
       <div className="sticky top-32 space-y-8 px-6 lg:px-10 pt-32 lg:pb-20">
@@ -45,7 +45,7 @@ function LeftSidebar({ cities, selectedCity, onCitySelect, selectedFacilities, o
         {!isSearchMode && (
           <div className="space-y-3">
             <h3 className="text-sm font-bold uppercase text-loc-green">Search Nearby</h3>
-            <LandmarkSearch compact onResolved={({ latitude, longitude, label }) => {}} />
+            <LandmarkSearch compact onResolved={onResolved} />
           </div>
         )}
 
@@ -201,6 +201,7 @@ export default function GroundsPage() {
             onBackToAll={handleBackToAll}
             radiusKm={radiusKm}
             onRadiusCommit={handleRadiusCommit}
+            onResolved={handleResolved}
           />
 
           {/* Main Content */}

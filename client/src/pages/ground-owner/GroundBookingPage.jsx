@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import { fetchGroundBookings } from '../../services/groundOwnerApi.js'
@@ -14,41 +14,40 @@ export default function GroundBookingPage() {
   const [upcomingCount, setUpcomingCount] = useState(0)
   const [todayCount, setTodayCount] = useState(0)
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return Promise.all([
+          fetchGroundProfile(publicGroundId),
+          fetchGroundBookings(publicGroundId, { status: 'CONFIRMED' }),
+        ])
+      })
+      .then(([groundData, bookings]) => {
+        setGround(groundData)
+
+        const now = new Date()
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+        const todayBookings = bookings.filter(b => {
+          const bookingDate = new Date(b.startTime)
+          const bookingDay = new Date(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate())
+          return bookingDay.getTime() === today.getTime()
+        })
+
+        const upcoming = bookings.filter(b => new Date(b.startTime).getTime() > now.getTime())
+
+        setTodayCount(todayBookings.length)
+        setUpcomingCount(upcoming.length)
+      })
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load booking data'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      const bookings = await fetchGroundBookings(publicGroundId, { status: 'CONFIRMED' })
-
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-
-      const todayBookings = bookings.filter(b => {
-        const bookingDate = new Date(b.startTime)
-        const bookingDay = new Date(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate())
-        return bookingDay.getTime() === today.getTime()
-      })
-
-      const upcoming = bookings.filter(b => new Date(b.startTime).getTime() > now.getTime())
-
-      setTodayCount(todayBookings.length)
-      setUpcomingCount(upcoming.length)
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load booking data')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   if (loading) {
     return (

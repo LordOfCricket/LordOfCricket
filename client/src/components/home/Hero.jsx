@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy } from 'react'
 import { motion } from 'motion/react'
 import GroundGallery from './GroundGallery.jsx'
 import LocMatchPanel from './LocMatchPanel.jsx'
@@ -21,7 +21,6 @@ const HeroScene = lazy(() => import('./hero3d/HeroScene.jsx'))
 const DELAY = { gallery: 0.08, loc: 0.22, india: 0.32 }
 
 export default function Hero({ ground, onViewGallery, onBook }) {
-  const [bookingOpen, setBookingOpen] = useState(false)
   const { showScene, reduceMotion } = useHeroSceneMount()
   const motionProps = (delay) => (reduceMotion ? {} : reveal(delay))
   // Hero is the pointer "source": one listener here drives the

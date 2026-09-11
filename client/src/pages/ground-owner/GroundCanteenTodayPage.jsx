@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import {
@@ -16,54 +16,51 @@ export default function GroundCanteenTodayPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const [ground, setGround] = useState(null)
   const [canteen, setCanteen] = useState(null)
   const [menuItems, setMenuItems] = useState([])
-  const [todaysMenu, setTodaysMenu] = useState(null)
   const [selectedItems, setSelectedItems] = useState([])
+
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
+      })
+      .then((groundData) => {
+        if (groundData.canteens && groundData.canteens.length > 0) {
+          const firstCanteen = groundData.canteens[0]
+          setCanteen(firstCanteen)
+
+          return Promise.all([
+            fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId),
+            fetchTodaysMenuConfig(publicGroundId, firstCanteen.publicCanteenId),
+          ]).then(([items, todayConfig]) => {
+            setMenuItems(items)
+
+            // Phase 11 audit fix — getTodaysMenuConfig actually responds with
+            // { publishedAt, items: [{ id, dailyPrice, available, stock, ... }] }
+            // (canteenMenu.controller.js), not { todayMenuItems: [{ menuItemId }] };
+            // this always evaluated false, so a page reload never showed the
+            // ground's already-published today's-menu selection.
+            if (todayConfig.items) {
+              setSelectedItems(todayConfig.items.map(item => ({
+                menuItemId: item.id,
+                dailyPrice: item.dailyPrice || item.price,
+                available: item.available,
+                stock: item.stock,
+              })))
+            }
+          })
+        }
+      })
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load today\'s menu'))
+      .finally(() => setLoading(false))
+  }, [publicGroundId])
 
   useEffect(() => {
     loadData()
-  }, [publicGroundId])
-
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      if (groundData.canteens && groundData.canteens.length > 0) {
-        const firstCanteen = groundData.canteens[0]
-        setCanteen(firstCanteen)
-
-        const items = await fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId)
-        setMenuItems(items)
-
-        const todayConfig = await fetchTodaysMenuConfig(publicGroundId, firstCanteen.publicCanteenId)
-        setTodaysMenu(todayConfig)
-
-        // Phase 11 audit fix — getTodaysMenuConfig actually responds with
-        // { publishedAt, items: [{ id, dailyPrice, available, stock, ... }] }
-        // (canteenMenu.controller.js), not { todayMenuItems: [{ menuItemId }] };
-        // this always evaluated false, so a page reload never showed the
-        // ground's already-published today's-menu selection.
-        if (todayConfig.items) {
-          setSelectedItems(todayConfig.items.map(item => ({
-            menuItemId: item.id,
-            dailyPrice: item.dailyPrice || item.price,
-            available: item.available,
-            stock: item.stock,
-          })))
-        }
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load today\'s menu')
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [loadData])
 
   function toggleItemSelection(menuItemId) {
     const isSelected = selectedItems.some(item => item.menuItemId === menuItemId)
@@ -226,7 +223,7 @@ export default function GroundCanteenTodayPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {selectedItems.map((item, index) => {
+                {selectedItems.map((item) => {
                   const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
                   return (
                     <div key={item.menuItemId} className="bg-slate-800 rounded-lg p-4 border border-slate-700">

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { useHomeDiscovery } from '../../hooks/useHomeDiscovery.js'
 import ScrollReveal from '../common/ScrollReveal.jsx'
 import { fadeUpSoft } from '../../lib/revealVariants.js'
@@ -44,20 +43,15 @@ function ResultCard({ match }) {
   )
 }
 
-export default function RecentResults({ groundId }) {
+export default function RecentResults() {
   const { matches, loading, error } = useHomeDiscovery()
-  const [recentMatches, setRecentMatches] = useState([])
 
-  useEffect(() => {
-    if (!matches || matches.length === 0) return
-
-    const recent = matches
-      .filter((m) => m.status === 'completed' || m.status === 'finished')
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 10)
-
-    setRecentMatches(recent)
-  }, [matches])
+  const recentMatches = !matches
+    ? []
+    : matches
+        .filter((m) => m.status === 'completed' || m.status === 'finished')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 10)
 
   if (loading) {
     return (

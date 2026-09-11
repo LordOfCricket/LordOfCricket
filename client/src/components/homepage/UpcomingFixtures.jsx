@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react'
 import { useHomeDiscovery } from '../../hooks/useHomeDiscovery.js'
 import ScrollReveal from '../common/ScrollReveal.jsx'
 import { fadeUpSoft } from '../../lib/revealVariants.js'
 
 function FixtureCard({ match }) {
-  const matchDate = new Date(match.createdAt || new Date())
   const timeStr = match.scheduledStartTime || 'TBD'
 
   return (
@@ -33,39 +31,34 @@ function FixtureCard({ match }) {
   )
 }
 
-export default function UpcomingFixtures({ groundId }) {
+export default function UpcomingFixtures() {
   const { matches, loading, error } = useHomeDiscovery()
-  const [todayFixtures, setTodayFixtures] = useState([])
-  const [tomorrowFixtures, setTomorrowFixtures] = useState([])
 
-  useEffect(() => {
-    if (!matches || matches.length === 0) return
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+  const todayEnd = new Date(today)
+  todayEnd.setHours(23, 59, 59, 999)
 
-    const todayEnd = new Date(today)
-    todayEnd.setHours(23, 59, 59, 999)
+  const tomorrowEnd = new Date(tomorrow)
+  tomorrowEnd.setHours(23, 59, 59, 999)
 
-    const tomorrowEnd = new Date(tomorrow)
-    tomorrowEnd.setHours(23, 59, 59, 999)
+  const todayFixtures = !matches
+    ? []
+    : matches.filter((m) => {
+        const matchDate = new Date(m.createdAt || new Date())
+        return matchDate >= today && matchDate <= todayEnd && m.status === 'scheduled'
+      })
 
-    const today_fixtures = matches.filter((m) => {
-      const matchDate = new Date(m.createdAt || new Date())
-      return matchDate >= today && matchDate <= todayEnd && m.status === 'scheduled'
-    })
-
-    const tomorrow_fixtures = matches.filter((m) => {
-      const matchDate = new Date(m.createdAt || new Date())
-      return matchDate >= tomorrow && matchDate <= tomorrowEnd && m.status === 'scheduled'
-    })
-
-    setTodayFixtures(today_fixtures)
-    setTomorrowFixtures(tomorrow_fixtures)
-  }, [matches])
+  const tomorrowFixtures = !matches
+    ? []
+    : matches.filter((m) => {
+        const matchDate = new Date(m.createdAt || new Date())
+        return matchDate >= tomorrow && matchDate <= tomorrowEnd && m.status === 'scheduled'
+      })
 
   if (loading) {
     return (

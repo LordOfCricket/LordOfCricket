@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import {
   fetchGroundPricingSlots,
@@ -36,22 +36,21 @@ export default function GroundPricingPage() {
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({ startTime: '', endTime: '', price: '' })
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundPricingSlots(publicGroundId)
+      })
+      .then((data) => setSlots(data))
+      .catch((err) => setError(err.response?.data?.error || err.response?.data?.message || 'Failed to load pricing slots'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchGroundPricingSlots(publicGroundId)
-      setSlots(data)
-    } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to load pricing slots')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   function resetForm() {
     setFormData({ startTime: '', endTime: '', price: '' })

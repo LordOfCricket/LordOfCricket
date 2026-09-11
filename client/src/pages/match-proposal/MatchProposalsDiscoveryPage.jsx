@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarDays, Clock, Plus } from 'lucide-react'
 import { useMatchProposals } from '../../hooks/useMatchProposals.js'
@@ -81,7 +81,7 @@ export default function MatchProposalsDiscoveryPage() {
     fetchGrounds()
   }, [])
 
-  const { proposals, loading, error, load } = useMatchProposals(selectedGround?.id)
+  const { proposals, loading, error } = useMatchProposals(selectedGround?.id)
 
   const filteredProposals = filter === 'all' ? proposals : proposals.filter((p) => p.status === filter)
 

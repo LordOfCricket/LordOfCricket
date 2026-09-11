@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
-import { fetchGroundProfile } from '../../services/groundsApi.js'
-import { fetchGroundAvailability, fetchGroundBookings, createGroundStaffBlock, removeGroundStaffBlock } from '../../services/groundOwnerApi.js'
+import { fetchGroundAvailability, fetchGroundBookings, createGroundStaffBlock } from '../../services/groundOwnerApi.js'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 
 export default function GroundBookingCalendarPage() {
@@ -17,37 +16,34 @@ export default function GroundBookingCalendarPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const [ground, setGround] = useState(null)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [slots, setSlots] = useState([])
   const [bookings, setBookings] = useState([])
   const [showBlockForm, setShowBlockForm] = useState(false)
   const [blockFormData, setBlockFormData] = useState({ hour: '09', minute: '00', purpose: '', blockType: 'CLOSED' })
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return Promise.all([
+          fetchGroundAvailability(publicGroundId, selectedDate),
+          fetchGroundBookings(publicGroundId),
+        ])
+      })
+      .then(([availabilitySlots, allBookings]) => {
+        setSlots(availabilitySlots)
+        const dayBookings = allBookings.filter(b => b.startTime.split('T')[0] === selectedDate)
+        setBookings(dayBookings)
+      })
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load calendar data'))
+      .finally(() => setLoading(false))
   }, [publicGroundId, selectedDate])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      const availabilitySlots = await fetchGroundAvailability(publicGroundId, selectedDate)
-      setSlots(availabilitySlots)
-
-      const allBookings = await fetchGroundBookings(publicGroundId)
-      const dayBookings = allBookings.filter(b => b.startTime.split('T')[0] === selectedDate)
-      setBookings(dayBookings)
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load calendar data')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   async function handleCreateBlock() {
     try {
@@ -74,26 +70,9 @@ export default function GroundBookingCalendarPage() {
     }
   }
 
-  async function handleRemoveBlock(publicBlockId) {
-    if (!confirm('Remove this staff block?')) return
-
-    try {
-      setSaving(true)
-      setError(null)
-
-      await removeGroundStaffBlock(publicGroundId, publicBlockId)
-      setSuccess('Staff block removed successfully.')
-      await loadData()
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to remove staff block')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const formatTime = (timeStr) => {
     if (!timeStr) return ''
-    const [date, time] = timeStr.split('T')
+    const [, time] = timeStr.split('T')
     if (!time) return ''
     const [hours, minutes] = time.split(':')
     return `${hours}:${minutes}`

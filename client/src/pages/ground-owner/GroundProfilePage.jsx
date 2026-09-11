@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
-import { updateGroundProfile, fetchMyGrounds } from '../../services/groundOwnerApi.js'
+import { updateGroundProfile } from '../../services/groundOwnerApi.js'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 
 // Phase 23 — the schema/domain layer has always supported an optional,
@@ -31,19 +31,6 @@ function GroundProfileForm({ ground, onSave, saving, error }) {
   })
   const [validationErrors, setValidationErrors] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
-
-  useEffect(() => {
-    setFormData({
-      name: ground?.name || '',
-      description: ground?.description || '',
-      phone: ground?.phone || '',
-      email: ground?.email || '',
-      website: ground?.website || '',
-      openingHour: ground?.openingHour ?? '',
-      closingHour: ground?.closingHour ?? '',
-    })
-    setHasChanges(false)
-  }, [ground?.id])
 
   const validateForm = () => {
     const errors = {}
@@ -300,17 +287,15 @@ export default function GroundProfilePage() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    fetchGroundProfile(publicGroundId)
-      .then(data => {
-        setGround(data.ground)
-        setLoading(false)
+    Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
       })
-      .catch(err => {
-        setLoading(false)
-        setError(err.response?.data?.error || "Couldn't load ground profile.")
-      })
+      .then(data => setGround(data.ground))
+      .catch(err => setError(err.response?.data?.error || "Couldn't load ground profile."))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
   const handleSave = async (formData) => {
@@ -371,6 +356,7 @@ export default function GroundProfilePage() {
 
       {!loading && ground && (
         <GroundProfileForm
+          key={ground.id}
           ground={ground}
           onSave={handleSave}
           saving={saving}

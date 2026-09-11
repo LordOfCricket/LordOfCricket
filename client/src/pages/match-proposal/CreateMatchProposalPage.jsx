@@ -13,24 +13,19 @@ export default function CreateMatchProposalPage() {
   const { player } = useAuth()
   const { grounds, loading: groundsLoading } = useMyGrounds()
   const [selectedGround, setSelectedGround] = useState(null)
-  const [bookingDate, setBookingDate] = useState('')
+  const [bookingDate, setBookingDate] = useState(() => todayDateInputValue())
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [teams, setTeams] = useState([])
   const [teamsLoading, setTeamsLoading] = useState(true)
   const [opposingTeamId, setOpposingTeamId] = useState('')
   const [formError, setFormError] = useState('')
 
-  const { create, loading, error: createError } = useMatchProposals(selectedGround?.id)
+  // No ground explicitly picked yet — default to the first one without
+  // storing a redundant copy of it in state (see handleSelectGround for
+  // the explicit-choice path).
+  const effectiveGround = selectedGround || (grounds.length > 0 ? grounds[0] : null)
 
-  useEffect(() => {
-    if (!selectedGround && grounds.length > 0) {
-      setSelectedGround(grounds[0])
-    }
-  }, [grounds])
-
-  useEffect(() => {
-    setBookingDate(todayDateInputValue())
-  }, [])
+  const { create, loading, error: createError } = useMatchProposals(effectiveGround?.id)
 
   useEffect(() => {
     const fetchTeams = async () => {
@@ -69,7 +64,7 @@ export default function CreateMatchProposalPage() {
       return
     }
 
-    if (!selectedGround) {
+    if (!effectiveGround) {
       setFormError('Please select a ground.')
       return
     }
@@ -162,7 +157,7 @@ export default function CreateMatchProposalPage() {
               <p className="text-sm text-slate-400">No grounds available.</p>
             ) : (
               <select
-                value={selectedGround?.id || ''}
+                value={effectiveGround?.id || ''}
                 onChange={(e) => handleSelectGround(e.target.value)}
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white"
               >

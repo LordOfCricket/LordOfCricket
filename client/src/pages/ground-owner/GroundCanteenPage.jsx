@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import { fetchCanteenMenuItems, fetchCanteenOrders, updateCanteenStatus } from '../../services/groundOwnerApi.js'
@@ -10,7 +10,6 @@ export default function GroundCanteenPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [ground, setGround] = useState(null)
   const [canteen, setCanteen] = useState(null)
   const [menuItemsCount, setMenuItemsCount] = useState(0)
   const [todaysOrdersCount, setTodaysOrdersCount] = useState(0)
@@ -39,36 +38,36 @@ export default function GroundCanteenPage() {
     }
   }
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
+      })
+      .then((groundData) => {
+        if (groundData.canteens && groundData.canteens.length > 0) {
+          const firstCanteen = groundData.canteens[0]
+          setCanteen(firstCanteen)
+
+          return Promise.all([
+            fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId),
+            fetchCanteenOrders(publicGroundId, firstCanteen.publicCanteenId, { limit: 100 }),
+          ]).then(([menuItems, ordersData]) => {
+            setMenuItemsCount(menuItems.length || 0)
+            const today = new Date().toDateString()
+            const todayOrders = ordersData.orders?.filter(o => new Date(o.createdAt).toDateString() === today) || []
+            setTodaysOrdersCount(todayOrders.length)
+          })
+        }
+      })
+      .catch((err) => setError(err.message || 'Failed to load canteen data'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      if (groundData.canteens && groundData.canteens.length > 0) {
-        const firstCanteen = groundData.canteens[0]
-        setCanteen(firstCanteen)
-
-        const menuItems = await fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId)
-        setMenuItemsCount(menuItems.length || 0)
-
-        const ordersData = await fetchCanteenOrders(publicGroundId, firstCanteen.publicCanteenId, { limit: 100 })
-        const today = new Date().toDateString()
-        const todayOrders = ordersData.orders?.filter(o => new Date(o.createdAt).toDateString() === today) || []
-        setTodaysOrdersCount(todayOrders.length)
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to load canteen data')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   if (loading) {
     return (

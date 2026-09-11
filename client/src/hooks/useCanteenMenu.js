@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { io } from 'socket.io-client'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from './useAuth.js'
@@ -33,7 +33,7 @@ export function useMenu() {
   const [error, setError] = useState('')
   const [placing, setPlacing] = useState(false)
 
-  const loadPlayerOrders = async () => {
+  const loadPlayerOrders = useCallback(async () => {
     if (!userId) return
     try {
       const [currentOrder, history] = await Promise.all([
@@ -47,7 +47,7 @@ export function useMenu() {
       setActiveOrder(null)
       setOrderHistory([])
     }
-  }
+  }, [userId, publicGroundId, publicCanteenId])
 
   useEffect(() => {
     if (!userId) {
@@ -73,7 +73,7 @@ export function useMenu() {
     }
 
     loadPage()
-  }, [userId, navigate, publicGroundId, publicCanteenId])
+  }, [userId, navigate, publicGroundId, publicCanteenId, loadPlayerOrders])
 
   useEffect(() => {
     if (!userId) return
@@ -120,7 +120,7 @@ export function useMenu() {
     socket.on('order-completed', updatePlayerOrder)
 
     return () => socket.disconnect()
-  }, [userId, publicGroundId, publicCanteenId])
+  }, [userId, publicGroundId, publicCanteenId, loadPlayerOrders])
 
   const addItem = (item) => {
     if (activeOrder) {

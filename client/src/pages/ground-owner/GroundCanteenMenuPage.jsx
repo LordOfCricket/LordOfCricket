@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import {
@@ -17,7 +17,6 @@ export default function GroundCanteenMenuPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const [ground, setGround] = useState(null)
   const [canteen, setCanteen] = useState(null)
   const [menuItems, setMenuItems] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -32,29 +31,27 @@ export default function GroundCanteenMenuPage() {
     stock: '',
   })
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
+      })
+      .then((groundData) => {
+        if (groundData.canteens && groundData.canteens.length > 0) {
+          const firstCanteen = groundData.canteens[0]
+          setCanteen(firstCanteen)
+          return fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId).then(setMenuItems)
+        }
+      })
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load menu items'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      if (groundData.canteens && groundData.canteens.length > 0) {
-        const firstCanteen = groundData.canteens[0]
-        setCanteen(firstCanteen)
-        const items = await fetchCanteenMenuItems(publicGroundId, firstCanteen.publicCanteenId)
-        setMenuItems(items)
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load menu items')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   function resetForm() {
     setFormData({ name: '', category: '', description: '', price: '', stock: '' })

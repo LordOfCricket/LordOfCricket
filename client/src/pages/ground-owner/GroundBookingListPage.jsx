@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { fetchGroundProfile } from '../../services/groundsApi.js'
 import { fetchGroundBookings } from '../../services/groundOwnerApi.js'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
 
@@ -21,30 +20,24 @@ export default function GroundBookingListPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [ground, setGround] = useState(null)
   const [bookings, setBookings] = useState([])
   const [statusFilter, setStatusFilter] = useState('CONFIRMED')
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundBookings(publicGroundId)
+      })
+      .then((allBookings) => setBookings(allBookings))
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load bookings'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      const allBookings = await fetchGroundBookings(publicGroundId)
-      setBookings(allBookings)
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load bookings')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // "View Today" (GroundBookingPage.jsx) links here with ?date=YYYY-MM-DD —
   // this page previously never read it, so the link silently showed every

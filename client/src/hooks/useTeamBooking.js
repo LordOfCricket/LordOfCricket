@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createTeamBooking, fetchTeamBookingDetail, cancelTeamBooking } from '../services/teamBookingApi.js'
 
 // Hook for player team booking: create a MATCH or PRACTICE booking for the current player's team.

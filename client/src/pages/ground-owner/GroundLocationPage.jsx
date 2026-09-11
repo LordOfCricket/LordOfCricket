@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { updateGroundProfile } from '../../services/groundOwnerApi.js'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
@@ -25,31 +25,32 @@ export default function GroundLocationPage() {
     longitude: null,
   })
 
-  useEffect(() => {
-    loadGround()
+  const loadGround = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
+      })
+      .then((data) => {
+        setGround(data)
+        setFormData({
+          addressLine: data.addressLine || '',
+          city: data.city || '',
+          state: data.state || '',
+          postalCode: data.postalCode || '',
+          latitude: data.latitude || null,
+          longitude: data.longitude || null,
+        })
+        setIsDirty(false)
+      })
+      .catch((err) => setError(err.message || 'Failed to load ground profile'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadGround() {
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await fetchGroundProfile(publicGroundId)
-      setGround(data)
-      setFormData({
-        addressLine: data.addressLine || '',
-        city: data.city || '',
-        state: data.state || '',
-        postalCode: data.postalCode || '',
-        latitude: data.latitude || null,
-        longitude: data.longitude || null,
-      })
-      setIsDirty(false)
-    } catch (err) {
-      setError(err.message || 'Failed to load ground profile')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadGround()
+  }, [loadGround])
 
   function handleFieldChange(field, value) {
     setFormData(prev => ({ ...prev, [field]: value }))

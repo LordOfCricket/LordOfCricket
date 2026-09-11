@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Clock, AlertCircle } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import BackButton from '../../components/common/BackButton.jsx'
 import { useMyGrounds } from '../../hooks/useMyGrounds.js'
 import { useTeamBooking } from '../../hooks/useTeamBooking.js'
 import { useAuth } from '../../hooks/useAuth.js'
-import { formatSlotTime, todayDateInputValue, addDaysToDateStr } from '../../models/booking.model.js'
+import { todayDateInputValue, addDaysToDateStr } from '../../models/booking.model.js'
 import Button from '../../components/ui/Button.jsx'
 
 const PURPOSE_OPTIONS = [
@@ -15,29 +15,22 @@ const PURPOSE_OPTIONS = [
 
 export default function CreateTeamBookingPage() {
   const navigate = useNavigate()
-  const { user, player } = useAuth()
+  const { player } = useAuth()
   const { grounds, loading: groundsLoading } = useMyGrounds()
   const [selectedGround, setSelectedGround] = useState(null)
   const [purpose, setPurpose] = useState('MATCH')
-  const [bookingDate, setBookingDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [slots, setSlots] = useState([])
+  const [bookingDate, setBookingDate] = useState(() => todayDateInputValue())
+  const [, setSlots] = useState([])
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [formError, setFormError] = useState('')
   const [validationError, setValidationError] = useState('')
 
-  const { create, loading, error: createError } = useTeamBooking(selectedGround?.id)
+  // No ground explicitly picked yet — default to the first one without
+  // storing a redundant copy of it in state (see handleSelectGround for
+  // the explicit-choice path).
+  const effectiveGround = selectedGround || (grounds.length > 0 ? grounds[0] : null)
 
-  useEffect(() => {
-    if (!selectedGround && grounds.length > 0) {
-      setSelectedGround(grounds[0])
-    }
-  }, [grounds])
-
-  useEffect(() => {
-    setBookingDate(todayDateInputValue())
-  }, [])
+  const { create, loading, error: createError } = useTeamBooking(effectiveGround?.id)
 
   const handleSelectGround = (groundId) => {
     const ground = grounds.find((g) => g.id === groundId)
@@ -51,7 +44,7 @@ export default function CreateTeamBookingPage() {
   }
 
   const handleTimeRangeClick = async (slot) => {
-    if (!selectedGround || !bookingDate) return
+    if (!effectiveGround || !bookingDate) return
     setValidationError('')
     setSelectedSlot(slot)
   }
@@ -66,7 +59,7 @@ export default function CreateTeamBookingPage() {
       return
     }
 
-    if (!selectedGround) {
+    if (!effectiveGround) {
       setFormError('Please select a ground.')
       return
     }
@@ -148,7 +141,7 @@ export default function CreateTeamBookingPage() {
               <p className="text-sm text-slate-400">No grounds available to book.</p>
             ) : (
               <select
-                value={selectedGround?.id || ''}
+                value={effectiveGround?.id || ''}
                 onChange={(e) => handleSelectGround(e.target.value)}
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white"
               >

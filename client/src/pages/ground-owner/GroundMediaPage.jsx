@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
@@ -253,22 +253,21 @@ export default function GroundMediaPage() {
   const [deleteInProgress, setDeleteInProgress] = useState(new Set())
   const [generalError, setGeneralError] = useState(null)
 
-  const loadPhotos = async () => {
-    try {
-      setLoading(true)
-      setGeneralError(null)
-      const data = await fetchGroundPhotos(publicGroundId)
-      setPhotos(data)
-    } catch (err) {
-      setGeneralError(err.response?.data?.error || "Couldn't load photos.")
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loadPhotos = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setGeneralError(null)
+        return fetchGroundPhotos(publicGroundId)
+      })
+      .then((data) => setPhotos(data))
+      .catch((err) => setGeneralError(err.response?.data?.error || "Couldn't load photos."))
+      .finally(() => setLoading(false))
+  }, [publicGroundId])
 
   useEffect(() => {
     loadPhotos()
-  }, [publicGroundId])
+  }, [loadPhotos])
 
   const handleUpload = async (file, options) => {
     setUploadInProgress(true)
@@ -305,7 +304,7 @@ export default function GroundMediaPage() {
 
   const handleSetHero = async (photoId) => {
     try {
-      const updatedPhoto = await setHeroPhoto(publicGroundId, photoId)
+      await setHeroPhoto(publicGroundId, photoId)
       setPhotos(prev =>
         prev.map(p =>
           p.id === photoId

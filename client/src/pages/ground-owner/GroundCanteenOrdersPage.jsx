@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchGroundProfile } from '../../services/groundsApi.js'
 import {
@@ -17,39 +17,33 @@ export default function GroundCanteenOrdersPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const [ground, setGround] = useState(null)
   const [canteen, setCanteen] = useState(null)
   const [orders, setOrders] = useState([])
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedOrderId, setSelectedOrderId] = useState(null)
 
-  useEffect(() => {
-    loadData()
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        return fetchGroundProfile(publicGroundId)
+      })
+      .then((groundData) => {
+        if (groundData.canteens && groundData.canteens.length > 0) {
+          const firstCanteen = groundData.canteens[0]
+          setCanteen(firstCanteen)
+          return fetchCanteenOrders(publicGroundId, firstCanteen.publicCanteenId, { limit: 100 })
+            .then((ordersData) => setOrders(ordersData.orders || []))
+        }
+      })
+      .catch((err) => setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load orders'))
+      .finally(() => setLoading(false))
   }, [publicGroundId])
 
-  async function loadData() {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const groundData = await fetchGroundProfile(publicGroundId)
-      setGround(groundData)
-
-      if (groundData.canteens && groundData.canteens.length > 0) {
-        const firstCanteen = groundData.canteens[0]
-        setCanteen(firstCanteen)
-
-        const ordersData = await fetchCanteenOrders(publicGroundId, firstCanteen.publicCanteenId, {
-          limit: 100,
-        })
-        setOrders(ordersData.orders || [])
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to load orders')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   async function handleStatusUpdate(orderId, newStatus) {
     try {

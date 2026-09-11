@@ -1,7 +1,7 @@
 import PublicAvailabilityPreview from '../booking/PublicAvailabilityPreview.jsx'
 import { PanelSurface } from './PanelStates.jsx'
 
-export default function BookStadiumPanel({ groundName, publicGroundId = null, onBook, className = '' }) {
+export default function BookStadiumPanel({ publicGroundId = null, onBook, className = '' }) {
   return (
     <PanelSurface className={className}>
       <div className="flex flex-col gap-4 h-full">

@@ -73,6 +73,9 @@ export default function MyTeamBookingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [cancelling, setCancelling] = useState(null)
+  // Stable snapshot of "now" for the upcoming/history split — computed once
+  // on mount (not on every render) so it stays a pure value during render.
+  const [now] = useState(() => Date.now())
 
   const { cancel } = useTeamBooking(null)
 
@@ -106,8 +109,8 @@ export default function MyTeamBookingsPage() {
     setCancelling(null)
   }
 
-  const upcoming = bookings.filter((b) => new Date(b.start_time).getTime() > Date.now())
-  const history = bookings.filter((b) => new Date(b.start_time).getTime() <= Date.now())
+  const upcoming = bookings.filter((b) => new Date(b.start_time).getTime() > now)
+  const history = bookings.filter((b) => new Date(b.start_time).getTime() <= now)
 
   return (
     <main

@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import GroundOwnerLayout from '../../components/ground-owner/GroundOwnerLayout.jsx'
 import GroundNavTabs from '../../components/ground-owner/GroundNavTabs.jsx'
-import AmenityPicker from '../../components/ground-registration/AmenityPicker.jsx'
 import {
   fetchGroundAmenities,
   addGroundAmenity,
@@ -21,29 +20,28 @@ export default function GroundAmenitiesPage() {
   const [addingKey, setAddingKey] = useState(null)
   const [confirmRemoveKey, setConfirmRemoveKey] = useState(null)
 
-  const loadData = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      // Fetch both amenities and catalog in parallel
-      const [amenitiesData, catalogData] = await Promise.all([
-        fetchGroundAmenities(publicGroundId),
-        fetchAmenityCatalog(),
-      ])
-
-      setAmenities(amenitiesData || [])
-      setCatalog(catalogData || [])
-    } catch (err) {
-      setError(err.response?.data?.error || err.message || "Couldn't load amenities.")
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loadData = useCallback(() => {
+    return Promise.resolve()
+      .then(() => {
+        setLoading(true)
+        setError(null)
+        // Fetch both amenities and catalog in parallel
+        return Promise.all([
+          fetchGroundAmenities(publicGroundId),
+          fetchAmenityCatalog(),
+        ])
+      })
+      .then(([amenitiesData, catalogData]) => {
+        setAmenities(amenitiesData || [])
+        setCatalog(catalogData || [])
+      })
+      .catch((err) => setError(err.response?.data?.error || err.message || "Couldn't load amenities."))
+      .finally(() => setLoading(false))
+  }, [publicGroundId])
 
   useEffect(() => {
     loadData()
-  }, [publicGroundId])
+  }, [loadData])
 
   const handleAddAmenity = async (amenityKey) => {
     setAddingKey(amenityKey)
