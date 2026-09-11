@@ -26,8 +26,8 @@
     "backup:mongo": "node src/scripts/exportMongoBackup.js",
     "backup:postgres": "node src/scripts/backupPostgres.js",
     "restore:postgres": "node src/scripts/restorePostgres.js",
-    "test": "node --test src/domain/**/*.test.js src/utils/**/*.test.js",
-    "test:integration": "node --test --test-concurrency=1 src/tests/integration/**/*.test.js"
+    "test": "node --test \"src/domain/**/*.test.js\" \"src/utils/**/*.test.js\"",
+    "test:integration": "node --test --test-concurrency=1 \"src/tests/integration/**/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
